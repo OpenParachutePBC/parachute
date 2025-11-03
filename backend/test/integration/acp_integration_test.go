@@ -197,7 +197,10 @@ func TestACPToolCallWithPermission(t *testing.T) {
 						allowOpt := acp.FindAllowOption(permReq.Options)
 						if allowOpt != nil {
 							response := acp.PermissionResponse{
-								OptionID: allowOpt.OptionID,
+								Outcome: acp.PermissionOutcome{
+									Outcome:  "selected",
+									OptionID: allowOpt.OptionID,
+								},
 							}
 							if err := client.SendResponse(*req.ID, response); err != nil {
 								log.Printf("❌ Failed to send response: %v", err)
