@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
+
+	"github.com/unforced/parachute-backend/internal/acp/prompts"
 )
 
 // ACPClient provides high-level ACP protocol methods
@@ -217,8 +221,17 @@ type MCPServer struct {
 
 // NewSessionParams represents parameters for session/new
 type NewSessionParams struct {
-	Cwd        string      `json:"cwd"`
-	McpServers []MCPServer `json:"mcpServers"` // Required field, send empty array if no servers
+	Cwd        string       `json:"cwd"`
+	McpServers []MCPServer  `json:"mcpServers"`      // Required field, send empty array if no servers
+	Meta       *SessionMeta `json:"_meta,omitempty"` // Optional metadata including system prompt
+}
+
+// SessionMeta represents optional metadata for session configuration
+type SessionMeta struct {
+	// SystemPrompt can be a string (replaces default) or a map with "append" key
+	// String: Complete replacement of default Claude Code prompt
+	// Map: { "append": "text" } appends to default prompt
+	SystemPrompt interface{} `json:"systemPrompt,omitempty"`
 }
 
 // NewSessionResult represents the result of session/new
@@ -226,16 +239,22 @@ type NewSessionResult struct {
 	SessionID string `json:"sessionId"`
 }
 
-// NewSession creates a new ACP session
+// NewSession creates a new ACP session with Parachute's custom system prompt
 func (c *ACPClient) NewSession(workingDir string, mcpServers []MCPServer) (string, error) {
 	// Ensure mcpServers is always an array (empty if nil)
 	if mcpServers == nil {
 		mcpServers = []MCPServer{}
 	}
 
+	// Build multi-layer system prompt (base + PARACHUTE.md if exists)
+	systemPrompt := c.buildSystemPrompt(workingDir)
+
 	params := NewSessionParams{
 		Cwd:        workingDir,
 		McpServers: mcpServers,
+		Meta: &SessionMeta{
+			SystemPrompt: systemPrompt,
+		},
 	}
 
 	result, err := c.jsonrpc.Call("session/new", params)
@@ -248,7 +267,31 @@ func (c *ACPClient) NewSession(workingDir string, mcpServers []MCPServer) (strin
 		return "", fmt.Errorf("failed to parse session/new result: %w", err)
 	}
 
+	log.Printf("🎯 Created ACP session with Parachute system prompt (vault: %s)", workingDir)
 	return sessionResult.SessionID, nil
+}
+
+// buildSystemPrompt constructs the multi-layer system prompt for ACP sessions
+// Combines base Parachute prompt with optional user customization from PARACHUTE.md
+func (c *ACPClient) buildSystemPrompt(vaultRoot string) interface{} {
+	// Start with base Parachute prompt
+	basePrompt := prompts.BaseParachutePrompt
+
+	// Try to load user's PARACHUTE.md from vault root
+	parachuteMDPath := filepath.Join(vaultRoot, "PARACHUTE.md")
+	userCustomization, err := os.ReadFile(parachuteMDPath)
+
+	if err == nil && len(userCustomization) > 0 {
+		// User has customization - append to base prompt
+		// Return as map to preserve Claude Code's base capabilities
+		return map[string]interface{}{
+			"append": basePrompt + "\n\n---\n\n# User Customization\n\n" + string(userCustomization),
+		}
+	}
+
+	// No user customization - return base prompt only
+	// This replaces Claude Code's default prompt entirely
+	return basePrompt
 }
 
 // ContentBlock represents a block of content in a prompt

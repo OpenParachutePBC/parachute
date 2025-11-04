@@ -316,9 +316,9 @@ class FileSystemService {
       await Directory('$spacePath/conversations').create();
       await Directory('$spacePath/files').create();
 
-      // Create default CLAUDE.md
-      final claudeMd = File('$spacePath/CLAUDE.md');
-      await claudeMd.writeAsString(_getDefaultClaudeMd(spaceName));
+      // Create default SPACE.md
+      final spaceMd = File('$spacePath/SPACE.md');
+      await spaceMd.writeAsString(_getDefaultSpaceMd(spaceName));
 
       // Create .space.json metadata
       final spaceJson = File('$spacePath/.space.json');
@@ -332,7 +332,7 @@ class FileSystemService {
     }
   }
 
-  String _getDefaultClaudeMd(String spaceName) {
+  String _getDefaultSpaceMd(String spaceName) {
     return '''# $spaceName
 
 This is the context file for the **$spaceName** space.

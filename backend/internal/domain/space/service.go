@@ -84,14 +84,14 @@ func (s *Service) Create(ctx context.Context, userID string, params CreateSpaceP
 		return nil, fmt.Errorf("failed to create files directory: %w", err)
 	}
 
-	// Create agents.md with template (new standard, works with any AI agent)
-	agentsMDPath := filepath.Join(spacePath, "agents.md")
-	agentsMDTemplate := fmt.Sprintf(`# %s
+	// Create SPACE.md with template (agent-agnostic, works with any AI assistant)
+	spaceMDPath := filepath.Join(spacePath, "SPACE.md")
+	spaceMDTemplate := fmt.Sprintf(`# %s
 
 This space is for organizing conversations and knowledge related to %s.
 
 ## Context
-Add relevant context here to help AI agents understand this space.
+Add relevant context here to help AI assistants understand this space.
 
 ## Available Knowledge
 - Linked notes will appear here as you connect recordings and notes to this space
@@ -106,8 +106,8 @@ Add relevant context here to help AI agents understand this space.
 See the files/ directory for uploaded documents and resources.
 `, params.Name, params.Name)
 
-	if err := os.WriteFile(agentsMDPath, []byte(agentsMDTemplate), 0644); err != nil {
-		return nil, fmt.Errorf("failed to create agents.md: %w", err)
+	if err := os.WriteFile(spaceMDPath, []byte(spaceMDTemplate), 0644); err != nil {
+		return nil, fmt.Errorf("failed to create SPACE.md: %w", err)
 	}
 
 	// Create space record
@@ -176,9 +176,9 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, id)
 }
 
-// GetClaudeMDPath returns the path to the CLAUDE.md file for a space
-func (s *Service) GetClaudeMDPath(space *Space) string {
-	return filepath.Join(space.Path, "CLAUDE.md")
+// GetSpaceMDPath returns the path to the SPACE.md file for a space
+func (s *Service) GetSpaceMDPath(space *Space) string {
+	return filepath.Join(space.Path, "SPACE.md")
 }
 
 // GetMCPConfigPath returns the path to the .mcp.json file for a space
@@ -186,25 +186,38 @@ func (s *Service) GetMCPConfigPath(space *Space) string {
 	return filepath.Join(space.Path, ".mcp.json")
 }
 
-// ReadClaudeMD reads the agents.md or CLAUDE.md file for a space
-// Prefers agents.md, falls back to CLAUDE.md for legacy spaces
-func (s *Service) ReadClaudeMD(space *Space) (string, error) {
-	// Try agents.md first (new standard)
+// ReadSpaceMD reads the SPACE.md file for a space
+// Falls back to agents.md or CLAUDE.md for backward compatibility
+func (s *Service) ReadSpaceMD(space *Space) (string, error) {
+	// Try SPACE.md first (current standard)
+	spaceMDPath := filepath.Join(space.Path, "SPACE.md")
+	data, err := os.ReadFile(spaceMDPath)
+	if err == nil {
+		return string(data), nil
+	}
+
+	// Fall back to agents.md (previous iteration)
 	agentsMDPath := filepath.Join(space.Path, "agents.md")
-	data, err := os.ReadFile(agentsMDPath)
+	data, err = os.ReadFile(agentsMDPath)
 	if err == nil {
 		return string(data), nil
 	}
 
 	// Fall back to CLAUDE.md (legacy)
-	claudeMDPath := s.GetClaudeMDPath(space)
+	claudeMDPath := filepath.Join(space.Path, "CLAUDE.md")
 	data, err = os.ReadFile(claudeMDPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil // No context file is okay
 		}
-		return "", fmt.Errorf("failed to read context file: %w", err)
+		return "", fmt.Errorf("failed to read space context file: %w", err)
 	}
 
 	return string(data), nil
+}
+
+// ReadClaudeMD is deprecated, use ReadSpaceMD instead
+// Kept for backward compatibility
+func (s *Service) ReadClaudeMD(space *Space) (string, error) {
+	return s.ReadSpaceMD(space)
 }

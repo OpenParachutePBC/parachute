@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -141,8 +142,15 @@ func (h *MessageHandler) SendMessage(c fiber.Ctx) error {
 	if h.acpClient != nil {
 		prompt := h.buildPromptWithContext(spaceObj, messages, req.Content)
 
+		// Use vault root as working directory to avoid SDK double-loading CLAUDE.md
+		// SDK has settingSources: ["user", "project", "local"] enabled by default,
+		// which would read CLAUDE.md from spaceObj.Path. Since we manually prepend
+		// CLAUDE.md with variable resolution, we set cwd to vault root where no
+		// CLAUDE.md exists, preventing duplication.
+		vaultRoot := filepath.Dir(filepath.Dir(spaceObj.Path)) // Go up from spaces/space-name to ~/Parachute
+
 		// Get or create ACP session for this conversation
-		sessionID, isNew, err := h.getOrCreateSession(req.ConversationID, spaceObj.Path)
+		sessionID, isNew, err := h.getOrCreateSession(req.ConversationID, vaultRoot)
 		if err != nil {
 			log.Printf("❌ Failed to get/create ACP session: %v", err)
 			// Continue without ACP
@@ -416,7 +424,7 @@ func (h *MessageHandler) startSessionListener(sessionID, conversationID string) 
 	}
 }
 
-// buildPromptWithContext builds a prompt including conversation history and CLAUDE.md
+// buildPromptWithContext builds a prompt including conversation history and SPACE.md
 func (h *MessageHandler) buildPromptWithContext(
 	spaceObj *space.Space,
 	messages []*conversation.Message,
@@ -424,18 +432,18 @@ func (h *MessageHandler) buildPromptWithContext(
 ) string {
 	prompt := ""
 
-	// Include CLAUDE.md context if it exists
-	claudeMD, err := h.spaceService.ReadClaudeMD(spaceObj)
-	if err == nil && claudeMD != "" {
-		// Resolve dynamic variables in CLAUDE.md
-		resolvedClaudeMD, err := h.contextService.ResolveVariables(claudeMD, spaceObj.Path)
+	// Include SPACE.md context if it exists
+	spaceMD, err := h.spaceService.ReadSpaceMD(spaceObj)
+	if err == nil && spaceMD != "" {
+		// Resolve dynamic variables in SPACE.md
+		resolvedSpaceMD, err := h.contextService.ResolveVariables(spaceMD, spaceObj.Path)
 		if err != nil {
-			log.Printf("⚠️  Failed to resolve CLAUDE.md variables: %v", err)
-			resolvedClaudeMD = claudeMD // Fallback to unresolved
+			log.Printf("⚠️  Failed to resolve SPACE.md variables: %v", err)
+			resolvedSpaceMD = spaceMD // Fallback to unresolved
 		}
 
-		prompt += "# Context from CLAUDE.md\n\n"
-		prompt += resolvedClaudeMD
+		prompt += "# Context from SPACE.md\n\n"
+		prompt += resolvedSpaceMD
 		prompt += "\n\n---\n\n"
 	}
 

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// ContextService handles dynamic variable resolution for CLAUDE.md system prompts
+// ContextService handles dynamic variable resolution for SPACE.md context files
 type ContextService struct {
 	spaceDBService *SpaceDatabaseService
 }
@@ -22,21 +22,21 @@ func NewContextService(spaceDBService *SpaceDatabaseService) *ContextService {
 	}
 }
 
-// ResolveVariables processes a CLAUDE.md template and replaces dynamic variables
+// ResolveVariables processes a SPACE.md template and replaces dynamic variables
 // Supported variables:
 // - {{note_count}} - Total number of linked notes
 // - {{recent_tags}} - Top 5 most used tags (last 30 days)
 // - {{recent_notes}} - Last 5 referenced notes (title + date)
 // - {{notes_tagged:TAG}} - Count of notes with specific tag
-func (s *ContextService) ResolveVariables(claudeMD string, spacePath string) (string, error) {
-	result := claudeMD
+func (s *ContextService) ResolveVariables(spaceMD string, spacePath string) (string, error) {
+	result := spaceMD
 
 	// Get space database connection
 	dbPath := filepath.Join(spacePath, "space.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		// If database doesn't exist yet, return template as-is
-		return claudeMD, nil
+		return spaceMD, nil
 	}
 	defer db.Close()
 
