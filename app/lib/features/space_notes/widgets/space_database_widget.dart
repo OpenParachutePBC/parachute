@@ -24,19 +24,23 @@ class SpaceDatabaseWidget extends ConsumerWidget {
         onRefresh: () async {
           ref.invalidate(spaceDatabaseStatsProvider(spaceId));
         },
-        child: ListView(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
-          children: [
-            _buildOverviewCard(context, stats),
-            const SizedBox(height: 16),
-            _buildMetadataCard(context, stats),
-            const SizedBox(height: 16),
-            _buildTablesCard(context, stats),
-            const SizedBox(height: 16),
-            _buildTagsCard(context, stats),
-            const SizedBox(height: 16),
-            _buildRecentNotesCard(context, stats),
-          ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildOverviewCard(context, stats),
+              const SizedBox(height: 16),
+              _buildMetadataCard(context, stats),
+              const SizedBox(height: 16),
+              _buildTablesCard(context, stats),
+              const SizedBox(height: 16),
+              _buildTagsCard(context, stats),
+              const SizedBox(height: 16),
+              _buildRecentNotesCard(context, stats),
+            ],
+          ),
         ),
       ),
       loading: () => const Center(child: CircularProgressIndicator()),

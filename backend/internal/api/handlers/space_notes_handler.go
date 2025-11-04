@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -253,10 +254,19 @@ func (h *SpaceNotesHandler) GetNoteContent(c fiber.Ctx) error {
 	parachuteRoot := filepath.Dir(filepath.Dir(spaceObj.Path)) // Go up from spaces/space-name to ~/Parachute
 	notePath := filepath.Join(parachuteRoot, note.NotePath)
 
+	log.Printf("🔍 Reading note content:")
+	log.Printf("  - Space path: %s", spaceObj.Path)
+	log.Printf("  - Parachute root: %s", parachuteRoot)
+	log.Printf("  - Note relative path: %s", note.NotePath)
+	log.Printf("  - Full note path: %s", notePath)
+
 	content, err := os.ReadFile(notePath)
 	if err != nil {
-		return fiber.NewError(fiber.StatusNotFound, "note file not found")
+		log.Printf("❌ Failed to read note file: %v", err)
+		return fiber.NewError(fiber.StatusNotFound, fmt.Sprintf("note file not found: %s", notePath))
 	}
+
+	log.Printf("✅ Successfully read note content (%d bytes)", len(content))
 
 	// Track that this note was referenced
 	_ = h.spaceDBService.TrackNoteReference(spaceObj.Path, captureID) // Don't fail if tracking fails

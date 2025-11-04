@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,11 +125,7 @@ func (h *MessageHandler) SendMessage(c fiber.Ctx) error {
 
 	// Auto-update conversation title from first message
 	if isFirstMessage && conv.Title == "New Conversation" {
-		// Extract a short title from the message (first 50 chars)
-		title := req.Content
-		if len(title) > 50 {
-			title = title[:47] + "..."
-		}
+		title := h.generateConversationTitle(req.Content)
 
 		// Update the conversation title
 		_, err = h.conversationService.UpdateConversation(ctx, req.ConversationID, title)
@@ -471,6 +468,59 @@ func (h *MessageHandler) buildPromptWithContext(
 	prompt += currentPrompt
 
 	return prompt
+}
+
+// generateConversationTitle creates a smart title from the first message
+func (h *MessageHandler) generateConversationTitle(content string) string {
+	// Remove leading/trailing whitespace
+	content = strings.TrimSpace(content)
+
+	if content == "" {
+		return "New Conversation"
+	}
+
+	// Split into sentences
+	sentences := strings.FieldsFunc(content, func(r rune) bool {
+		return r == '.' || r == '!' || r == '?'
+	})
+
+	var title string
+	if len(sentences) > 0 {
+		// Use first sentence
+		title = strings.TrimSpace(sentences[0])
+	} else {
+		// No sentence breaks, use first line
+		lines := strings.Split(content, "\n")
+		title = strings.TrimSpace(lines[0])
+	}
+
+	// Limit length
+	maxLen := 60
+	if len(title) > maxLen {
+		// Try to break at a word boundary
+		if idx := strings.LastIndex(title[:maxLen-3], " "); idx > 20 {
+			title = title[:idx] + "..."
+		} else {
+			title = title[:maxLen-3] + "..."
+		}
+	}
+
+	// Remove common question words at the start if too long
+	if len(title) > 45 {
+		prefixes := []string{"Can you ", "Could you ", "Please ", "I want to ", "I need to ", "How do I ", "What is ", "Why does "}
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(title, prefix) {
+				title = title[len(prefix):]
+				// Capitalize first letter
+				if len(title) > 0 {
+					title = strings.ToUpper(string(title[0])) + title[1:]
+				}
+				break
+			}
+		}
+	}
+
+	return title
 }
 
 // ListMessages handles GET /api/messages?conversation_id=...
