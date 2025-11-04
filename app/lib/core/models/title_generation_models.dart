@@ -1,10 +1,11 @@
 /// Title generation model definitions
 library;
 
-/// Title generation mode: API vs Local
+/// Title generation mode: API vs Local vs Disabled
 enum TitleModelMode {
   api('Gemini API', 'Cloud-based, requires internet'),
-  local('Local (Offline)', 'On-device, private and free');
+  local('Local (Offline)', 'On-device, private and free'),
+  disabled('Disabled', 'Use simple timestamp-based titles');
 
   const TitleModelMode(this.displayName, this.description);
 

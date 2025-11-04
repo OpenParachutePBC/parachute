@@ -1793,13 +1793,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   const SizedBox(height: 16),
 
                   // Mode selector cards
-                  Row(
+                  Column(
                     children: [
-                      Expanded(child: _buildTitleModeCard(TitleModelMode.api)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildTitleModeCard(TitleModelMode.local),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTitleModeCard(TitleModelMode.api),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildTitleModeCard(TitleModelMode.local),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 12),
+                      _buildTitleModeCard(TitleModelMode.disabled),
                     ],
                   ),
                   const SizedBox(height: 32),

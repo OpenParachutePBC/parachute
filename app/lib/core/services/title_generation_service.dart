@@ -39,6 +39,14 @@ class TitleGenerationService {
       final mode = await _getTitleMode();
       debugPrint('[TitleGen] Title generation mode: ${mode.name}');
 
+      // If disabled, skip AI generation and use fallback
+      if (mode == TitleModelMode.disabled) {
+        debugPrint('[TitleGen] Title generation disabled, using fallback');
+        final fallbackTitle = _generateFallbackTitle(transcript);
+        debugPrint('[TitleGen] Using fallback title: "$fallbackTitle"');
+        return fallbackTitle;
+      }
+
       if (mode == TitleModelMode.api) {
         // Try Gemini API
         final apiKey = await _getGeminiApiKey();

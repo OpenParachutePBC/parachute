@@ -337,15 +337,24 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         debugPrint('[RecordingScreen] ✅ Transcript saved');
       }
 
-      // Generate title from transcript
+      // Check if title generation is enabled
+      final titleMode = await storageService.getTitleGenerationMode();
       String? generatedTitle;
       ProcessingStatus titleStatus = ProcessingStatus.completed;
-      try {
-        generatedTitle = await titleService.generateTitle(transcript);
-        debugPrint('[RecordingScreen] ✅ Title generated: "$generatedTitle"');
-      } catch (e) {
-        debugPrint('[RecordingScreen] ⚠️ Title generation failed: $e');
-        titleStatus = ProcessingStatus.failed;
+
+      if (titleMode == 'disabled') {
+        debugPrint('[RecordingScreen] ⏭️ Title generation disabled, skipping');
+        titleStatus = ProcessingStatus
+            .completed; // Mark as complete since we're not doing it
+      } else {
+        // Generate title from transcript
+        try {
+          generatedTitle = await titleService.generateTitle(transcript);
+          debugPrint('[RecordingScreen] ✅ Title generated: "$generatedTitle"');
+        } catch (e) {
+          debugPrint('[RecordingScreen] ⚠️ Title generation failed: $e');
+          titleStatus = ProcessingStatus.failed;
+        }
       }
 
       // Update with final title
