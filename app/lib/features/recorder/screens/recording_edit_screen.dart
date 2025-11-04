@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/features/recorder/models/recording.dart';
@@ -7,27 +9,24 @@ import 'package:app/features/recorder/services/whisper_service.dart';
 import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/models/whisper_models.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
+import 'package:app/features/recorder/widgets/processing_status_indicator.dart';
 
-class PostRecordingScreen extends ConsumerStatefulWidget {
-  final String recordingPath;
-  final Duration duration;
-  final String? initialTranscript;
+class RecordingEditScreen extends ConsumerStatefulWidget {
+  final Recording recording;
 
-  const PostRecordingScreen({
-    super.key,
-    required this.recordingPath,
-    required this.duration,
-    this.initialTranscript,
-  });
+  const RecordingEditScreen({super.key, required this.recording});
 
   @override
-  ConsumerState<PostRecordingScreen> createState() =>
-      _PostRecordingScreenState();
+  ConsumerState<RecordingEditScreen> createState() =>
+      _RecordingEditScreenState();
 }
 
-class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
+class _RecordingEditScreenState extends ConsumerState<RecordingEditScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _transcriptController = TextEditingController();
+
+  late Recording _recording;
+  Timer? _refreshTimer;
 
   bool _isPlaying = false;
   bool _isSaving = false;
@@ -39,143 +38,42 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
   @override
   void initState() {
     super.initState();
-    // Generate a default title with date and time
-    final now = DateTime.now();
-    final dateStr =
-        '${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    _titleController.text = 'Recording $dateStr';
-
-    // Use the transcription from the recording if available
-    _transcriptController.text = widget.initialTranscript ?? '';
-
-    // Save immediately without blocking
-    _saveImmediately();
+    _recording = widget.recording;
+    _titleController.text = _recording.title;
+    _transcriptController.text = _recording.transcript;
+    _startPeriodicRefresh();
   }
 
-  /// Save recording immediately without waiting for transcription or title generation
-  Future<void> _saveImmediately() async {
-    try {
-      final fileSizeKB = await ref
-          .read(audioServiceProvider)
-          .getFileSizeKB(widget.recordingPath);
-
-      // Extract recording ID from the file path
-      final fileName = widget.recordingPath.split('/').last;
-      final recordingId = fileName.replaceAll('.m4a', '').split('-').last;
-
-      final recording = Recording(
-        id: recordingId,
-        title: _titleController.text.trim(),
-        filePath: widget.recordingPath,
-        timestamp: DateTime.now(),
-        duration: widget.duration,
-        tags: [],
-        transcript: '', // Will be updated in background
-        fileSizeKB: fileSizeKB,
-      );
-
-      await ref.read(storageServiceProvider).saveRecording(recording);
-
-      debugPrint(
-        '[PostRecording] ✅ Recording saved immediately: ${recording.title}',
-      );
-
-      // Now start background processing
-      _startBackgroundProcessing(recordingId);
-
-      // Navigate back immediately - user can see processing status in main list
-      if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-    } catch (e) {
-      debugPrint('[PostRecording] ❌ Failed to save immediately: $e');
-      // Don't navigate away if save failed - let user retry
-    }
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _transcriptController.dispose();
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
-  /// Start background transcription and title generation
-  Future<void> _startBackgroundProcessing(String recordingId) async {
-    final storageService = ref.read(storageServiceProvider);
-    final autoTranscribe = await storageService.getAutoTranscribe();
-
-    if (autoTranscribe) {
-      // Fire and forget - this happens in background
-      _transcribeAndUpdateRecording(recordingId).catchError((e) {
-        debugPrint('[PostRecording] ❌ Background processing failed: $e');
-      });
-    }
-  }
-
-  /// Transcribe and update the recording in background
-  Future<void> _transcribeAndUpdateRecording(String recordingId) async {
-    try {
-      debugPrint('[PostRecording] 🔄 Starting background transcription...');
-
-      // Get transcription mode
-      final storageService = ref.read(storageServiceProvider);
-      final modeString = await storageService.getTranscriptionMode();
-      final mode =
-          TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
-
-      String transcript;
-      if (mode == TranscriptionMode.local) {
-        transcript = await _transcribeWithLocal();
-      } else {
-        transcript = await _transcribeWithAPI();
+  void _startPeriodicRefresh() {
+    // Refresh every 2 seconds to update processing status
+    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      final updated = await ref
+          .read(storageServiceProvider)
+          .getRecording(_recording.id);
+      if (updated != null && mounted) {
+        setState(() {
+          _recording = updated;
+          // Update transcript if it changed and user hasn't modified it
+          if (_recording.transcript.isNotEmpty &&
+              _transcriptController.text.isEmpty) {
+            _transcriptController.text = _recording.transcript;
+          }
+          // Update title if it changed and user hasn't modified it
+          if (_recording.title != widget.recording.title &&
+              _titleController.text == widget.recording.title) {
+            _titleController.text = _recording.title;
+          }
+        });
       }
-
-      debugPrint(
-        '[PostRecording] ✅ Transcription complete: ${transcript.length} chars',
-      );
-
-      // Generate title from transcript
-      String? generatedTitle;
-      try {
-        final titleService = ref.read(titleGenerationServiceProvider);
-        generatedTitle = await titleService.generateTitle(transcript);
-        debugPrint('[PostRecording] ✅ Title generated: "$generatedTitle"');
-      } catch (e) {
-        debugPrint('[PostRecording] ⚠️ Title generation failed: $e');
-      }
-
-      // Update the recording with transcript and title
-      final recording = await storageService.getRecording(recordingId);
-      if (recording != null) {
-        final updatedRecording = Recording(
-          id: recording.id,
-          title: generatedTitle ?? recording.title,
-          filePath: recording.filePath,
-          timestamp: recording.timestamp,
-          duration: recording.duration,
-          tags: recording.tags,
-          transcript: transcript,
-          fileSizeKB: recording.fileSizeKB,
-        );
-        await storageService.updateRecording(updatedRecording);
-        debugPrint(
-          '[PostRecording] ✅ Recording updated with transcript and title',
-        );
-      }
-    } catch (e) {
-      debugPrint('[PostRecording] ❌ Background transcription failed: $e');
-      // Silent fail - recording is already saved
-    }
-  }
-
-  Future<void> _checkAutoTranscribe() async {
-    final storageService = ref.read(storageServiceProvider);
-    final autoTranscribe = await storageService.getAutoTranscribe();
-
-    // If auto-transcribe is enabled and no transcript exists, start transcription
-    if (autoTranscribe &&
-        (widget.initialTranscript == null ||
-            widget.initialTranscript!.isEmpty)) {
-      // Delay slightly to let the UI render first
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
-        _transcribeRecording();
-      }
-    }
+    });
   }
 
   Future<void> _togglePlayback() async {
@@ -185,11 +83,11 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
     } else {
       final success = await ref
           .read(audioServiceProvider)
-          .playRecording(widget.recordingPath);
+          .playRecording(_recording.filePath);
       if (success) {
         setState(() => _isPlaying = true);
-        // Auto-stop after duration (simplified)
-        Future.delayed(widget.duration, () {
+        // Auto-stop after duration
+        Future.delayed(_recording.duration, () {
           if (mounted && _isPlaying) {
             setState(() => _isPlaying = false);
           }
@@ -217,10 +115,8 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
       String transcript;
 
       if (mode == TranscriptionMode.local) {
-        // Use local Whisper
         transcript = await _transcribeWithLocal();
       } else {
-        // Use OpenAI API
         transcript = await _transcribeWithAPI();
       }
 
@@ -263,41 +159,23 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
   }
 
   Future<void> _generateTitleFromTranscript(String transcript) async {
-    debugPrint(
-      '[PostRecording] _generateTitleFromTranscript called with ${transcript.length} chars',
-    );
-
-    if (transcript.isEmpty) {
-      debugPrint(
-        '[PostRecording] Transcript is empty, skipping title generation',
-      );
-      return;
-    }
+    if (transcript.isEmpty) return;
 
     setState(() {
       _isGeneratingTitle = true;
     });
 
     try {
-      debugPrint('[PostRecording] Getting title service...');
       final titleService = ref.read(titleGenerationServiceProvider);
-
-      debugPrint('[PostRecording] Calling generateTitle...');
       final generatedTitle = await titleService.generateTitle(transcript);
 
-      debugPrint('[PostRecording] Generated title: "$generatedTitle"');
-
       if (generatedTitle != null && generatedTitle.isNotEmpty && mounted) {
-        debugPrint('[PostRecording] Setting title to: "$generatedTitle"');
         setState(() {
           _titleController.text = generatedTitle;
         });
-      } else {
-        debugPrint('[PostRecording] Generated title was null or empty');
       }
     } catch (e) {
-      // Silent fail - keep the default title if generation fails
-      debugPrint('[PostRecording] ❌ Title generation failed: $e');
+      debugPrint('[RecordingEdit] ❌ Title generation failed: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -310,12 +188,10 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
   Future<String> _transcribeWithLocal() async {
     final localService = ref.read(whisperLocalServiceProvider);
 
-    // Check if ready
     final isReady = await localService.isReady();
     if (!isReady) {
       if (!mounted) throw WhisperLocalException('Not mounted');
 
-      // Show dialog to navigate to settings
       final goToSettings = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -346,9 +222,8 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
       throw WhisperLocalException('Model not downloaded');
     }
 
-    // Transcribe with progress updates
     return await localService.transcribeAudio(
-      widget.recordingPath,
+      _recording.filePath,
       onProgress: (progress) {
         if (mounted) {
           setState(() {
@@ -361,12 +236,10 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
   }
 
   Future<String> _transcribeWithAPI() async {
-    // Check if API key is configured
     final isConfigured = await ref.read(whisperServiceProvider).isConfigured();
     if (!isConfigured) {
       if (!mounted) throw WhisperException('Not mounted');
 
-      // Show dialog to navigate to settings
       final goToSettings = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -401,7 +274,7 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
 
     return await ref
         .read(whisperServiceProvider)
-        .transcribeAudio(widget.recordingPath);
+        .transcribeAudio(_recording.filePath);
   }
 
   Future<void> _saveRecording() async {
@@ -410,57 +283,37 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final fileSizeKB = await ref
-          .read(audioServiceProvider)
-          .getFileSizeKB(widget.recordingPath);
-
-      // Extract recording ID from the file path
-      // Path format: /path/to/2025-10-06-1759784172526.m4a
-      final fileName = widget.recordingPath.split('/').last;
-      final recordingId = fileName.replaceAll('.m4a', '').split('-').last;
-
-      final recording = Recording(
-        id: recordingId,
+      final updatedRecording = _recording.copyWith(
         title: _titleController.text.trim().isNotEmpty
             ? _titleController.text.trim()
             : 'Untitled Recording',
-        filePath: widget.recordingPath,
-        timestamp: DateTime.now(),
-        duration: widget.duration,
-        tags: [], // Tags removed - keeping field for backwards compatibility
         transcript: _transcriptController.text.trim(),
-        fileSizeKB: fileSizeKB,
       );
 
       final success = await ref
           .read(storageServiceProvider)
-          .saveRecording(recording);
+          .updateRecording(updatedRecording);
 
       if (success && mounted) {
-        // Show success message first
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recording saved successfully')),
+          const SnackBar(content: Text('Recording updated successfully')),
         );
 
-        // Small delay to ensure the recording is saved
         await Future.delayed(const Duration(milliseconds: 100));
 
-        // Navigate back to home screen and trigger refresh
         if (mounted) {
-          if (!mounted) return;
-          final navigator = Navigator.of(context);
-          navigator.popUntil((route) => route.isFirst);
+          Navigator.of(context).pop(updatedRecording);
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save recording')),
+          const SnackBar(content: Text('Failed to update recording')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Error saving recording')));
+        ).showSnackBar(SnackBar(content: Text('Error updating recording: $e')));
       }
     } finally {
       if (mounted) {
@@ -473,7 +326,7 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Context'),
+        title: const Text('Edit Recording'),
         centerTitle: true,
         elevation: 0,
       ),
@@ -484,6 +337,11 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
           children: [
             // Playback controls
             _buildPlaybackSection(),
+
+            const SizedBox(height: 16),
+
+            // Processing status
+            ProcessingStatusBar(recording: _recording),
 
             const SizedBox(height: 24),
 
@@ -526,7 +384,7 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w500),
                   ),
                   Text(
-                    '${widget.duration.inMinutes}:${(widget.duration.inSeconds % 60).toString().padLeft(2, '0')}',
+                    _recording.durationString,
                     style: TextStyle(color: Colors.grey.withValues(alpha: 0.7)),
                   ),
                 ],
@@ -618,7 +476,7 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
         ),
         const SizedBox(height: 8),
 
-        // Progress indicator (only show when transcribing)
+        // Progress indicator
         if (_isTranscribing) ...[
           LinearProgressIndicator(value: _transcriptionProgress),
           const SizedBox(height: 4),
@@ -675,12 +533,5 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
         ),
       ],
     );
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _transcriptController.dispose();
-    super.dispose();
   }
 }

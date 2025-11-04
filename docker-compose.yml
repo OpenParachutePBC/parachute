@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  parachute-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: parachute-backend
+    ports:
+      - "8080:8080"
+    environment:
+      # Optional: Anthropic API key (can also use OAuth from mounted credentials)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+
+      # Vault location inside container
+      - PARACHUTE_VAULT_PATH=/vault
+
+      # Server configuration
+      - SERVER_PORT=8080
+      - SERVER_HOST=0.0.0.0
+
+      # Database path (persisted in volume)
+      - DB_PATH=/app/data/parachute.db
+
+    volumes:
+      # Mount your Obsidian vault or Parachute folder
+      # Change the left path to your actual vault location
+      - ${VAULT_PATH:-~/Parachute}:/vault
+
+      # Persist database
+      - parachute-data:/app/data
+
+      # Optional: Mount Claude credentials for OAuth
+      # - ~/.claude:/root/.claude:ro
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+volumes:
+  parachute-data:
+    driver: local
+
+# Example usage:
+# 1. Set your vault path:
+#    export VAULT_PATH=~/Obsidian/Parachute
+#
+# 2. Optionally set Anthropic API key:
+#    export ANTHROPIC_API_KEY=your-key-here
+#
+# 3. Start the service:
+#    docker-compose up -d
+#
+# 4. Check logs:
+#    docker-compose logs -f
+#
+# 5. Stop the service:
+#    docker-compose down

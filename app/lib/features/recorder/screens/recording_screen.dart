@@ -6,6 +6,11 @@ import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/screens/post_recording_screen.dart';
 import 'package:app/features/recorder/services/audio_service.dart';
 import 'package:app/features/recorder/widgets/recording_visualizer.dart';
+import 'package:app/features/recorder/models/recording.dart';
+import 'package:app/features/recorder/services/whisper_service.dart';
+import 'package:app/features/recorder/models/whisper_models.dart';
+import 'package:app/core/providers/title_generation_provider.dart';
+import 'package:app/features/recorder/screens/recording_detail_screen.dart';
 
 class RecordingScreen extends ConsumerStatefulWidget {
   const RecordingScreen({super.key});
@@ -58,8 +63,9 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content:
-                  Text('Failed to start recording. Please check permissions.'),
+              content: Text(
+                'Failed to start recording. Please check permissions.',
+              ),
               duration: Duration(seconds: 3),
             ),
           );
@@ -147,14 +153,12 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
 
   Future<void> _stopRecording() async {
     final audioService = ref.read(audioServiceProvider);
+    final storageService = ref.read(storageServiceProvider);
 
     _timer?.cancel();
     setState(() {
       _recordingState = RecordingState.stopped;
     });
-
-    // Transcription is currently disabled due to microphone conflicts
-    String transcription = '';
 
     final path = await audioService.stopRecording();
 
@@ -165,7 +169,9 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         final totalElapsed = DateTime.now().difference(_startTime!);
         _recordingDuration = totalElapsed - _pausedDuration;
       }
-      _navigateToPostRecording(transcription);
+
+      // Save immediately without waiting for transcription
+      await _saveRecordingImmediately(path, storageService);
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -176,6 +182,170 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         );
         Navigator.of(context).pop();
       }
+    }
+  }
+
+  Future<void> _saveRecordingImmediately(
+    String recordingPath,
+    dynamic storageService,
+  ) async {
+    try {
+      // Generate default title with timestamp
+      final now = DateTime.now();
+      final dateStr =
+          '${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      final title = 'Recording $dateStr';
+
+      final fileSizeKB = await ref
+          .read(audioServiceProvider)
+          .getFileSizeKB(recordingPath);
+      final fileName = recordingPath.split('/').last;
+      final recordingId = fileName.replaceAll('.m4a', '').split('-').last;
+
+      final recording = Recording(
+        id: recordingId,
+        title: title,
+        filePath: recordingPath,
+        timestamp: DateTime.now(),
+        duration: _recordingDuration,
+        tags: [],
+        transcript: '', // Will be processed in background
+        fileSizeKB: fileSizeKB,
+      );
+
+      await storageService.saveRecording(recording);
+
+      debugPrint(
+        '[RecordingScreen] ✅ Recording saved, starting background processing...',
+      );
+
+      // Start background processing (fire and forget)
+      _startBackgroundProcessing(recordingId, recordingPath).catchError((e) {
+        debugPrint('[RecordingScreen] ❌ Background processing failed: $e');
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recording saved! Processing in background...'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+
+        // Navigate to recording detail page
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => RecordingDetailScreen(recording: recording),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _startBackgroundProcessing(
+    String recordingId,
+    String recordingPath,
+  ) async {
+    debugPrint(
+      '[RecordingScreen] 🎬 Background processing started for: $recordingId',
+    );
+
+    final storageService = ref.read(storageServiceProvider);
+    final autoTranscribe = await storageService.getAutoTranscribe();
+
+    debugPrint('[RecordingScreen] Auto-transcribe enabled: $autoTranscribe');
+
+    if (!autoTranscribe) {
+      debugPrint(
+        '[RecordingScreen] ⏭️ Auto-transcribe disabled, skipping background processing',
+      );
+      return;
+    }
+
+    try {
+      debugPrint('[RecordingScreen] 🔄 Starting background transcription...');
+
+      // Mark as processing
+      var recording = await storageService.getRecording(recordingId);
+      if (recording != null) {
+        recording = recording.copyWith(
+          transcriptionStatus: ProcessingStatus.processing,
+        );
+        await storageService.updateRecording(recording);
+      }
+
+      // Get transcription mode
+      final modeString = await storageService.getTranscriptionMode();
+      final mode =
+          TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
+
+      String transcript;
+      if (mode == TranscriptionMode.local) {
+        final localService = ref.read(whisperLocalServiceProvider);
+        final isReady = await localService.isReady();
+        if (!isReady) {
+          debugPrint('[RecordingScreen] Whisper model not ready, skipping');
+          return;
+        }
+        transcript = await localService.transcribeAudio(recordingPath);
+      } else {
+        final whisperService = ref.read(whisperServiceProvider);
+        final isConfigured = await whisperService.isConfigured();
+        if (!isConfigured) {
+          debugPrint('[RecordingScreen] API key not configured, skipping');
+          return;
+        }
+        transcript = await whisperService.transcribeAudio(recordingPath);
+      }
+
+      debugPrint(
+        '[RecordingScreen] ✅ Transcription complete: ${transcript.length} chars',
+      );
+
+      // Update with transcript first
+      recording = recording?.copyWith(
+        transcript: transcript,
+        transcriptionStatus: ProcessingStatus.completed,
+        titleGenerationStatus: ProcessingStatus.processing,
+      );
+      if (recording != null) {
+        await storageService.updateRecording(recording);
+        debugPrint('[RecordingScreen] ✅ Transcript saved');
+      }
+
+      // Generate title from transcript
+      String? generatedTitle;
+      ProcessingStatus titleStatus = ProcessingStatus.completed;
+      try {
+        final titleService = ref.read(titleGenerationServiceProvider);
+        generatedTitle = await titleService.generateTitle(transcript);
+        debugPrint('[RecordingScreen] ✅ Title generated: "$generatedTitle"');
+      } catch (e) {
+        debugPrint('[RecordingScreen] ⚠️ Title generation failed: $e');
+        titleStatus = ProcessingStatus.failed;
+      }
+
+      // Update with final title
+      final updatedRecording = await storageService.getRecording(recordingId);
+      if (updatedRecording != null) {
+        final finalRecording = updatedRecording.copyWith(
+          title: generatedTitle ?? updatedRecording.title,
+          titleGenerationStatus: titleStatus,
+        );
+        await storageService.updateRecording(finalRecording);
+        debugPrint('[RecordingScreen] ✅ Recording fully updated');
+      }
+    } catch (e) {
+      debugPrint('[RecordingScreen] ❌ Background processing failed: $e');
     }
   }
 
@@ -219,15 +389,15 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
               _recordingState == RecordingState.recording
                   ? 'Recording...'
                   : _recordingState == RecordingState.paused
-                      ? 'Paused'
-                      : 'Initializing...',
+                  ? 'Paused'
+                  : 'Initializing...',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: _recordingState == RecordingState.recording
-                        ? Theme.of(context).colorScheme.primary
-                        : _recordingState == RecordingState.paused
-                            ? Colors.orange
-                            : Colors.grey,
-                  ),
+                color: _recordingState == RecordingState.recording
+                    ? Theme.of(context).colorScheme.primary
+                    : _recordingState == RecordingState.paused
+                    ? Colors.orange
+                    : Colors.grey,
+              ),
             ),
             const SizedBox(height: 20),
             // Recording visualizer
@@ -239,9 +409,9 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
             Text(
               _formattedDuration,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'monospace',
-                  ),
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+              ),
             ),
             const SizedBox(height: 20),
             // Recording indicator
@@ -294,10 +464,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                     backgroundColor: _recordingState != RecordingState.stopped
                         ? Colors.red
                         : Colors.grey,
-                    child: const Icon(
-                      Icons.stop,
-                      color: Colors.white,
-                    ),
+                    child: const Icon(Icons.stop, color: Colors.white),
                   ),
                 ],
               ),

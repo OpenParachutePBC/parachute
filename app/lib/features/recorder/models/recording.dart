@@ -24,6 +24,42 @@ enum RecordingSource {
   }
 }
 
+/// Processing status for background tasks
+enum ProcessingStatus {
+  pending, // Not started
+  processing, // In progress
+  completed, // Successfully completed
+  failed; // Failed with error
+
+  @override
+  String toString() {
+    switch (this) {
+      case ProcessingStatus.pending:
+        return 'pending';
+      case ProcessingStatus.processing:
+        return 'processing';
+      case ProcessingStatus.completed:
+        return 'completed';
+      case ProcessingStatus.failed:
+        return 'failed';
+    }
+  }
+
+  static ProcessingStatus fromString(String value) {
+    switch (value.toLowerCase()) {
+      case 'processing':
+        return ProcessingStatus.processing;
+      case 'completed':
+        return ProcessingStatus.completed;
+      case 'failed':
+        return ProcessingStatus.failed;
+      case 'pending':
+      default:
+        return ProcessingStatus.pending;
+    }
+  }
+}
+
 class Recording {
   final String id;
   final String title;
@@ -37,6 +73,11 @@ class Recording {
   final String? deviceId; // Omi device ID if from device
   final int? buttonTapCount; // 1, 2, or 3 for device button taps
 
+  // Processing status fields
+  final ProcessingStatus transcriptionStatus;
+  final ProcessingStatus titleGenerationStatus;
+  final ProcessingStatus summaryStatus;
+
   Recording({
     required this.id,
     required this.title,
@@ -49,50 +90,66 @@ class Recording {
     this.source = RecordingSource.phone,
     this.deviceId,
     this.buttonTapCount,
-  })  : assert(id.isNotEmpty, 'Recording ID cannot be empty'),
-        assert(title.isNotEmpty, 'Recording title cannot be empty'),
-        assert(filePath.isNotEmpty, 'Recording file path cannot be empty'),
-        assert(duration >= Duration.zero, 'Duration must be non-negative'),
-        assert(fileSizeKB >= 0, 'File size must be non-negative'),
-        assert(
-            source == RecordingSource.phone ||
-                (source == RecordingSource.omiDevice && deviceId != null),
-            'Device ID required for omiDevice source'),
-        assert(
-            buttonTapCount == null ||
-                (buttonTapCount >= 1 && buttonTapCount <= 3),
-            'Button tap count must be 1, 2, or 3 if provided');
+    this.transcriptionStatus = ProcessingStatus.pending,
+    this.titleGenerationStatus = ProcessingStatus.pending,
+    this.summaryStatus = ProcessingStatus.pending,
+  }) : assert(id.isNotEmpty, 'Recording ID cannot be empty'),
+       assert(title.isNotEmpty, 'Recording title cannot be empty'),
+       assert(filePath.isNotEmpty, 'Recording file path cannot be empty'),
+       assert(duration >= Duration.zero, 'Duration must be non-negative'),
+       assert(fileSizeKB >= 0, 'File size must be non-negative'),
+       assert(
+         source == RecordingSource.phone ||
+             (source == RecordingSource.omiDevice && deviceId != null),
+         'Device ID required for omiDevice source',
+       ),
+       assert(
+         buttonTapCount == null || (buttonTapCount >= 1 && buttonTapCount <= 3),
+         'Button tap count must be 1, 2, or 3 if provided',
+       );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'filePath': filePath,
-        'timestamp': timestamp.toIso8601String(),
-        'duration': duration.inMilliseconds,
-        'tags': tags,
-        'transcript': transcript,
-        'fileSizeKB': fileSizeKB,
-        'source': source.toString(),
-        'deviceId': deviceId,
-        'buttonTapCount': buttonTapCount,
-      };
+    'id': id,
+    'title': title,
+    'filePath': filePath,
+    'timestamp': timestamp.toIso8601String(),
+    'duration': duration.inMilliseconds,
+    'tags': tags,
+    'transcript': transcript,
+    'fileSizeKB': fileSizeKB,
+    'source': source.toString(),
+    'deviceId': deviceId,
+    'buttonTapCount': buttonTapCount,
+    'transcriptionStatus': transcriptionStatus.toString(),
+    'titleGenerationStatus': titleGenerationStatus.toString(),
+    'summaryStatus': summaryStatus.toString(),
+  };
 
   factory Recording.fromJson(Map<String, dynamic> json) => Recording(
-        id: json['id'] as String? ?? '',
-        title: json['title'] as String? ?? 'Untitled',
-        filePath: json['filePath'] as String? ?? '',
-        timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
-            DateTime.now(),
-        duration: Duration(milliseconds: json['duration'] as int? ?? 0),
-        tags: (json['tags'] as List<dynamic>?)?.cast<String>() ?? [],
-        transcript: json['transcript'] as String? ?? '',
-        fileSizeKB: (json['fileSizeKB'] as num?)?.toDouble() ?? 0.0,
-        source: json['source'] != null
-            ? RecordingSource.fromString(json['source'] as String)
-            : RecordingSource.phone,
-        deviceId: json['deviceId'] as String?,
-        buttonTapCount: json['buttonTapCount'] as int?,
-      );
+    id: json['id'] as String? ?? '',
+    title: json['title'] as String? ?? 'Untitled',
+    filePath: json['filePath'] as String? ?? '',
+    timestamp:
+        DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
+    duration: Duration(milliseconds: json['duration'] as int? ?? 0),
+    tags: (json['tags'] as List<dynamic>?)?.cast<String>() ?? [],
+    transcript: json['transcript'] as String? ?? '',
+    fileSizeKB: (json['fileSizeKB'] as num?)?.toDouble() ?? 0.0,
+    source: json['source'] != null
+        ? RecordingSource.fromString(json['source'] as String)
+        : RecordingSource.phone,
+    deviceId: json['deviceId'] as String?,
+    buttonTapCount: json['buttonTapCount'] as int?,
+    transcriptionStatus: json['transcriptionStatus'] != null
+        ? ProcessingStatus.fromString(json['transcriptionStatus'] as String)
+        : ProcessingStatus.pending,
+    titleGenerationStatus: json['titleGenerationStatus'] != null
+        ? ProcessingStatus.fromString(json['titleGenerationStatus'] as String)
+        : ProcessingStatus.pending,
+    summaryStatus: json['summaryStatus'] != null
+        ? ProcessingStatus.fromString(json['summaryStatus'] as String)
+        : ProcessingStatus.pending,
+  );
 
   String get durationString {
     final minutes = duration.inMinutes;
@@ -120,5 +177,41 @@ class Recording {
     } else {
       return 'Just now';
     }
+  }
+
+  /// Create a copy with updated fields
+  Recording copyWith({
+    String? id,
+    String? title,
+    String? filePath,
+    DateTime? timestamp,
+    Duration? duration,
+    List<String>? tags,
+    String? transcript,
+    double? fileSizeKB,
+    RecordingSource? source,
+    String? deviceId,
+    int? buttonTapCount,
+    ProcessingStatus? transcriptionStatus,
+    ProcessingStatus? titleGenerationStatus,
+    ProcessingStatus? summaryStatus,
+  }) {
+    return Recording(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      filePath: filePath ?? this.filePath,
+      timestamp: timestamp ?? this.timestamp,
+      duration: duration ?? this.duration,
+      tags: tags ?? this.tags,
+      transcript: transcript ?? this.transcript,
+      fileSizeKB: fileSizeKB ?? this.fileSizeKB,
+      source: source ?? this.source,
+      deviceId: deviceId ?? this.deviceId,
+      buttonTapCount: buttonTapCount ?? this.buttonTapCount,
+      transcriptionStatus: transcriptionStatus ?? this.transcriptionStatus,
+      titleGenerationStatus:
+          titleGenerationStatus ?? this.titleGenerationStatus,
+      summaryStatus: summaryStatus ?? this.summaryStatus,
+    );
   }
 }

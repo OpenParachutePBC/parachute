@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
@@ -5,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/widgets/playback_controls.dart';
 import 'package:app/features/space_notes/screens/link_capture_to_space_screen.dart';
+import 'package:app/features/recorder/widgets/processing_status_indicator.dart';
+import 'package:app/features/recorder/screens/recording_edit_screen.dart';
 
 class RecordingDetailScreen extends ConsumerStatefulWidget {
   final Recording recording;
@@ -18,11 +22,48 @@ class RecordingDetailScreen extends ConsumerStatefulWidget {
 
 class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   late Recording _recording;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _recording = widget.recording;
+    _startPeriodicRefresh();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startPeriodicRefresh() {
+    // Refresh every 2 seconds to update processing status
+    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      final updated = await ref
+          .read(storageServiceProvider)
+          .getRecording(_recording.id);
+      if (updated != null && mounted) {
+        setState(() {
+          _recording = updated;
+        });
+      }
+    });
+  }
+
+  void _editRecording() async {
+    final result = await Navigator.push<Recording>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RecordingEditScreen(recording: _recording),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _recording = result;
+      });
+    }
   }
 
   void _copyToClipboard() {
@@ -145,14 +186,26 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
 
   void _linkToSpaces() async {
     // Navigate to link screen
+    // Clean up the note path - remove /api/ prefix if present
+    String cleanNotePath = _recording.filePath;
+    if (cleanNotePath.startsWith('/api/')) {
+      cleanNotePath = cleanNotePath.substring(5); // Remove '/api/' prefix
+    }
+    // Ensure it's the .md file, not .wav
+    if (cleanNotePath.endsWith('.wav')) {
+      cleanNotePath = cleanNotePath.replaceAll('.wav', '.md');
+    }
+    // Ensure it starts with captures/
+    if (!cleanNotePath.startsWith('captures/')) {
+      cleanNotePath = 'captures/$cleanNotePath';
+    }
+
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => LinkCaptureToSpaceScreen(
           captureId: _recording.id,
           filename: _recording.title,
-          notePath: _recording.filePath.contains('captures/')
-              ? _recording.filePath.split('Parachute/').last
-              : 'captures/${_recording.filePath.split('/').last.replaceAll('.wav', '.md')}',
+          notePath: cleanNotePath,
         ),
       ),
     );
@@ -252,6 +305,11 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         elevation: 0,
         actions: [
           IconButton(
+            onPressed: _editRecording,
+            icon: const Icon(Icons.edit),
+            tooltip: 'Edit',
+          ),
+          IconButton(
             onPressed: () => _linkToSpaces(),
             icon: const Icon(Icons.link),
             tooltip: 'Link to Spaces',
@@ -280,6 +338,11 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                 }
               },
             ),
+
+            const SizedBox(height: 16),
+
+            // Processing status
+            ProcessingStatusBar(recording: _recording),
 
             const SizedBox(height: 24),
 
