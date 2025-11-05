@@ -1,8 +1,8 @@
 # Parachute - System Architecture
 
-**Version:** 2.0
-**Date:** October 27, 2025
-**Status:** Active Development - Space SQLite Knowledge System
+**Version:** 2.1
+**Date:** November 5, 2025
+**Status:** Active Development - Git-Based Sync Foundation
 
 ---
 
@@ -541,6 +541,91 @@ CREATE INDEX idx_relevant_notes_linked_at ON relevant_notes(linked_at DESC);
 
 ---
 
+## Git-Based Synchronization (Nov 2025 - Strategic Pivot)
+
+### Architecture Overview
+
+**Strategic Decision**: Use Git for multi-device sync instead of custom backend infrastructure.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Git Repository                           │
+│                  (GitHub/GitLab/Self-hosted)                │
+│                                                              │
+│  ~/Parachute/                                               │
+│  ├── captures/                                              │
+│  │   ├── 2025-11-05_10-30-00.md (transcript)              │
+│  │   ├── 2025-11-05_10-30-00.wav (audio)                  │
+│  │   └── 2025-11-05_10-30-00.json (metadata)              │
+│  └── spaces/                                                │
+│      └── my-space/                                          │
+│          ├── CLAUDE.md (system prompt)                     │
+│          ├── space.sqlite (knowledge graph)                │
+│          └── files/                                         │
+└─────────────────────────────────────────────────────────────┘
+         ▲                                    ▲
+         │ git push                           │ git pull
+         │                                    │
+    ┌────┴─────┐                         ┌───┴──────┐
+    │ Frontend │                         │ Backend  │
+    │ (Mobile) │                         │ (Laptop) │
+    │          │                         │          │
+    │ • git2dart                        │ • go-git  │
+    │ • Auto-commit                     │ • Pre-pull│
+    │ • GitHub PAT                      │ • Post-push│
+    └──────────┘                         └──────────┘
+```
+
+### Key Principles
+
+1. **Git Replaces Custom Sync** - Standard Git operations instead of custom API
+2. **Backend Optional** - Frontend works standalone, backend only for agentic AI
+3. **Shared Repository** - Both frontend and backend sync to same repo
+4. **Local-First** - Works offline, syncs when available
+5. **Standard Tools** - Any Git hosting (GitHub, GitLab, self-hosted)
+
+### Implementation Details
+
+**Frontend (Flutter)**
+
+- Library: `git2dart` (libgit2 bindings via FFI)
+- Auth: GitHub Personal Access Tokens (SSH keys future)
+- Operations: clone, pull, commit, push
+- Trigger: Auto-commit after each recording save
+- Status: Sync indicator in UI
+
+**Backend (Go)**
+
+- Library: `go-git` (pure Go implementation)
+- Workflow: Pull → AI task → Commit → Push
+- Verification: Check frontend/backend on compatible commits
+- Role: Only for long-running agentic AI tasks
+
+**Conflict Resolution**
+
+- Strategy: Optimistic (most captures are new files)
+- Detection: Check for merge conflicts
+- Resolution: "Last write wins" for different files (MVP)
+- Future: UI for manual resolution, LLM-assisted merging
+
+### Benefits
+
+- **Standard workflows** - Familiar to developers
+- **No custom infrastructure** - Use existing Git hosting
+- **E2E encryption** - Git repos can be encrypted
+- **Version history** - Built-in with Git
+- **Flexibility** - Works with any Git provider
+
+### Trade-offs
+
+- **Binary files** - Audio files may need Git LFS eventually
+- **Learning curve** - Users need basic Git understanding
+- **Conflict complexity** - Manual resolution needed for complex cases
+
+**See**: [docs/architecture/git-sync-strategy.md](../architecture/git-sync-strategy.md) for detailed implementation plan
+
+---
+
 ## Security Considerations
 
 ### MVP (Local-only)
@@ -550,12 +635,19 @@ CREATE INDEX idx_relevant_notes_linked_at ON relevant_notes(linked_at DESC);
 - Never transmitted to our servers (we don't have servers yet)
 - All data local
 
-### Future (Cloud sync)
+### Git Sync (Current Focus)
 
-- End-to-end encryption for synced data
-- API keys never leave device
-- Backend uses user's key from secure storage
-- Zero-knowledge architecture where possible
+- GitHub Personal Access Tokens stored in flutter_secure_storage
+- Private repositories only
+- User controls Git provider (can self-host)
+- E2E encrypted repos possible (future)
+
+### Future Enhancements
+
+- SSH key support for Git authentication
+- GPG signing for commits
+- Git-crypt for encrypted repos
+- Federated sync options
 
 ---
 

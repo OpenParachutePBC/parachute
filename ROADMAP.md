@@ -1,26 +1,38 @@
 # Parachute Development Roadmap
 
-**Last Updated**: November 1, 2025
+**Last Updated**: November 5, 2025
 
 ---
 
-## Current Focus: Space SQLite Knowledge System
+## Current Focus: Git-Based Sync Foundation
 
 **Status**: 🚧 In Active Development
 **Priority**: P0
-**Timeline**: Nov 2025
+**Timeline**: November 2025
 
-Enable spaces to have structured knowledge management with SQLite databases that link to canonical notes in `{vault}/{captures}/` while allowing cross-pollination between spaces.
+Enable multi-device synchronization using Git as the backend. All data in `~/Parachute/` syncs via GitHub/GitLab, eliminating the need for custom backend sync infrastructure.
 
-**See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
+**See**: [docs/architecture/git-sync-strategy.md](docs/architecture/git-sync-strategy.md)
+
+### Why This Pivot?
+
+The **strategic reorientation to local-first architecture** means:
+
+- Git handles sync (not custom backend)
+- Backend only for agentic AI tasks
+- Standard Git workflows (familiar to developers)
+- E2E encrypted repos for privacy
+- Works with any Git hosting (GitHub, GitLab, self-hosted)
+
+**Previous Focus** (Space SQLite) is **deferred** until Git sync is stable.
 
 ---
 
 ## Development Phases
 
-### ✅ Completed (Oct 2025)
+### ✅ Completed
 
-#### Foundation Phase
+#### Foundation Phase (Sep-Oct 2025)
 
 - [x] Backend architecture (Go + Fiber + SQLite)
 - [x] Frontend architecture (Flutter + Riverpod)
@@ -28,7 +40,7 @@ Enable spaces to have structured knowledge management with SQLite databases that
 - [x] WebSocket streaming for conversations
 - [x] Basic space and conversation management
 
-#### Recorder Integration
+#### Recorder Integration (Oct 2025)
 
 - [x] **Phase 1**: Basic merge of recorder into main app
 - [x] **Phase 2**: Visual unification
@@ -51,62 +63,105 @@ Enable spaces to have structured knowledge management with SQLite databases that
 - [x] Background downloads with progress persistence
 - [x] Storage calculation and display
 
+#### Local-First Recording (Nov 5, 2025)
+
+- [x] Live transcription UI with journal-style interface
+- [x] Manual pause-based chunking for intentional thought capture
+- [x] Instant screen navigation (non-blocking initialization)
+- [x] Complete final segment transcription before save
+- [x] Recordings load from local filesystem (no backend)
+- [x] Markdown + WAV files saved to `~/Parachute/captures/`
+- [x] Immediate discard without unnecessary processing
+- [x] Eliminated backend dependency for recording flow
+
 ---
 
 ## Active Development
 
-### 🚧 Space SQLite Knowledge System (Current Sprint)
+### 🚧 Git-Based Sync Foundation (Current Sprint)
 
-**Goal**: Link captures to spaces with space-specific context while keeping notes canonical.
+**Goal**: Enable multi-device synchronization using Git repositories
 
-#### Phase 1: Backend Foundation (In Progress)
+#### Phase 1: Library Selection & POC (In Progress)
 
-- [ ] Create `SpaceDatabaseService` in Go
-- [ ] API endpoints for note linking
-- [ ] Migration for existing spaces to add space.sqlite
-- [ ] Unit tests for database operations
+- [x] Research Flutter Git libraries
+- [x] Evaluate git2dart, dart_git, git CLI wrapper
+- [x] Document recommendation and trade-offs
+- [ ] Create proof-of-concept with git2dart
+- [ ] Test basic Git operations (init, commit, push/pull)
+- [ ] Validate with audio files (realistic scenario)
 
-#### Phase 2: Frontend - Note Linking UI
+**Target**: Week of Nov 5, 2025
 
-- [ ] `LinkCaptureToSpaceScreen` with multi-select
-- [ ] Enhance recording detail screen with link button
-- [ ] Models and API client integration
+#### Phase 2: GitHub Integration
 
-#### Phase 3: Frontend - Space Note Browser
+- [ ] Settings screen for GitHub Personal Access Token
+- [ ] Secure token storage via flutter_secure_storage
+- [ ] Test authentication against GitHub API
+- [ ] UI for repository selection/creation
+- [ ] Handle auth errors gracefully
 
-- [ ] "Linked Notes" section in space browser
-- [ ] Note cards with context/tags
-- [ ] Filter and sort capabilities
+**Target**: Week of Nov 11, 2025
 
-#### Phase 4: Chat Integration
+#### Phase 3: Core Sync Operations
 
-- [ ] "Reference Note" button in conversations
-- [ ] Backend includes relevant notes in ACP context
-- [ ] Track note usage (last_referenced)
+- [ ] Initialize Git repo in `~/Parachute/` if not exists
+- [ ] Auto-commit after saving recording
+- [ ] Pull on app startup
+- [ ] Push after commit (with retry logic)
+- [ ] Sync status indicator in UI
+- [ ] Offline queue for commits
 
-#### Phase 5: CLAUDE.md Integration
+**Target**: Week of Nov 18, 2025
 
-- [ ] System prompt template variables ({{note_count}}, etc.)
-- [ ] Dynamic context injection
-- [ ] Documentation for effective system prompts
+#### Phase 4: Conflict Handling & Polish
 
-**Target Completion**: Mid-November 2025
+- [ ] Detect merge conflicts
+- [ ] Basic "last write wins" strategy for different files
+- [ ] Alert user to conflicts
+- [ ] Manual conflict resolution UI (future)
+- [ ] Error handling for network issues
+- [ ] Sync history/log viewer
+
+**Target**: Week of Nov 25, 2025
+
+**Overall Target**: Git sync MVP by end of November 2025
 
 ---
 
-## Near-Term Roadmap (Q4 2025)
+## Near-Term Roadmap (Q4 2025 - Q1 2026)
 
-### 🔜 Multi-Device Sync
+### 🔜 Backend Git Integration
 
 **Priority**: P1
-**Status**: Planning
+**Status**: Deferred until frontend Git sync is stable
+**Timeline**: December 2025
 
-- Backend cloud service (optional, privacy-first)
-- E2E encryption for synced data
-- Conflict resolution for conversations and notes
-- Mobile app support (iOS/Android)
+- Backend uses `go-git` library for Go
+- Pull before running agentic AI tasks
+- Commit AI-generated content
+- Push results back to repo
+- Verify frontend/backend on compatible commits
 
-**Why**: Enable using Parachute across devices while maintaining privacy
+**Why**: Enable backend to work on same Git-synced data
+
+### 🔜 Space SQLite Knowledge System
+
+**Priority**: P1
+**Status**: Deferred until Git sync is complete
+**Timeline**: January 2026
+
+Link captures to spaces with space-specific context while keeping notes canonical.
+
+- Backend database service for note linking
+- Frontend UI for linking recordings to spaces
+- Space note browser
+- Chat integration (reference notes in conversations)
+- CLAUDE.md template variables
+
+**See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
+
+**Why**: Make recordings more useful by connecting them to AI conversation contexts
 
 ### 🔜 Smart Note Management
 
@@ -312,6 +367,25 @@ Things we've explicitly decided **not** to pursue:
 ## Decision Log
 
 ### November 2025
+
+**Strategic Pivot to Git-Based Sync (Nov 5)**
+
+- ✅ **Major architectural decision**: Use Git for multi-device sync instead of custom backend sync
+- ✅ Git replaces backend sync infrastructure (backend now only for agentic AI)
+- ✅ Chose `git2dart` over pure Dart implementation for performance
+- ✅ GitHub Personal Access Tokens for initial auth (SSH keys later)
+- ✅ Auto-commit strategy: one commit per recording
+- ✅ Frontend and backend sync to same Git repository
+
+**Local-First Recording (Nov 5)**
+
+- ✅ Live transcription UI with manual pause-based chunking
+- ✅ Eliminated backend dependency for recording/storage
+- ✅ All recordings save to `~/Parachute/captures/` (markdown + audio)
+- ✅ Non-blocking UI initialization for instant screen navigation
+- ✅ Complete final segment transcription before save
+
+**Vault System (Nov 1)**
 
 - ✅ Vault-based architecture with configurable location (supports Obsidian/Logseq)
 - ✅ Configurable subfolder names for flexibility

@@ -6,13 +6,18 @@
 
 ## Current Development Focus
 
-**🚧 Active Feature**: Space SQLite Knowledge System
+**🚧 Active Feature**: Git-Based Sync Foundation
 
-- Enable spaces to link captures with space-specific context
-- Each space gets `space.sqlite` for structured metadata
-- Notes stay canonical in `~/Parachute/captures/`
-- Enable cross-pollination between spaces
+- **Strategic Pivot** (Nov 5, 2025): Use Git for multi-device sync instead of custom backend
+- Git replaces backend sync infrastructure (backend now only for agentic AI)
+- Library chosen: `git2dart` (libgit2 bindings for Flutter)
+- GitHub Personal Access Tokens for authentication
+- Auto-commit after each recording save
+- Frontend and backend sync to same Git repository
 
+**See**: [docs/architecture/git-sync-strategy.md](docs/architecture/git-sync-strategy.md)
+
+**Previous Focus** (Space SQLite Knowledge System) is **deferred** until Git sync is stable.
 **See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
 
 ---
@@ -255,36 +260,52 @@ This space tracks development discussions, architecture decisions, and feature p
 
 ## Project Status
 
-### ✅ Completed (Oct 2025)
+### ✅ Completed
+
+**Foundation (Sep-Oct 2025)**
 
 - Backend foundation (Go + Fiber + SQLite + ACP)
 - Frontend foundation (Flutter + Riverpod)
-- Recorder integration (Phases 1-3)
-- Vault-style folder system with configurable location
-- Configurable subfolder names (captures/, spaces/)
-- Obsidian/Logseq compatibility
-- 4-step onboarding flow with model downloads
-- HuggingFace token integration for Gemma models
-- Background download support with progress persistence
-- File browser with markdown preview
 - Conversation management and streaming
 - Omi device integration
 
+**Recorder Integration (Oct 2025)**
+
+- Vault-style folder system with configurable location
+- Configurable subfolder names (captures/, spaces/)
+- Obsidian/Logseq compatibility
+- Local Whisper transcription (on-device models)
+- Gemma 2B title generation with HuggingFace integration
+- 4-step onboarding flow with model downloads
+- Background download support with progress persistence
+- File browser with markdown preview
+
+**Local-First Recording (Nov 5, 2025)**
+
+- Live transcription UI with journal-style interface
+- Manual pause-based chunking for intentional thought capture
+- Instant screen navigation (non-blocking initialization)
+- Complete final segment transcription before save
+- Recordings load from local filesystem (no backend dependency)
+- Markdown + WAV files saved to `~/Parachute/captures/`
+- Immediate discard without unnecessary processing
+
 ### 🚧 In Progress (Nov 2025)
 
-- Space SQLite Knowledge System (Phase 1-5)
-  - Backend database service
-  - Note linking API
-  - Frontend linking UI
-  - Space note browser
-  - Chat integration
+**Git-Based Sync Foundation (Current)**
+
+- Library research and selection (✅ completed: chose git2dart)
+- Proof-of-concept with git2dart
+- GitHub PAT integration
+- Core sync operations (commit, push, pull)
+- Conflict handling basics
 
 ### 🔜 Next Up
 
-- Multi-device sync (optional, E2E encrypted)
+- Backend Git integration (go-git library)
+- Space SQLite Knowledge System (deferred until Git sync stable)
 - Smart note management (auto-suggest, tagging)
 - Knowledge graph visualization
-- Custom space templates
 
 **See [ROADMAP.md](ROADMAP.md) for full feature queue**
 
@@ -400,5 +421,5 @@ Read these files as needed for specific tasks. Context is your friend!
 
 ---
 
-**Last Updated**: November 1, 2025
-**Next Review**: After Space SQLite Phase 1 completion
+**Last Updated**: November 5, 2025
+**Next Review**: After Git Sync Phase 1 completion
