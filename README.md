@@ -4,6 +4,10 @@
 
 **Your open, interoperable second brain powered by Claude AI**
 
+[![Backend CI](https://github.com/ParachuteLabs/parachute/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/ParachuteLabs/parachute/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/ParachuteLabs/parachute/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/ParachuteLabs/parachute/actions/workflows/frontend-ci.yml)
+[![codecov](https://codecov.io/gh/ParachuteLabs/parachute/branch/main/graph/badge.svg)](https://codecov.io/gh/ParachuteLabs/parachute)
+
 ---
 
 ## What is Parachute?
