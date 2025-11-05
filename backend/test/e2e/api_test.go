@@ -73,9 +73,10 @@ func TestServerHealth(t *testing.T) {
 
 // TestCreateSpace tests creating a new space
 func TestCreateSpace(t *testing.T) {
+	// Use unique name to avoid conflicts from previous test runs
+	spaceName := fmt.Sprintf("E2E Test Space %d", time.Now().Unix())
 	resp, body, err := makeRequest("POST", "/api/spaces", map[string]interface{}{
-		"name":        "E2E Test Space",
-		"working_dir": "/tmp/e2e-test",
+		"name": spaceName,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create space: %v", err)
@@ -83,21 +84,18 @@ func TestCreateSpace(t *testing.T) {
 
 	if resp.StatusCode != http.StatusCreated {
 		t.Errorf("Expected status 201, got %d. Body: %s", resp.StatusCode, string(body))
+		return
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
+	var space map[string]interface{}
+	if err := json.Unmarshal(body, &space); err != nil {
 		t.Fatalf("Failed to parse response: %v", err)
-	}
-
-	space, ok := result["space"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("Expected space object in response")
 	}
 
 	spaceID, ok := space["id"].(string)
 	if !ok || spaceID == "" {
-		t.Errorf("Expected space ID in response")
+		t.Errorf("Expected space ID in response, got: %v", space)
+		return
 	}
 
 	log.Printf("✅ Created space: %s", spaceID)
@@ -107,18 +105,22 @@ func TestCreateSpace(t *testing.T) {
 func TestCreateConversationAndSendMessage(t *testing.T) {
 	// 1. Create a space
 	log.Printf("📦 Creating space...")
+	spaceName := fmt.Sprintf("E2E Message Test %d", time.Now().Unix())
 	resp, body, err := makeRequest("POST", "/api/spaces", map[string]interface{}{
-		"name":        "E2E Message Test",
-		"working_dir": "/tmp/e2e-msg-test",
+		"name": spaceName,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create space: %v", err)
 	}
 
-	var spaceResult map[string]interface{}
-	json.Unmarshal(body, &spaceResult)
-	space := spaceResult["space"].(map[string]interface{})
-	spaceID := space["id"].(string)
+	var space map[string]interface{}
+	if err := json.Unmarshal(body, &space); err != nil {
+		t.Fatalf("Failed to parse space response: %v", err)
+	}
+	spaceID, ok := space["id"].(string)
+	if !ok {
+		t.Fatalf("Expected space ID in response, got: %v", space)
+	}
 	log.Printf("✅ Created space: %s", spaceID)
 
 	// 2. Create a conversation
@@ -131,10 +133,14 @@ func TestCreateConversationAndSendMessage(t *testing.T) {
 		t.Fatalf("Failed to create conversation: %v", err)
 	}
 
-	var convResult map[string]interface{}
-	json.Unmarshal(body, &convResult)
-	conversation := convResult["conversation"].(map[string]interface{})
-	conversationID := conversation["id"].(string)
+	var conversation map[string]interface{}
+	if err := json.Unmarshal(body, &conversation); err != nil {
+		t.Fatalf("Failed to parse conversation response: %v", err)
+	}
+	conversationID, ok := conversation["id"].(string)
+	if !ok {
+		t.Fatalf("Expected conversation ID in response, got: %v", conversation)
+	}
 	log.Printf("✅ Created conversation: %s", conversationID)
 
 	// 3. Send a simple message (no tools)

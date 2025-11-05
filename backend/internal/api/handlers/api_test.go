@@ -110,7 +110,6 @@ func TestSpaceAPI(t *testing.T) {
 	t.Run("CreateSpace", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"name": "Test Space",
-			"path": "/tmp/test-space",
 		}
 		body, _ := json.Marshal(payload)
 
@@ -128,7 +127,8 @@ func TestSpaceAPI(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, "Test Space", result["name"])
-		assert.Equal(t, "/tmp/test-space", result["path"])
+		// Path is auto-generated as {parachuteRoot}/spaces/test-space
+		assert.Contains(t, result["path"], "/spaces/test-space")
 		assert.NotEmpty(t, result["id"])
 
 		createdSpaceID = result["id"].(string)

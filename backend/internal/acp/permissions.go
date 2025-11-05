@@ -8,8 +8,8 @@ import (
 
 // PermissionRequest represents a session/request_permission request
 type PermissionRequest struct {
-	SessionID string           `json:"sessionId"`
-	ToolCall  ToolCallInfo     `json:"toolCall"`
+	SessionID string             `json:"sessionId"`
+	ToolCall  ToolCallInfo       `json:"toolCall"`
 	Options   []PermissionOption `json:"options"`
 }
 
@@ -67,7 +67,7 @@ func ShouldAutoApprove(toolCall ToolCallInfo) bool {
 		return true
 	}
 
-	// Check for file read operations (has "file_path" field and no write/delete operation)
+	// Check for file read operations (has "file_path" or "path" field)
 	if _, hasFilePath := toolCall.RawInput["file_path"]; hasFilePath {
 		// Auto-approve if it's a read operation or no operation specified (read is default)
 		if operation, ok := toolCall.RawInput["operation"].(string); ok {
@@ -85,6 +85,12 @@ func ShouldAutoApprove(toolCall ToolCallInfo) bool {
 	// Check for other read-only file operations
 	if operation, ok := toolCall.RawInput["operation"].(string); ok {
 		switch operation {
+		case "read":
+			// Handle read operation with "path" field
+			if _, hasPath := toolCall.RawInput["path"]; hasPath {
+				log.Printf("🟢 Auto-approving file read operation")
+				return true
+			}
 		case "glob", "grep", "list":
 			log.Printf("🟢 Auto-approving read-only file operation: %s", operation)
 			return true
