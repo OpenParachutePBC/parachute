@@ -16,6 +16,8 @@ PODS:
   - flutter_secure_storage_macos (6.1.3):
     - FlutterMacOS
   - FlutterMacOS (1.0.0)
+  - git2dart_binaries (1.9.0):
+    - FlutterMacOS
   - iOSDFULibrary (4.15.3):
     - ZIPFoundation (= 0.9.19)
   - just_audio (0.0.1):
@@ -46,6 +48,7 @@ DEPENDENCIES:
   - flutter_local_notifications (from `Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos`)
   - flutter_secure_storage_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_macos/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
+  - git2dart_binaries (from `Flutter/ephemeral/.symlinks/plugins/git2dart_binaries/macos`)
   - just_audio (from `Flutter/ephemeral/.symlinks/plugins/just_audio/darwin`)
   - nordic_dfu (from `Flutter/ephemeral/.symlinks/plugins/nordic_dfu/macos`)
   - path_provider_foundation (from `Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin`)
@@ -74,6 +77,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_macos/macos
   FlutterMacOS:
     :path: Flutter/ephemeral
+  git2dart_binaries:
+    :path: Flutter/ephemeral/.symlinks/plugins/git2dart_binaries/macos
   just_audio:
     :path: Flutter/ephemeral/.symlinks/plugins/just_audio/darwin
   nordic_dfu:
@@ -97,6 +102,7 @@ SPEC CHECKSUMS:
   flutter_local_notifications: 7e5a17a1dbc00d83dc10d43c2c4c05f2ceed233c
   flutter_secure_storage_macos: 7f45e30f838cf2659862a4e4e3ee1c347c2b3b54
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  git2dart_binaries: 9cf70736ba4f6149d9cd0d3c9e2e5cf75ccacf58
   iOSDFULibrary: 198c36ebe5a31bf2ca04ee8fb40837176a423e85
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
   nordic_dfu: 668c41ac004163e2ce4c67200ae59ca224217a1b
@@ -107,6 +113,6 @@ SPEC CHECKSUMS:
   whisper_ggml: ecd12f8f61d882385061b161679f22e5518a1c60
   ZIPFoundation: b8c29ea7ae353b309bc810586181fd073cb3312c
 
-PODFILE CHECKSUM: 0888a7f23fca27e9447dfde7c0e42684e3a17fc0
+PODFILE CHECKSUM: e936b466c8e69189884dacc6bc70a0e50d8a3a9c
 
 COCOAPODS: 1.16.2

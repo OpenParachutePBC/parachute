@@ -35,6 +35,9 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.0.0
 
+  # Git Integration
+  git2dart: ^0.3.0
+
   # Utilities
   uuid: ^4.4.0
   collection: ^1.18.0

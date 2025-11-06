@@ -242,6 +242,7 @@
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				87A9EAC1C111E5A5C729BC2B /* [CP] Embed Pods Frameworks */,
 				0DF2215D4830B96566A3AE30 /* Copy Opus Library */,
+				B4F60545CF13C62BB2A66225 /* Copy Git Libraries */,
 			);
 			buildRules = (
 			);
@@ -418,6 +419,24 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
+		};
+		B4F60545CF13C62BB2A66225 /* Copy Git Libraries */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Git Libraries";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/bin/bash\n# Copy libssh2 library (missing from git2dart_binaries podspec)\nLIBSSH2_SOURCE=\"/Users/unforced/.pub-cache/hosted/pub.dev/git2dart_binaries-1.9.16/macos/libssh2.1.dylib\"\nLIBSSH2_DEST=\"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libssh2.1.dylib\"\n\nif [ -f \"$LIBSSH2_SOURCE\" ]; then\n    echo \"Copying libssh2 from: $LIBSSH2_SOURCE\"\n    echo \"Copying libssh2 to: $LIBSSH2_DEST\"\n    mkdir -p \"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\n    cp \"$LIBSSH2_SOURCE\" \"$LIBSSH2_DEST\"\n    echo \"✅ libssh2 copied successfully\"\nelse\n    echo \"⚠️  Warning: libssh2 not found at: $LIBSSH2_SOURCE\"\nfi\n";
 		};
 		CBBAF308141A2337CE8BB287 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
