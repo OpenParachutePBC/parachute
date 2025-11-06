@@ -6,38 +6,40 @@
 
 ## Current Development Focus
 
-**🎯 Dual Priority** (Week of Nov 6, 2025): Polish & Complete
+**🚧 Active Feature**: Local-First Recording with Git Sync (Nov 6, 2025)
 
-### Priority 1: Recording UI Polish
+**Status**: ✅ Git sync core complete, 🎯 UI polish next
 
-- Refine inline editing UX (title, transcript, context)
-- Improve error handling and loading states
-- Context field integration with space linking
-- Performance optimization for large recordings
+### Completed (Nov 6, 2025):
 
-### Priority 2: GitHub Sync Completion
+- ✅ Auto-sync after save/update/delete
+- ✅ Manual sync with UI indicator showing file counts
+- ✅ Periodic background sync (5 minutes)
+- ✅ Settings persistence across app restarts
+- ✅ Complete local-first architecture (removed all backend dependencies)
+- ✅ Git operations (commit, push, pull) working with GitHub PAT
 
-- **POC Complete** ✅ (Nov 5): Local Git operations working
-- **In Progress** 🚧: Remote operations (clone, push, pull)
-- Implement GitHub PAT authentication
-- Settings screen for Git configuration
-- Auto-commit after recording save
-- Sync status indicators in UI
+### Next Steps:
 
-**Strategic Context** (Nov 5, 2025):
+- 📝 Recording UI polish (inline editing refinement)
+- 🔍 Error handling improvements
+- ⚡ Performance optimization for large recordings
+- 🔗 Context field integration with space linking
 
-- **Local-first architecture** - Flutter is primary, backend is optional
-- Git replaces custom backend sync (backend now only for agentic AI)
-- Library chosen: `git2dart` (libgit2 bindings for Flutter)
-- All recordings work offline, sync is enhancement
+**Strategic Pivot** (Nov 5, 2025):
+
+- **Local-first architecture** - All data in `~/Parachute/`, no backend required
+- **Git-based sync** - Multi-device sync via GitHub (replaces custom backend)
+- **Library**: `git2dart` (libgit2 bindings for Flutter)
+- **Backend role**: Optional, for agentic AI tasks only (future)
 
 **See**:
 
-- [docs/polish-tasks.md](docs/polish-tasks.md) - Detailed task breakdown
+- [docs/implementation/github-sync-implementation.md](docs/implementation/github-sync-implementation.md) - Full implementation details
+- [docs/polish-tasks.md](docs/polish-tasks.md) - UI polish task breakdown
 - [docs/architecture/git-sync-strategy.md](docs/architecture/git-sync-strategy.md) - Sync architecture
-- [docs/research/git-poc-results.md](docs/research/git-poc-results.md) - POC results
 
-**Deferred** (Space SQLite Knowledge System) - Resume after Git sync is stable
+**Deferred** (Space SQLite Knowledge System) - Resume after UI polish complete
 **See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
 
 ---
@@ -449,11 +451,71 @@ Parachute includes a 4-step onboarding flow that runs on first launch:
 
 ---
 
+## Documentation Structure & Guidelines
+
+### Root Directory (Keep Minimal!)
+
+Only these four essential files should live in the root:
+
+- **README.md** - Project overview and quick start
+- **CLAUDE.md** - This file - developer guidance for Claude Code
+- **ARCHITECTURE.md** - System design and technical decisions
+- **ROADMAP.md** - Current focus and future feature queue
+
+### Documentation Organization (`docs/`)
+
+All other documentation lives in `docs/` with clear categorization:
+
+**Active Development:**
+
+- `docs/features/` - Feature specifications and implementation plans
+- `docs/implementation/` - Current implementation details and guides
+- `docs/architecture/` - Detailed architecture documents (ACP, database, etc.)
+- `docs/development/` - Development workflow, testing guides
+
+**Reference & History:**
+
+- `docs/completed/` - Historical milestones and session summaries
+- `docs/research/` - Research notes, feasibility studies, explorations
+- `docs/archive/YYYY-MM/` - Outdated docs (keep for reference)
+
+**Component-Specific:**
+
+- `backend/CLAUDE.md` - Backend-specific context
+- `app/CLAUDE.md` - Frontend-specific context
+- `app/lib/features/*/CLAUDE.md` - Feature-specific context
+
+### Documentation Best Practices
+
+**Creating New Documentation:**
+
+1. **Default location**: `docs/` subdirectory, not root
+2. **Choose the right category**: features, implementation, research, etc.
+3. **Link from CLAUDE.md**: If it's important, reference it here
+4. **Use descriptive names**: `git-sync-implementation.md` not `sync-stuff.md`
+5. **Date when relevant**: `YYYY-MM-DD` prefix for time-sensitive docs
+
+**Maintaining Documentation:**
+
+1. **Archive, don't delete**: Move outdated docs to `docs/archive/YYYY-MM/`
+2. **Update references**: Check CLAUDE.md and other docs for broken links
+3. **Consolidate duplicates**: Merge similar docs rather than creating new ones
+4. **Keep root clean**: Only essential files; everything else moves to `docs/`
+
+**Session Summaries & Milestones:**
+
+- Go to `docs/completed/` with descriptive names
+- Reference major ones from ROADMAP.md's completed section
+- Don't clutter root with progress tracking
+
+---
+
 ## Need Help?
 
 - **Architecture questions?** → [ARCHITECTURE.md](ARCHITECTURE.md)
 - **What's next?** → [ROADMAP.md](ROADMAP.md)
 - **Current feature details?** → [docs/features/](docs/features/)
+- **Implementation guides?** → [docs/implementation/](docs/implementation/)
 - **Backend specifics?** → [backend/CLAUDE.md](backend/CLAUDE.md)
 - **Frontend specifics?** → [app/CLAUDE.md](app/CLAUDE.md)
 
@@ -461,5 +523,5 @@ Read these files as needed for specific tasks. Context is your friend!
 
 ---
 
-**Last Updated**: November 5, 2025
-**Next Review**: After Git Sync Phase 1 completion
+**Last Updated**: November 6, 2025
+**Next Review**: After documentation cleanup and Git sync completion
