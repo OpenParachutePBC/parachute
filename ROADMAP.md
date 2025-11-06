@@ -74,32 +74,72 @@ The **strategic reorientation to local-first architecture** means:
 - [x] Immediate discard without unnecessary processing
 - [x] Eliminated backend dependency for recording flow
 
+#### Recording UI Enhancements (Nov 6, 2025)
+
+- [x] Added **context field** to recordings (space-specific interpretation)
+- [x] Inline editing for title, transcript, and context
+- [x] Unified RecordingDetailScreen with clean, focused design
+- [x] Periodic refresh for processing status updates
+- [x] Link captures to spaces UI integration
+
+---
+
 ---
 
 ## Active Development
+
+### 🎯 Current Priorities (Week of Nov 6, 2025)
+
+**Dual Focus**: Polish recording UI + Complete GitHub integration
+
+#### Priority 1: Recording UI Polish
+
+- [ ] Review and refine inline editing UX
+- [ ] Improve context field integration with spaces
+- [ ] Error handling for transcription failures
+- [ ] Loading states and progress indicators
+- [ ] Keyboard shortcuts for common actions
+
+#### Priority 2: GitHub Sync Completion
+
+- [ ] Implement clone, push, pull with PAT auth
+- [ ] Settings screen for GitHub configuration
+- [ ] Sync status indicators in UI
+- [ ] Error handling and retry logic
+- [ ] Auto-commit on recording save
+
+**See**: [docs/polish-tasks.md](docs/polish-tasks.md) for detailed checklist
+
+---
 
 ### 🚧 Git-Based Sync Foundation (Current Sprint)
 
 **Goal**: Enable multi-device synchronization using Git repositories
 
-#### Phase 1: Library Selection & POC (In Progress)
+#### Phase 1: Library Selection & POC ✅ (COMPLETED - Nov 5)
 
 - [x] Research Flutter Git libraries
 - [x] Evaluate git2dart, dart_git, git CLI wrapper
 - [x] Document recommendation and trade-offs
-- [ ] Create proof-of-concept with git2dart
-- [ ] Test basic Git operations (init, commit, push/pull)
-- [ ] Validate with audio files (realistic scenario)
+- [x] Create proof-of-concept with git2dart
+- [x] Test basic Git operations (init, commit, push/pull)
+- [x] Validate with audio files (realistic scenario)
+- [x] All POC tests passing
 
-**Target**: Week of Nov 5, 2025
+**See**: [docs/research/git-poc-results.md](docs/research/git-poc-results.md)
 
-#### Phase 2: GitHub Integration
+#### Phase 2: GitHub Integration 🚧 (IN PROGRESS - Needs Polish)
 
-- [ ] Settings screen for GitHub Personal Access Token
-- [ ] Secure token storage via flutter_secure_storage
-- [ ] Test authentication against GitHub API
-- [ ] UI for repository selection/creation
-- [ ] Handle auth errors gracefully
+- [x] GitService implementation with git2dart
+- [x] Basic init, add, commit, status operations
+- [ ] **Polish**: Clone operation from GitHub
+- [ ] **Polish**: Push operation with PAT authentication
+- [ ] **Polish**: Pull operation with conflict detection
+- [ ] **Polish**: Settings screen for GitHub PAT
+- [ ] **Polish**: Secure token storage via flutter_secure_storage
+- [ ] **Polish**: Error handling and user feedback
+
+**Status**: Core Git operations work locally. Need to complete remote (GitHub) integration.
 
 **Target**: Week of Nov 11, 2025
 

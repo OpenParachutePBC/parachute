@@ -9,6 +9,7 @@ import 'package:app/features/recorder/screens/live_recording_screen.dart';
 import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/recorder/widgets/recording_tile.dart';
+import 'package:app/core/widgets/git_sync_status_indicator.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -189,6 +190,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         title: const Text('Voice Recorder'),
         elevation: 0,
         actions: [
+          // Git sync status indicator
+          const GitSyncStatusIndicator(),
           // Omi device connection indicator (only if platform supports AND feature enabled)
           if (PlatformUtils.shouldShowOmiFeatures && omiEnabled) ...[
             _buildOmiConnectionIndicator(),

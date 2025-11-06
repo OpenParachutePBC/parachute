@@ -7,7 +7,6 @@ import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/whisper_model_manager.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
 import 'package:app/features/recorder/models/whisper_models.dart';
-import 'package:app/core/providers/file_sync_provider.dart';
 
 /// Provider for AudioService
 ///
@@ -29,12 +28,11 @@ final audioServiceProvider = Provider<AudioService>((ref) {
 
 /// Provider for StorageService
 ///
-/// This manages file-based storage for recordings and metadata.
-/// The service is initialized on first access and uses FileSyncService
-/// to communicate with the backend.
+/// Local-first storage service for recording management.
+/// All recordings are stored in ~/Parachute/captures/ as .wav, .md, and .json files.
+/// Git sync handles multi-device synchronization.
 final storageServiceProvider = Provider<StorageService>((ref) {
-  final fileSyncService = ref.watch(fileSyncServiceProvider);
-  final service = StorageService(fileSyncService);
+  final service = StorageService(ref);
   // Initialize the service when first accessed
   service.initialize();
 

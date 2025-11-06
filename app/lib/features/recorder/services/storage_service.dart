@@ -2,22 +2,22 @@ import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/core/services/file_system_service.dart';
-import 'package:app/core/services/file_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:app/core/providers/git_sync_provider.dart';
 
-/// File-based storage service for client-server sync architecture
+/// Local-first storage service for recording management
 ///
-/// Backend owns ~/Parachute/captures/ (source of truth)
-/// Flutter uses lightweight local cache for temp storage and playback
+/// All recordings are stored in ~/Parachute/captures/ as:
+/// - Audio file (.wav)
+/// - Markdown transcript file (.md)
+/// - JSON metadata file (.json)
 ///
-/// Each recording consists of:
-/// - An audio file (.wav or .m4a) on backend
-/// - A markdown transcript file (.md) on backend
-/// - Local cache for downloaded files
+/// Git sync handles multi-device synchronization
 class StorageService {
-  final FileSyncService _fileSyncService;
+  final Ref? _ref; // Optional ref for accessing providers (like Git sync)
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   static const String _hasInitializedKey = 'has_initialized';
@@ -35,7 +35,7 @@ class StorageService {
   bool _isInitialized = false;
   Future<void>? _initializationFuture;
 
-  StorageService(this._fileSyncService);
+  StorageService([this._ref]);
 
   /// Initialize the storage service and ensure sync folder is set up
   Future<void> initialize() async {
@@ -290,11 +290,11 @@ class StorageService {
     return '${firstLine.substring(0, 47)}...';
   }
 
-  /// Save a recording - LOCAL-FIRST, backend sync is optional
+  /// Save a recording - LOCAL-FIRST
   /// Returns the recording ID (timestamp-based for local files)
   ///
-  /// NOTE: Backend sync is being deprecated in favor of Git-based sync.
-  /// This method now primarily ensures the recording exists in local filesystem.
+  /// All recordings are saved to ~/Parachute/captures/ as .wav, .md, and .json files.
+  /// Git sync handles multi-device synchronization.
   Future<String?> saveRecording(Recording recording) async {
     if (!_isInitialized && _initializationFuture == null) {
       await initialize();
@@ -334,10 +334,11 @@ class StorageService {
         debugPrint('[StorageService] Copied audio to: $audioDestPath');
       }
 
-      // Backend sync is optional and will be handled by Git sync in the future
-      debugPrint(
-        '[StorageService] Recording saved locally (backend sync deprecated)',
-      );
+      debugPrint('[StorageService] ✅ Recording saved locally');
+
+      // Trigger Git sync if enabled (async, don't wait for it)
+      debugPrint('[StorageService] 🔄 Attempting to trigger auto-sync...');
+      _triggerAutoSync();
 
       return timestamp; // Return timestamp as ID for local-first architecture
     } catch (e) {
@@ -346,28 +347,63 @@ class StorageService {
     }
   }
 
-  /// Upload transcript for a recording
-  Future<bool> uploadTranscript({
-    required String filename,
-    required String transcript,
-    required String transcriptionMode,
-    String? title,
-    String? modelUsed,
-  }) async {
-    try {
-      await _fileSyncService.uploadTranscript(
-        filename: filename,
-        transcript: transcript,
-        transcriptionMode: transcriptionMode,
-        title: title,
-        modelUsed: modelUsed,
-      );
-      debugPrint('[StorageService] Transcript uploaded for $filename');
-      return true;
-    } catch (e) {
-      debugPrint('[StorageService] Error uploading transcript: $e');
-      return false;
+  /// Trigger Git sync in the background (don't block UI)
+  void _triggerAutoSync() {
+    debugPrint('[StorageService] 🔍 _triggerAutoSync called');
+
+    if (_ref == null) {
+      debugPrint('[StorageService] ❌ No ref available for auto-sync');
+      return;
     }
+
+    debugPrint('[StorageService] ✅ Ref is available, scheduling sync...');
+
+    // Use Future.delayed with zero duration instead of microtask
+    // This ensures state updates are properly propagated to listeners
+    Future.delayed(Duration.zero, () async {
+      try {
+        debugPrint(
+          '[StorageService] 📡 Inside Future.delayed, reading git sync state...',
+        );
+
+        final gitSync = _ref!.read(gitSyncProvider.notifier);
+        final gitSyncState = _ref!.read(gitSyncProvider);
+
+        debugPrint('[StorageService] Git sync state:');
+        debugPrint('  - isEnabled: ${gitSyncState.isEnabled}');
+        debugPrint('  - isSyncing: ${gitSyncState.isSyncing}');
+        debugPrint('  - hasRemote: ${gitSyncState.hasRemote}');
+        debugPrint('  - repositoryUrl: ${gitSyncState.repositoryUrl}');
+
+        if (!gitSyncState.isEnabled) {
+          debugPrint(
+            '[StorageService] ⚠️  Git sync is NOT enabled, skipping auto-sync',
+          );
+          return;
+        }
+
+        if (gitSyncState.isSyncing) {
+          debugPrint(
+            '[StorageService] ⚠️  Git sync already in progress, skipping',
+          );
+          return;
+        }
+
+        debugPrint(
+          '[StorageService] 🚀 Triggering auto-sync after recording save',
+        );
+        final success = await gitSync.sync();
+
+        if (success) {
+          debugPrint('[StorageService] ✅ Auto-sync completed successfully');
+        } else {
+          debugPrint('[StorageService] ❌ Auto-sync failed');
+        }
+      } catch (e, stackTrace) {
+        debugPrint('[StorageService] ❌ Auto-sync error: $e');
+        debugPrint('[StorageService] Stack trace: $stackTrace');
+      }
+    });
   }
 
   /// Generate markdown content from recording
@@ -405,6 +441,15 @@ class StorageService {
     buffer.writeln('# ${recording.title}');
     buffer.writeln();
 
+    // Context field (if provided)
+    if (recording.context.isNotEmpty) {
+      buffer.writeln('## Context');
+      buffer.writeln();
+      buffer.writeln(recording.context);
+      buffer.writeln();
+    }
+
+    // Transcription
     if (recording.transcript.isNotEmpty) {
       buffer.writeln('## Transcription');
       buffer.writeln();
@@ -414,84 +459,108 @@ class StorageService {
     return buffer.toString();
   }
 
-  /// Update an existing recording
+  /// Update an existing recording (LOCAL-FIRST)
+  /// Updates the markdown file with new title, transcript, and context
   Future<bool> updateRecording(Recording updatedRecording) async {
     try {
-      debugPrint('[StorageService] Updating recording: ${updatedRecording.id}');
-
-      // Extract filename from URL or path
-      final filename = p.basename(updatedRecording.filePath);
-
-      // If transcript exists, upload it
-      if (updatedRecording.transcript.isNotEmpty) {
-        debugPrint(
-          '[StorageService] Uploading transcript for $filename (${updatedRecording.transcript.length} chars)',
-        );
-
-        final transcriptionMode = await getTranscriptionMode();
-        final success = await uploadTranscript(
-          filename: filename,
-          transcript: updatedRecording.transcript,
-          transcriptionMode: transcriptionMode,
-          title: updatedRecording.title,
-        );
-
-        if (success) {
-          debugPrint('[StorageService] ✅ Transcript uploaded successfully');
-        } else {
-          debugPrint('[StorageService] ❌ Transcript upload failed');
-        }
-
-        return success;
-      }
-
-      debugPrint('[StorageService] No transcript to upload');
-      return true;
-    } catch (e) {
-      debugPrint('[StorageService] Error updating recording: $e');
-      return false;
-    }
-  }
-
-  /// Delete a recording from backend
-  Future<bool> deleteRecording(String recordingId) async {
-    try {
-      // First, get the recording to find its filename
-      final recordings = await getRecordings();
-      final recording = recordings.firstWhere(
-        (r) => r.id == recordingId,
-        orElse: () => throw Exception('Recording not found'),
+      debugPrint(
+        '[StorageService] 📝 Updating recording: ${updatedRecording.id}',
       );
 
-      // Extract filename from URL (e.g., "2025-10-25_14-30-22.wav")
-      final filename = p.basename(recording.filePath);
+      // Get the captures folder path
+      final capturesPath = await _fileSystem.getCapturesPath();
 
-      // Delete from backend
-      await _fileSyncService.deleteCapture(filename);
-      debugPrint('[StorageService] Deleted recording from backend: $filename');
+      // The recordingId is the timestamp (e.g., "2025-11-06_12-30-45")
+      final mdPath = p.join(capturesPath, '${updatedRecording.id}.md');
+      final mdFile = File(mdPath);
 
-      // Clean up local cache if exists
-      await _cleanupLocalCache(filename);
+      if (!await mdFile.exists()) {
+        debugPrint('[StorageService] ❌ Markdown file not found: $mdPath');
+        return false;
+      }
+
+      // Generate updated markdown content
+      final markdown = _generateMarkdown(updatedRecording);
+
+      // Write updated content to file
+      await mdFile.writeAsString(markdown);
+      debugPrint('[StorageService] ✅ Updated markdown file: $mdPath');
+
+      // Trigger Git sync to commit the update
+      debugPrint('[StorageService] 🔄 Triggering auto-sync after update...');
+      _triggerAutoSync();
 
       return true;
-    } catch (e) {
-      debugPrint('[StorageService] Error deleting recording: $e');
+    } catch (e, stackTrace) {
+      debugPrint('[StorageService] ❌ Error updating recording: $e');
+      debugPrint('[StorageService] Stack trace: $stackTrace');
       return false;
     }
   }
 
-  /// Clean up local cached files
-  Future<void> _cleanupLocalCache(String filename) async {
+  /// Delete a recording from local filesystem (LOCAL-FIRST)
+  Future<bool> deleteRecording(String recordingId) async {
     try {
-      final cacheDir = await _fileSyncService.getCacheDir();
-      final cachedFile = File(p.join(cacheDir, filename));
+      debugPrint('[StorageService] 🗑️  Deleting recording: $recordingId');
 
-      if (await cachedFile.exists()) {
-        await cachedFile.delete();
-        debugPrint('[StorageService] Deleted cached file: $filename');
+      // Get the captures folder path
+      final capturesPath = await _fileSystem.getCapturesPath();
+
+      // The recordingId is the timestamp (e.g., "2025-11-06_12-30-45")
+      // We need to delete both .wav and .md files
+      final basePath = p.join(capturesPath, recordingId);
+      final wavPath = '$basePath.wav';
+      final mdPath = '$basePath.md';
+      final jsonPath = '$basePath.json';
+
+      int deletedCount = 0;
+
+      // Delete .wav file if exists
+      final wavFile = File(wavPath);
+      if (await wavFile.exists()) {
+        await wavFile.delete();
+        debugPrint('[StorageService] ✅ Deleted audio file: $wavPath');
+        deletedCount++;
       }
-    } catch (e) {
-      debugPrint('[StorageService] Error cleaning cache: $e');
+
+      // Delete .md file if exists
+      final mdFile = File(mdPath);
+      if (await mdFile.exists()) {
+        await mdFile.delete();
+        debugPrint('[StorageService] ✅ Deleted markdown file: $mdPath');
+        deletedCount++;
+      }
+
+      // Delete .json file if exists
+      final jsonFile = File(jsonPath);
+      if (await jsonFile.exists()) {
+        await jsonFile.delete();
+        debugPrint('[StorageService] ✅ Deleted JSON file: $jsonPath');
+        deletedCount++;
+      }
+
+      if (deletedCount > 0) {
+        debugPrint(
+          '[StorageService] ✅ Deleted $deletedCount file(s) for recording: $recordingId',
+        );
+
+        // Trigger Git sync to commit the deletion
+        debugPrint(
+          '[StorageService] 🔄 Triggering auto-sync after deletion...',
+        );
+        _triggerAutoSync();
+
+        return true;
+      } else {
+        debugPrint(
+          '[StorageService] ⚠️  No files found to delete for: $recordingId',
+        );
+        return false;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[StorageService] ❌ Error deleting recording: $e');
+      debugPrint('[StorageService] Stack trace: $stackTrace');
+      return false;
     }
   }
 
@@ -510,29 +579,6 @@ class StorageService {
       debugPrint(
         '[StorageService] Available IDs: ${recordings.map((r) => r.id).take(5).join(", ")}...',
       );
-      return null;
-    }
-  }
-
-  /// Get local file path for playback (downloads if not cached)
-  Future<String?> getLocalFilePath(String recordingId) async {
-    try {
-      final recording = await getRecording(recordingId);
-      if (recording == null) {
-        debugPrint('[StorageService] Recording not found: $recordingId');
-        return null;
-      }
-
-      // Extract filename from URL
-      final filename = p.basename(recording.filePath);
-
-      // Download to cache (returns cached path if already exists)
-      final localPath = await _fileSyncService.downloadCapture(filename);
-      debugPrint('[StorageService] Local file path: $localPath');
-
-      return localPath;
-    } catch (e) {
-      debugPrint('[StorageService] Error getting local file path: $e');
       return null;
     }
   }

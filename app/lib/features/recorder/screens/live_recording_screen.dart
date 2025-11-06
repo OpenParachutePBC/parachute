@@ -6,6 +6,7 @@ import 'package:app/features/recorder/services/live_transcription_service_v2.dar
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
+import 'package:app/core/providers/git_sync_provider.dart';
 import 'package:path/path.dart' as path;
 
 /// Live journaling recording screen with manual pause-based transcription
@@ -265,6 +266,10 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         await File(audioPath).copy(audioDestPath);
       }
 
+      // Trigger Git sync if enabled (async, don't wait for it)
+      debugPrint('[LiveRecording] 🔄 Attempting to trigger auto-sync...');
+      _triggerAutoSync();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -288,6 +293,54 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         );
       }
     }
+  }
+
+  /// Trigger Git sync in the background (don't block UI)
+  void _triggerAutoSync() {
+    debugPrint('[LiveRecording] 🔍 _triggerAutoSync called');
+
+    Future.delayed(Duration.zero, () async {
+      try {
+        debugPrint('[LiveRecording] 📡 Reading git sync state...');
+
+        final gitSync = ref.read(gitSyncProvider.notifier);
+        final gitSyncState = ref.read(gitSyncProvider);
+
+        debugPrint('[LiveRecording] Git sync state:');
+        debugPrint('  - isEnabled: ${gitSyncState.isEnabled}');
+        debugPrint('  - isSyncing: ${gitSyncState.isSyncing}');
+        debugPrint('  - hasRemote: ${gitSyncState.hasRemote}');
+        debugPrint('  - repositoryUrl: ${gitSyncState.repositoryUrl}');
+
+        if (!gitSyncState.isEnabled) {
+          debugPrint(
+            '[LiveRecording] ⚠️  Git sync is NOT enabled, skipping auto-sync',
+          );
+          return;
+        }
+
+        if (gitSyncState.isSyncing) {
+          debugPrint(
+            '[LiveRecording] ⚠️  Git sync already in progress, skipping',
+          );
+          return;
+        }
+
+        debugPrint(
+          '[LiveRecording] 🚀 Triggering auto-sync after recording save',
+        );
+        final success = await gitSync.sync();
+
+        if (success) {
+          debugPrint('[LiveRecording] ✅ Auto-sync completed successfully');
+        } else {
+          debugPrint('[LiveRecording] ❌ Auto-sync failed');
+        }
+      } catch (e, stackTrace) {
+        debugPrint('[LiveRecording] ❌ Auto-sync error: $e');
+        debugPrint('[LiveRecording] Stack trace: $stackTrace');
+      }
+    });
   }
 
   void _startDurationTimer() {

@@ -1,8 +1,9 @@
 # Space SQLite Knowledge System
 
-**Status**: 🚧 In Development
-**Priority**: P0 - Current Focus
+**Status**: 📅 Planned - Deferred until Git Sync complete
+**Priority**: P1 - High Priority (Next after Git sync)
 **Started**: October 27, 2025
+**Updated**: November 6, 2025 - Reoriented for Flutter-first approach
 
 ---
 
@@ -11,13 +12,24 @@
 Enable spaces to have structured knowledge management while keeping notes canonical and cross-pollinating between contexts. Each space gets its own SQLite database to track relationships, context, and metadata without duplicating the source files.
 
 ### Core Principle
+
 **"One folder, one file system that organizes your data to enable it to be open and interoperable"**
+
+### Strategic Update (Nov 6, 2025)
+
+This feature is being **reoriented for Flutter-first architecture**:
+
+- **Primary implementation**: Flutter app with local SQLite (via `sqflite` package)
+- **Backend role**: Optional - for agentic AI features only (deferred)
+- **Git integration**: space.sqlite files sync via Git along with other vault data
+- **Local-first**: All space knowledge operations work offline
 
 ---
 
 ## Problem Statement
 
 Currently:
+
 - Recordings are saved to `~/Parachute/captures/` as canonical files
 - Spaces exist in `~/Parachute/spaces/` with their own directories
 - No structured way to link captures to spaces
@@ -25,6 +37,7 @@ Currently:
 - Notes can't effectively "cross-pollinate" between spaces
 
 **We need:**
+
 - Link notes to multiple spaces with different context per space
 - Query and filter notes within a space
 - Track relationships without duplicating files
@@ -35,6 +48,7 @@ Currently:
 ## Solution Architecture
 
 ### File Structure
+
 ```
 ~/Parachute/
 ├── captures/                           # SOURCE OF TRUTH
@@ -87,27 +101,6 @@ CREATE TABLE relevant_notes (
 CREATE INDEX idx_relevant_notes_tags ON relevant_notes(tags);
 CREATE INDEX idx_relevant_notes_last_ref ON relevant_notes(last_referenced);
 CREATE INDEX idx_relevant_notes_linked_at ON relevant_notes(linked_at DESC);
-
--- Optional: Custom tables for specific space types
--- These could be added via templates or dynamically
-
--- Example: Project-focused space
-CREATE TABLE IF NOT EXISTS projects (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    status TEXT CHECK(status IN ('active', 'paused', 'completed')),
-    related_notes TEXT,                       -- JSON array of capture_ids
-    created_at INTEGER NOT NULL
-);
-
--- Example: People-focused space
-CREATE TABLE IF NOT EXISTS people (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    role TEXT,
-    related_notes TEXT,                       -- JSON array of capture_ids
-    created_at INTEGER NOT NULL
-);
 ```
 
 ---
@@ -115,6 +108,7 @@ CREATE TABLE IF NOT EXISTS people (
 ## Data Flow
 
 ### 1. Recording a Voice Note
+
 ```
 User records → Saves to ~/Parachute/captures/
                 ├── .wav (audio)
@@ -123,104 +117,130 @@ User records → Saves to ~/Parachute/captures/
 ```
 
 ### 2. Linking Note to Space(s)
+
 ```
 User: "Link this capture to Regen Hub and Personal spaces"
 
-Frontend: Shows dialog
-  - Select spaces (multi-select)
-  - For each space:
-    ├── Add context (text)
-    └── Add tags (chips)
-
-Backend: For each selected space
-  1. Open ~/Parachute/spaces/<space-name>/space.sqlite
-  2. INSERT INTO relevant_notes (...)
-  3. Close database
+Flutter App:
+  1. Shows LinkCaptureToSpaceScreen
+  2. User selects spaces (multi-select)
+  3. For each space:
+     - Add context (text)
+     - Add tags (chips)
+  4. On save:
+     - Open ~/Parachute/spaces/<space-name>/space.sqlite
+     - INSERT INTO relevant_notes (...)
+     - Close database
+     - Commit to Git (if configured)
 ```
 
 ### 3. Browsing Space Notes
+
 ```
 User opens Regen Hub space
 
-Frontend:
-  ├── Shows space files (files/ directory)
-  └── Shows "Linked Notes" section
-
-API: GET /api/spaces/{id}/notes
-  1. Open space.sqlite
-  2. SELECT * FROM relevant_notes
-     ORDER BY linked_at DESC
+Flutter App:
+  1. Open ~/Parachute/spaces/regen-hub/space.sqlite
+  2. SELECT * FROM relevant_notes ORDER BY linked_at DESC
   3. For each row:
-     ├── Read note content from ~/Parachute/captures/
-     └── Combine with space-specific context
-  4. Return enriched notes
+     - Read note content from ~/Parachute/captures/
+     - Combine with space-specific context
+  4. Display in UI
 ```
 
-### 4. Conversation References Note
-```
-User in chat: "Tell me about that farming insight"
+### 4. Git Sync Integration
 
-Backend:
-  1. Load space.sqlite for current space
-  2. Query relevant_notes (possibly by tag or search)
-  3. Read note content from captures/
-  4. Include in Claude context with space-specific context
-  5. UPDATE relevant_notes
-     SET last_referenced = <now>
-     WHERE capture_id = '...'
+```
+After linking notes:
+  1. space.sqlite file is modified
+  2. GitService detects changes
+  3. Auto-commit: "Update space links"
+  4. Push to GitHub
+
+On other device:
+  1. Pull from GitHub
+  2. space.sqlite updated
+  3. UI reflects new links
 ```
 
 ---
 
-## Implementation Plan
+## Implementation Plan (Flutter-First)
 
-### Phase 1: Backend Foundation
-**Goal**: Space database initialization and basic CRUD
+### Phase 1: Flutter SQLite Foundation
 
-- [ ] Create `SpaceDatabaseService` in Go
-  - [ ] `InitializeSpaceDatabase(spacePath)` - Creates space.sqlite
-  - [ ] `LinkNote(spaceID, captureID, notePath, context, tags)` - Links capture
-  - [ ] `GetRelevantNotes(spaceID, filters)` - Queries linked notes
-  - [ ] `UpdateNoteContext(spaceID, captureID, newContext)` - Updates context
-  - [ ] `UnlinkNote(spaceID, captureID)` - Removes link
-  - [ ] `TrackNoteReference(spaceID, captureID)` - Updates last_referenced
+**Goal**: Local space database management in Flutter
 
-- [ ] Add migration for existing spaces
-  - [ ] Auto-create space.sqlite in each space directory
-  - [ ] Handle spaces created before this feature
+**Tasks**:
 
-- [ ] Add API endpoints
-  - [ ] `GET /api/spaces/:id/notes` - List linked notes with filters
-  - [ ] `POST /api/spaces/:id/notes` - Link capture to space
-  - [ ] `PUT /api/spaces/:id/notes/:capture_id` - Update context/tags
-  - [ ] `DELETE /api/spaces/:id/notes/:capture_id` - Unlink note
-  - [ ] `GET /api/spaces/:id/notes/:capture_id/content` - Get note with context
+- [ ] Add `sqflite` package to Flutter dependencies
+- [ ] Create `SpaceDatabaseService` (`lib/core/services/space_database_service.dart`)
+  - [ ] `initializeSpaceDatabase(spacePath)` - Creates space.sqlite in space folder
+  - [ ] `linkNote({spaceId, captureId, notePath, context, tags})` - Links capture
+  - [ ] `getRelevantNotes(spaceId, {filters})` - Queries linked notes
+  - [ ] `updateNoteContext(spaceId, captureId, newContext)` - Updates context
+  - [ ] `unlinkNote(spaceId, captureId)` - Removes link
+  - [ ] `trackNoteReference(spaceId, captureId)` - Updates last_referenced
 
-### Phase 2: Frontend - Note Linking UI
+- [ ] Space model updates
+  - [ ] Add `databasePath` getter to Space model
+  - [ ] Initialize space.sqlite when creating new space
+  - [ ] Auto-create space.sqlite for existing spaces (migration)
+
+- [ ] Riverpod providers
+  - [ ] `spaceDatabaseServiceProvider` - Service instance
+  - [ ] `relevantNotesProvider(spaceId)` - Fetch linked notes for a space
+  - [ ] `noteLinksProvider(captureId)` - Get all spaces a note is linked to
+
+**Code Locations**:
+
+- Service: `app/lib/core/services/space_database_service.dart`
+- Models: `app/lib/features/spaces/models/relevant_note.dart`
+- Providers: `app/lib/features/spaces/providers/space_database_providers.dart`
+
+---
+
+### Phase 2: Note Linking UI
+
 **Goal**: User can link recordings to spaces
 
+**Tasks**:
+
 - [ ] Create `LinkCaptureToSpaceScreen`
-  - [ ] Multi-select space picker
-  - [ ] For each space: context text field + tag chips
+  - [ ] Multi-select space picker (checkboxes)
+  - [ ] For each selected space:
+    - Context text field (multiline)
+    - Tag chips input (add/remove)
   - [ ] Visual indicator of already-linked spaces
-  - [ ] Save button → calls POST /api/spaces/:id/notes
+  - [ ] Save button → calls `SpaceDatabaseService.linkNote()`
 
 - [ ] Enhance `RecordingDetailScreen`
-  - [ ] Add "Link to Space" button
-  - [ ] Show which spaces note is linked to (badges/chips)
+  - [ ] Add "Link to Space" button in app bar
+  - [ ] Show which spaces note is linked to (badge chips)
   - [ ] Quick-link buttons for recent/favorite spaces
+  - [ ] Tap badge to edit context for that space
 
 - [ ] Create models
-  - [ ] `RelevantNote` model
-  - [ ] `NoteLinkRequest` model
-  - [ ] Update API client with new endpoints
+  - [ ] `RelevantNote` model (maps to relevant_notes table)
+  - [ ] `NoteLinkRequest` model (for linking flow)
 
-### Phase 3: Frontend - Space Note Browser
+**Code Locations**:
+
+- Screen: `app/lib/features/space_notes/screens/link_capture_to_space_screen.dart`
+- Models: `app/lib/features/space_notes/models/relevant_note.dart`
+- Enhanced: `app/lib/features/recorder/screens/recording_detail_screen.dart`
+
+---
+
+### Phase 3: Space Note Browser
+
 **Goal**: Browse and manage linked notes within a space
 
-- [ ] Enhance `SpaceFilesWidget`
-  - [ ] Add "Linked Notes" tab/section
-  - [ ] Query and display relevant_notes from API
+**Tasks**:
+
+- [ ] Create `SpaceNotesScreen` (or enhance existing SpaceFilesWidget)
+  - [ ] "Linked Notes" tab/section
+  - [ ] Query and display relevant_notes using provider
   - [ ] Show note cards with:
     - Title, preview
     - Space-specific context
@@ -230,212 +250,105 @@ Backend:
 
 - [ ] Create `NoteWithSpaceContextScreen`
   - [ ] Display markdown note content
-  - [ ] Overlay space context at top
+  - [ ] Overlay space context at top (card/banner)
   - [ ] Show tags for this space
-  - [ ] "Edit Context" button → UpdateNoteContext
-  - [ ] "Unlink from Space" button
+  - [ ] "Edit Context" button → inline editing
+  - [ ] "Unlink from Space" button → confirmation dialog
 
 - [ ] Add filtering/sorting
-  - [ ] Filter by tags
+  - [ ] Filter by tags (chip filter bar)
   - [ ] Sort by: linked date, last referenced, alphabetical
-  - [ ] Search within space notes
+  - [ ] Search within space notes (full-text search)
 
-### Phase 4: Chat Integration
-**Goal**: Reference notes in conversations intelligently
+**Code Locations**:
 
-- [ ] Add "Reference Note" button in chat
-  - [ ] Browse relevant_notes for current space
-  - [ ] Search/filter notes
-  - [ ] Select note → inserts into conversation
-
-- [ ] Backend: Include relevant notes in ACP context
-  - [ ] When building conversation context, query space.sqlite
-  - [ ] Include top N recently referenced notes
-  - [ ] Include notes matching conversation topic (future: semantic search)
-
-- [ ] Show linked notes sidebar during chat
-  - [ ] "Relevant to this space" section
-  - [ ] Smart suggestions based on conversation
-
-- [ ] Track note usage
-  - [ ] When Claude references a note, update last_referenced
-  - [ ] Analytics: most useful notes per space
-
-### Phase 5: CLAUDE.md Integration
-**Goal**: System prompts can reference space-specific knowledge
-
-- [ ] Update CLAUDE.md template documentation
-  - [ ] How to reference linked notes in system prompts
-  - [ ] Variables available (note count, recent notes, etc.)
-
-- [ ] Backend: Inject note metadata into CLAUDE.md context
-  - [ ] When loading space context, include note summary
-  - [ ] "This space has 23 linked notes about: farming, soil health, ..."
-
-- [ ] Dynamic context injection
-  - [ ] If CLAUDE.md mentions {{relevant_notes}}, replace with summary
-  - [ ] If mentions {{recent_notes}}, include last 5 referenced
+- Screen: `app/lib/features/space_notes/screens/space_notes_screen.dart`
+- Screen: `app/lib/features/space_notes/screens/note_with_context_screen.dart`
+- Widgets: `app/lib/features/space_notes/widgets/`
 
 ---
 
-## CLAUDE.md System Prompt Strategy
+### Phase 4: Git Sync Integration
 
-### Core Philosophy
-Each space's `CLAUDE.md` serves as a **persistent system prompt** that shapes Claude's behavior within that context. With the space.sqlite system, we enhance this with structured knowledge.
+**Goal**: space.sqlite files sync via Git
 
-### System Prompt Patterns
+**Tasks**:
 
-#### 1. Basic Space Context
-```markdown
-# Regen Hub Space
+- [ ] Hook into Git auto-commit flow
+  - [ ] After linking/unlinking notes, mark space.sqlite as modified
+  - [ ] Include in next Git commit
+  - [ ] Commit message: "Update space: <space-name> links"
 
-You are assisting with regenerative agriculture research and planning.
+- [ ] Pull handling
+  - [ ] After Git pull, invalidate `relevantNotesProvider` cache
+  - [ ] Reload space notes from updated space.sqlite
+  - [ ] Show notification if new links detected
 
-## Context
-This space tracks projects, insights, and research related to ecological restoration and sustainable farming.
+- [ ] Conflict handling
+  - [ ] Detect SQLite conflicts after Git merge
+  - [ ] Strategy: "Last write wins" for different notes (MVP)
+  - [ ] Alert user to manual resolution if same note changed
 
-## Available Knowledge
-- Linked Notes: {{note_count}} voice recordings and written notes
-- Recent Topics: {{recent_tags}}
-- Active Projects: {{active_projects}}
+**Note**: This phase depends on Git sync completion (Priority 2)
 
-## Guidelines
-- Reference linked notes when relevant to the conversation
-- Track new insights as potential notes to link
-- Connect ideas across different recordings
-```
+---
 
-#### 2. Project-Focused Space
-```markdown
-# Software Project: Parachute
+### Phase 5 (Future): Backend Integration
 
-## Project Structure
-{{project_structure}}
+**Goal**: Optional backend support for agentic AI
 
-## Linked Documentation
-- Architecture decisions: {{notes_tagged:architecture}}
-- Meeting notes: {{notes_tagged:meetings}}
-- Feature discussions: {{notes_tagged:features}}
+**Deferred until**:
 
-## When discussing features:
-1. Check if there are existing linked notes about the topic
-2. Reference previous decisions and context
-3. Suggest linking new insights to this space
-```
+- Flutter implementation complete
+- Git sync stable
+- Backend refocused on agentic AI tasks
 
-#### 3. Personal Journaling Space
-```markdown
-# Personal Journal
+**Potential Backend Features**:
 
-You are a thoughtful companion for reflection and personal growth.
-
-## Context
-This space contains personal voice notes, reflections, and thoughts.
-
-## Recent Themes
-{{recent_tags}}
-
-## Approach
-- Help identify patterns across recordings
-- Suggest connections between past and present reflections
-- Maintain continuity of thought over time
-- Respect privacy and personal nature of content
-```
-
-### Dynamic Variables
-
-Backend will support these template variables:
-
-- `{{note_count}}` - Number of linked notes
-- `{{recent_tags}}` - Top 5 most used tags (last 30 days)
-- `{{recent_notes}}` - Last 5 referenced notes (title + date)
-- `{{notes_tagged:X}}` - Count of notes with specific tag
-- `{{active_projects}}` - List of projects with status=active
-- `{{custom_query:SQL}}` - Advanced: Run custom SQLite query
-
-### Best Practices
-
-1. **Make Context Explicit** - Tell Claude what kind of space this is
-2. **Reference Available Knowledge** - Show what notes/data exist
-3. **Set Expectations** - Define how Claude should use linked notes
-4. **Enable Discovery** - Encourage Claude to suggest connections
-5. **Maintain Continuity** - Use last_referenced to maintain conversational memory
+- Claude references notes in conversations
+- Auto-suggest spaces when saving recordings
+- Semantic search across space notes
+- CLAUDE.md template variable expansion
 
 ---
 
 ## Benefits
 
 ### 1. Notes Stay Canonical
+
 - One `.md` file in `captures/`, never duplicated
 - Audio and metadata stay with note
 - Easy to backup, sync, version control
 
 ### 2. Polyvalent Context
+
 - Same note has different meanings in different spaces
 - `context` field allows space-specific interpretation
 - Tags can differ per space
 
 ### 3. Cross-Pollination
+
 - Notes aren't trapped in one space
 - Ideas flow between projects/contexts
 - Discover connections across domains
 
 ### 4. Structured Querying
+
 - SQL enables powerful filtering
 - "Show me farming notes from Q4 2025"
 - "Which notes are linked to both Regen Hub and Personal?"
 
 ### 5. Extensible
-- Spaces can add custom tables (projects, people, etc.)
+
+- Spaces can add custom tables (future)
 - Templates for common space types
 - Future: plugins/extensions per space
 
-### 6. Knowledge Graph Ready
-- Foundation for visualizing relationships
-- "What connects these two spaces?"
-- Timeline view of note evolution
+### 6. Local-First + Git Sync
 
-### 7. Local-First
-- Everything in `~/Parachute/`
-- Portable, private, user-controlled
-- No cloud lock-in
-
----
-
-## Future Enhancements
-
-### Smart Linking (Phase 6)
-- Auto-suggest spaces based on note content
-- ML-based tag suggestions
-- Automatic context generation using Claude
-- "Similar notes" recommendations
-
-### Knowledge Graph Visualization (Phase 7)
-- Visual map of notes and spaces
-- "Notes that connect these two spaces"
-- Timeline view of knowledge evolution
-- Cluster similar notes
-
-### Custom Space Templates (Phase 8)
-```bash
-~/Parachute/templates/
-├── project-space.sql       # Tables: projects, tasks, milestones
-├── research-space.sql      # Tables: papers, citations, hypotheses
-├── personal-space.sql      # Tables: habits, reflections, goals
-└── creative-space.sql      # Tables: ideas, drafts, inspirations
-```
-
-User selects template when creating space → backend applies schema
-
-### Advanced Querying (Phase 9)
-- Natural language queries: "Show me all farming notes from last month"
-- Semantic search using embeddings
-- Cross-space queries: "What's common between Regen Hub and Personal?"
-
-### Collaborative Spaces (Phase 10)
-- Share space with others
-- Permissions per space.sqlite
-- Sync notes while maintaining privacy
+- All operations work offline
+- Git syncs space.sqlite files automatically
+- No custom backend sync infrastructure needed
 
 ---
 
@@ -443,16 +356,39 @@ User selects template when creating space → backend applies schema
 
 ### For Existing Spaces
 
-1. **Auto-Initialize** - Backend migration creates `space.sqlite` in each space
+1. **Auto-Initialize** - Flutter creates `space.sqlite` when first accessed
 2. **No Breaking Changes** - Spaces work exactly as before
-3. **Opt-In Linking** - Notes don't auto-link, user chooses when to link
+3. **Opt-In Linking** - Notes don't auto-link, user chooses when
 4. **Incremental Adoption** - Link notes as you go, no need to backfill
 
 ### For New Spaces
 
 1. **Auto-Create** - `space.sqlite` created when space is created
-2. **Optional Template** - User can select space type/template
-3. **Guided Setup** - Wizard suggests initial structure
+2. **Optional Template** - User can select space type/template (future)
+3. **Guided Setup** - Wizard suggests initial structure (future)
+
+---
+
+## Testing Strategy
+
+### Unit Tests
+
+- [ ] `SpaceDatabaseService` methods
+- [ ] Schema creation and migration
+- [ ] CRUD operations for relevant_notes
+- [ ] Error handling (corrupt DB, disk full, etc.)
+
+### Integration Tests
+
+- [ ] End-to-end note linking flow
+- [ ] Space note browser with real data
+- [ ] Git sync with space.sqlite changes
+
+### Performance Tests
+
+- [ ] Query performance with 100+ notes per space
+- [ ] Multiple spaces with overlapping notes
+- [ ] Large space.sqlite files (10MB+)
 
 ---
 
@@ -461,79 +397,47 @@ User selects template when creating space → backend applies schema
 - [ ] Spaces can link to multiple captures
 - [ ] Same capture can exist in multiple spaces with different context
 - [ ] Users can browse space-specific notes easily
-- [ ] Conversations can reference linked notes
+- [ ] Git sync includes space.sqlite files
 - [ ] Note usage tracked (last_referenced)
-- [ ] System prompts can leverage space knowledge
 - [ ] No performance degradation with 100+ notes per space
-
----
-
-## Technical Considerations
-
-### Performance
-- SQLite is fast for local queries
-- Index on tags, last_referenced for common queries
-- Batch operations when linking multiple notes
-
-### Data Integrity
-- Foreign key to capture_id (but capture lives in file system)
-- Validation: ensure note_path exists before linking
-- Handle deleted captures gracefully
-
-### Backup & Sync
-- `space.sqlite` files are small, easy to backup
-- Could sync via Git, Dropbox, etc.
-- Future: Built-in sync service
-
-### Testing
-- Unit tests for SpaceDatabaseService
-- Integration tests for API endpoints
-- E2E tests for linking workflow
-- Test with many notes (performance)
+- [ ] Works completely offline
 
 ---
 
 ## Dependencies
 
-### Backend
-- `database/sql` (stdlib)
-- `modernc.org/sqlite` (already used)
-- No new dependencies needed
+### Flutter Packages
 
-### Frontend
-- No new dependencies (uses existing API client)
-- Consider adding search/filter UI library if needed
+- `sqflite` - Local SQLite database access
+- `path` - File path manipulation (already in use)
+- `flutter_riverpod` - State management (already in use)
 
----
+### No Backend Changes Required
 
-## Documentation Needed
-
-- [ ] User guide: How to link notes to spaces
-- [ ] CLAUDE.md guide: Writing effective system prompts
-- [ ] API documentation: Space notes endpoints
-- [ ] Developer guide: Working with space.sqlite
-- [ ] Migration guide: Upgrading existing installations
+This feature can be fully implemented in Flutter without backend changes. Backend integration is optional and deferred.
 
 ---
 
 ## Open Questions
 
-- [ ] Should we support note templates per space?
-- [ ] How to handle bulk linking (e.g., "link all farming notes to Regen Hub")?
-- [ ] Should spaces be able to "subscribe" to notes by tag?
-- [ ] What's the UX for discovering notes that should be linked?
+- [ ] Should spaces support custom table templates?
+- [ ] How to handle bulk linking operations?
+- [ ] Should spaces be able to auto-subscribe to notes by tag?
+- [ ] What's the discovery UX for notes that should be linked?
 - [ ] Should we support note hierarchies/collections within spaces?
+- [ ] How to handle space.sqlite merge conflicts in Git?
 
 ---
 
 ## Related Documents
 
-- [ARCHITECTURE.md](../ARCHITECTURE.md) - Overall system design
-- [ROADMAP.md](../ROADMAP.md) - Future features queue
-- [CLAUDE.md](../CLAUDE.md) - Developer guidance
+- [ARCHITECTURE.md](../../ARCHITECTURE.md) - Overall system design
+- [ROADMAP.md](../../ROADMAP.md) - Future features queue
+- [CLAUDE.md](../../CLAUDE.md) - Developer guidance
 - [docs/recorder/](../recorder/) - Voice recording implementation
+- [docs/architecture/git-sync-strategy.md](../architecture/git-sync-strategy.md) - Git sync architecture
 
 ---
 
-**Last Updated**: October 27, 2025
-**Next Review**: After Phase 1 completion
+**Last Updated**: November 6, 2025
+**Next Review**: After Git sync completion (target: mid-November 2025)

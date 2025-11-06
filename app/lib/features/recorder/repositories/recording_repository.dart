@@ -20,7 +20,7 @@ class RecordingRepository {
     return await _storageService.getRecording(id);
   }
 
-  /// Saves a new recording and returns the backend-assigned ID
+  /// Saves a new recording and returns the recording ID (timestamp)
   /// Returns null if save fails
   Future<String?> saveRecording(Recording recording) async {
     return await _storageService.saveRecording(recording);

@@ -6,18 +6,38 @@
 
 ## Current Development Focus
 
-**🚧 Active Feature**: Git-Based Sync Foundation
+**🎯 Dual Priority** (Week of Nov 6, 2025): Polish & Complete
 
-- **Strategic Pivot** (Nov 5, 2025): Use Git for multi-device sync instead of custom backend
-- Git replaces backend sync infrastructure (backend now only for agentic AI)
+### Priority 1: Recording UI Polish
+
+- Refine inline editing UX (title, transcript, context)
+- Improve error handling and loading states
+- Context field integration with space linking
+- Performance optimization for large recordings
+
+### Priority 2: GitHub Sync Completion
+
+- **POC Complete** ✅ (Nov 5): Local Git operations working
+- **In Progress** 🚧: Remote operations (clone, push, pull)
+- Implement GitHub PAT authentication
+- Settings screen for Git configuration
+- Auto-commit after recording save
+- Sync status indicators in UI
+
+**Strategic Context** (Nov 5, 2025):
+
+- **Local-first architecture** - Flutter is primary, backend is optional
+- Git replaces custom backend sync (backend now only for agentic AI)
 - Library chosen: `git2dart` (libgit2 bindings for Flutter)
-- GitHub Personal Access Tokens for authentication
-- Auto-commit after each recording save
-- Frontend and backend sync to same Git repository
+- All recordings work offline, sync is enhancement
 
-**See**: [docs/architecture/git-sync-strategy.md](docs/architecture/git-sync-strategy.md)
+**See**:
 
-**Previous Focus** (Space SQLite Knowledge System) is **deferred** until Git sync is stable.
+- [docs/polish-tasks.md](docs/polish-tasks.md) - Detailed task breakdown
+- [docs/architecture/git-sync-strategy.md](docs/architecture/git-sync-strategy.md) - Sync architecture
+- [docs/research/git-poc-results.md](docs/research/git-poc-results.md) - POC results
+
+**Deferred** (Space SQLite Knowledge System) - Resume after Git sync is stable
 **See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
 
 ---
@@ -264,9 +284,9 @@ This space tracks development discussions, architecture decisions, and feature p
 
 **Foundation (Sep-Oct 2025)**
 
-- Backend foundation (Go + Fiber + SQLite + ACP)
+- Backend foundation (Go + Fiber + SQLite + ACP) - _now optional_
 - Frontend foundation (Flutter + Riverpod)
-- Conversation management and streaming
+- Conversation management and streaming - _backend feature_
 - Omi device integration
 
 **Recorder Integration (Oct 2025)**
@@ -290,20 +310,40 @@ This space tracks development discussions, architecture decisions, and feature p
 - Markdown + WAV files saved to `~/Parachute/captures/`
 - Immediate discard without unnecessary processing
 
-### 🚧 In Progress (Nov 2025)
+**Recording UI Enhancements (Nov 6, 2025)**
 
-**Git-Based Sync Foundation (Current)**
+- Context field for space-specific interpretation
+- Inline editing for title, transcript, context
+- Unified RecordingDetailScreen
+- Link captures to spaces integration
 
-- Library research and selection (✅ completed: chose git2dart)
-- Proof-of-concept with git2dart
-- GitHub PAT integration
-- Core sync operations (commit, push, pull)
-- Conflict handling basics
+**Git Sync Foundation (Nov 5, 2025)**
+
+- Library research and selection (✅ git2dart chosen)
+- Proof-of-concept complete (✅ all tests passing)
+- Local Git operations (init, add, commit, status)
+
+### 🚧 In Progress (Week of Nov 6, 2025)
+
+**Priority 1: Recording UI Polish**
+
+- Refine inline editing UX
+- Error handling improvements
+- Performance optimization
+- Context field refinement
+
+**Priority 2: GitHub Sync Completion**
+
+- Remote Git operations (clone, push, pull)
+- GitHub PAT authentication
+- Settings screen for Git config
+- Auto-commit on recording save
+- Sync status indicators
 
 ### 🔜 Next Up
 
-- Backend Git integration (go-git library)
-- Space SQLite Knowledge System (deferred until Git sync stable)
+- Space SQLite Knowledge System (Flutter-first approach)
+- Backend Git integration (go-git library) - _for agentic AI only_
 - Smart note management (auto-suggest, tagging)
 - Knowledge graph visualization
 

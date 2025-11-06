@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:git2dart/git2dart.dart';
 
 import 'package:app/core/services/git/git_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
+import 'package:app/features/recorder/providers/service_providers.dart';
 
 /// Git sync state
 class GitSyncState {
@@ -14,6 +16,8 @@ class GitSyncState {
   final bool isSyncing;
   final String? lastError;
   final DateTime? lastSyncTime;
+  final int filesUploading; // Number of files being pushed
+  final int filesDownloading; // Number of files being pulled
 
   const GitSyncState({
     this.isEnabled = false,
@@ -23,6 +27,8 @@ class GitSyncState {
     this.isSyncing = false,
     this.lastError,
     this.lastSyncTime,
+    this.filesUploading = 0,
+    this.filesDownloading = 0,
   });
 
   GitSyncState copyWith({
@@ -33,6 +39,8 @@ class GitSyncState {
     bool? isSyncing,
     String? lastError,
     DateTime? lastSyncTime,
+    int? filesUploading,
+    int? filesDownloading,
   }) {
     return GitSyncState(
       isEnabled: isEnabled ?? this.isEnabled,
@@ -42,6 +50,8 @@ class GitSyncState {
       isSyncing: isSyncing ?? this.isSyncing,
       lastError: lastError,
       lastSyncTime: lastSyncTime ?? this.lastSyncTime,
+      filesUploading: filesUploading ?? this.filesUploading,
+      filesDownloading: filesDownloading ?? this.filesDownloading,
     );
   }
 }
@@ -53,8 +63,10 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
   final Ref _ref;
   final GitService _gitService = GitService.instance;
   Repository? _repository;
+  Timer? _periodicSyncTimer;
 
   /// Initialize Git sync by checking if vault is a Git repository
+  /// and restoring saved settings
   Future<void> initialize() async {
     final fileSystemService = _ref.read(fileSystemServiceProvider);
     final vaultPath = await fileSystemService.getRootPath();
@@ -64,7 +76,40 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       _repository = await _gitService.openRepository(vaultPath);
       if (_repository != null) {
         await _updateStatus();
+
+        // Try to restore Git sync settings from storage
+        await _restoreSettings();
       }
+    }
+  }
+
+  /// Restore Git sync settings from secure storage
+  Future<void> _restoreSettings() async {
+    try {
+      // Import StorageService to check saved settings
+      final storageService = _ref.read(storageServiceProvider);
+
+      final isEnabled = await storageService.isGitSyncEnabled();
+      final repoUrl = await storageService.getGitHubRepositoryUrl();
+      final token = await storageService.getGitHubToken();
+
+      if (isEnabled && repoUrl != null && token != null) {
+        debugPrint('[GitSync] Restoring Git sync settings from storage');
+
+        // Set the token
+        _gitService.setGitHubToken(token);
+
+        // Update state
+        await _updateStatus();
+        state = state.copyWith(isEnabled: true, repositoryUrl: repoUrl);
+
+        // Enable periodic sync
+        enablePeriodicSync();
+
+        debugPrint('[GitSync] ✅ Git sync restored and enabled');
+      }
+    } catch (e) {
+      debugPrint('[GitSync] Error restoring settings: $e');
     }
   }
 
@@ -188,6 +233,9 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
         lastSyncTime: DateTime.now(),
       );
 
+      // Enable periodic background sync (every 5 minutes)
+      enablePeriodicSync();
+
       return true;
     } catch (e) {
       state = state.copyWith(isSyncing: false, lastError: e.toString());
@@ -243,10 +291,17 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
 
   /// Sync (pull then push)
   Future<bool> sync() async {
-    if (_repository == null) return false;
+    debugPrint('[GitSync] 🔄 sync() called');
+
+    if (_repository == null) {
+      debugPrint('[GitSync] ❌ No repository available');
+      return false;
+    }
 
     try {
+      debugPrint('[GitSync] Setting isSyncing=true...');
       state = state.copyWith(isSyncing: true, lastError: null);
+      debugPrint('[GitSync] State updated: isSyncing=${state.isSyncing}');
 
       // Check if we have any commits locally
       final hasCommits = await _gitService.hasCommits(repo: _repository!);
@@ -271,6 +326,51 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
 
         if (commitSha != null) {
           debugPrint('[GitSync] ✅ Initial commit created: $commitSha');
+        }
+      } else {
+        // We have commits - check for new/modified files and commit them
+        final status = await _gitService.getStatus(_repository!);
+        final untrackedFiles = status['untracked'] as List;
+        final modifiedFiles = status['modified'] as List;
+        final deletedFiles = status['deleted'] as List;
+        final hasChanges =
+            untrackedFiles.isNotEmpty ||
+            modifiedFiles.isNotEmpty ||
+            deletedFiles.isNotEmpty;
+
+        if (hasChanges) {
+          final totalChanges =
+              untrackedFiles.length +
+              modifiedFiles.length +
+              deletedFiles.length;
+          debugPrint(
+            '[GitSync] Changes detected ($totalChanges files), committing...',
+          );
+
+          // Update state to show files being uploaded
+          state = state.copyWith(filesUploading: totalChanges);
+
+          // Add all files to staging
+          final addedAll = await _gitService.addAll(repo: _repository!);
+          if (!addedAll) {
+            debugPrint('[GitSync] ⚠️  Warning: Failed to add files to index');
+          }
+
+          // Commit changes
+          final commitSha = await _gitService.commit(
+            repo: _repository!,
+            message: 'Auto-sync: ${DateTime.now().toIso8601String()}',
+            authorName: 'Parachute',
+            authorEmail: 'parachute@local',
+          );
+
+          if (commitSha != null) {
+            debugPrint('[GitSync] ✅ Changes committed: $commitSha');
+          } else {
+            debugPrint('[GitSync] ⚠️  Warning: Failed to commit changes');
+          }
+        } else {
+          debugPrint('[GitSync] No local changes to commit');
         }
       }
 
@@ -304,7 +404,12 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       }
 
       await _updateStatus();
-      state = state.copyWith(isSyncing: false, lastSyncTime: DateTime.now());
+      state = state.copyWith(
+        isSyncing: false,
+        lastSyncTime: DateTime.now(),
+        filesUploading: 0,
+        filesDownloading: 0,
+      );
 
       return true;
     } catch (e) {
@@ -313,11 +418,35 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
     }
   }
 
+  /// Enable periodic background sync (every 5 minutes)
+  void enablePeriodicSync() {
+    _periodicSyncTimer?.cancel();
+    _periodicSyncTimer = Timer.periodic(const Duration(minutes: 5), (_) async {
+      if (state.isEnabled && !state.isSyncing) {
+        debugPrint('[GitSync] Periodic sync triggered');
+        await sync();
+      }
+    });
+  }
+
+  /// Disable periodic sync
+  void disablePeriodicSync() {
+    _periodicSyncTimer?.cancel();
+    _periodicSyncTimer = null;
+  }
+
   /// Disable Git sync
   Future<void> disable() async {
+    disablePeriodicSync();
     _gitService.clearGitHubToken();
     _repository = null;
     state = const GitSyncState();
+  }
+
+  @override
+  void dispose() {
+    _periodicSyncTimer?.cancel();
+    super.dispose();
   }
 
   /// Update sync status from repository
@@ -337,5 +466,8 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
 final gitSyncProvider = StateNotifierProvider<GitSyncNotifier, GitSyncState>((
   ref,
 ) {
-  return GitSyncNotifier(ref);
+  final notifier = GitSyncNotifier(ref);
+  // Auto-initialize on first access to restore saved settings
+  notifier.initialize();
+  return notifier;
 });

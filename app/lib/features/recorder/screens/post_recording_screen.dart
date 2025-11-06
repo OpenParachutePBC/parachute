@@ -433,12 +433,12 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
         fileSizeKB: fileSizeKB,
       );
 
-      // Upload and get backend-assigned ID
-      final backendId = await ref
+      // Save recording locally and get timestamp ID
+      final recordingId = await ref
           .read(storageServiceProvider)
           .saveRecording(recording);
 
-      if (backendId != null && mounted) {
+      if (recordingId != null && mounted) {
         // Show success message first
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Recording saved successfully')),

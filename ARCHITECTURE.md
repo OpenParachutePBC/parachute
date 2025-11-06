@@ -1,14 +1,14 @@
 # Parachute - System Architecture
 
-**Version:** 2.1
-**Date:** November 5, 2025
-**Status:** Active Development - Git-Based Sync Foundation
+**Version:** 2.2
+**Date:** November 6, 2025
+**Status:** Active Development - Local-First with Git Sync
 
 ---
 
 ## Overview
 
-Parachute is a cross-platform second brain application that provides a beautiful interface for interacting with Claude AI via the Agent Client Protocol (ACP). It combines local-first file management, voice recording with Omi device support, and structured knowledge management through space-specific SQLite databases.
+Parachute is a **local-first** cross-platform second brain application that provides a beautiful interface for interacting with Claude AI via the Agent Client Protocol (ACP). All data lives in a configurable vault on your device, with optional Git-based synchronization for multi-device access. The Flutter frontend is the primary interface, with the Go backend serving as an optional component for long-running agentic AI tasks.
 
 **Core Philosophy**: "One folder, one file system that organizes your data to enable it to be open and interoperable"
 
@@ -31,90 +31,116 @@ This architecture enables notes to "cross-pollinate" between spaces while remain
 
 ## High-Level Architecture
 
+### Local-First Design (Current - Nov 2025)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Flutter Frontend                        │
-│           (iOS, Android, Web, Desktop)                      │
+│           (iOS, Android, macOS, Windows, Linux)             │
+│                        PRIMARY INTERFACE                     │
 │                                                             │
-│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────┐   │
-│  │   Spaces    │  │     Chat     │  │    Settings     │   │
-│  │   Screen    │  │    Screen    │  │     Screen      │   │
-│  └─────────────┘  └──────────────┘  └─────────────────┘   │
-│         │                 │                  │              │
-│         └─────────────────┴──────────────────┘              │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────┐  │
+│  │  Spaces  │  │ Recorder │  │   Files   │  │ Settings │  │
+│  │  Screen  │  │  Screen  │  │  Browser  │  │  Screen  │  │
+│  └──────────┘  └──────────┘  └───────────┘  └──────────┘  │
+│       │              │              │              │        │
+│       └──────────────┴──────────────┴──────────────┘        │
 │                        │                                    │
 │              ┌─────────▼─────────┐                          │
 │              │  Riverpod State   │                          │
 │              │    Management     │                          │
 │              └─────────┬─────────┘                          │
 │                        │                                    │
-│         ┌──────────────┴──────────────┐                     │
-│         │                             │                     │
-│    ┌────▼─────┐              ┌────────▼────────┐           │
-│    │ API      │              │   WebSocket     │           │
-│    │ Service  │              │   Service       │           │
-│    │ (HTTP)   │              │   (Real-time)   │           │
-│    └────┬─────┘              └────────┬────────┘           │
-└─────────┼────────────────────────────┼────────────────────┘
-          │                            │
-          │    Network (HTTP/WS)       │
-          │                            │
-┌─────────▼────────────────────────────▼────────────────────┐
+│         ┌──────────────┼──────────────┐                     │
+│         │              │              │                     │
+│    ┌────▼─────┐  ┌────▼─────┐  ┌────▼─────┐               │
+│    │ Storage  │  │   Git    │  │  Whisper │               │
+│    │ Service  │  │ Service  │  │  Service │               │
+│    │(Metadata)│  │  (Sync)  │  │  (Local) │               │
+│    └────┬─────┘  └────┬─────┘  └──────────┘               │
+└─────────┼─────────────┼────────────────────────────────────┘
+          │             │
+          │             │ Git Push/Pull
+          │             ▼
+          │    ┌─────────────────┐
+          │    │  Git Repository │
+          │    │  (GitHub/GitLab)│
+          │    └─────────────────┘
+          │
+          ▼
+┌──────────────────────────┐
+│    Local File System     │
+│                          │
+│  ~/Parachute/            │
+│  ├── captures/           │
+│  │   ├── *.wav          │
+│  │   ├── *.md           │
+│  │   └── *.json         │
+│  └── spaces/             │
+│      ├── CLAUDE.md       │
+│      └── space.sqlite    │
+└──────────────────────────┘
+
+┌────────────────────────────────────────────────────────────┐
+│                    Go Backend (Optional)                   │
+│              FUTURE: For Agentic AI Tasks Only             │
 │                                                            │
-│                    Go Backend Service                     │
-│                  (Single Binary, Port 8080)               │
-│                                                            │
-│  ┌──────────────────────────────────────────────────┐    │
-│  │              REST API + WebSocket                │    │
-│  │                                                   │    │
-│  │  /api/auth          - Authentication             │    │
-│  │  /api/spaces        - Space CRUD                 │    │
-│  │  /api/conversations - Conversation management    │    │
-│  │  /api/messages      - Send messages              │    │
-│  │  /ws                - WebSocket chat streaming   │    │
-│  └───────────────────────┬──────────────────────────┘    │
-│                          │                                │
-│  ┌───────────────────────▼──────────────────────────┐    │
-│  │            Business Logic Layer                   │    │
-│  │                                                   │    │
-│  │  • Space Service      - Manage Spaces            │    │
-│  │  • Conversation Service - Manage conversations   │    │
-│  │  • Session Service    - ACP session lifecycle    │    │
-│  │  • Permission Service - Handle tool permissions  │    │
-│  └───────────────────────┬──────────────────────────┘    │
-│                          │                                │
-│  ┌───────────────────────▼──────────────────────────┐    │
-│  │            ACP Integration Layer                  │    │
-│  │                                                   │    │
-│  │  Spawns: npx @zed-industries/claude-code-acp     │    │
-│  │  Communication: JSON-RPC 2.0 (stdin/stdout)      │    │
-│  │  Methods: initialize, new_session, session/prompt│    │
-│  │  Events: session/update (streaming)              │    │
-│  └───────────────────────┬──────────────────────────┘    │
-│                          │                                │
-│  ┌───────────────────────▼──────────────────────────┐    │
-│  │             Storage Layer (SQLite)                │    │
-│  │                                                   │    │
-│  │  Tables: spaces, conversations, messages,        │    │
-│  │          sessions, users (future)                │    │
-│  └──────────────────────────────────────────────────┘    │
-│                                                            │
+│  • Pulls from same Git repo                               │
+│  • Runs long-running AI workflows                         │
+│  • Commits results back to Git                            │
+│  • No longer required for recording/storage               │
 └────────────────────────────────────────────────────────────┘
-                          │
-                          │
-              ┌───────────▼──────────────┐
-              │  File System             │
-              │                          │
-              │  • Spaces directories    │
-              │  • CLAUDE.md files       │
-              │  • .mcp.json configs     │
-              │  • User files            │
-              └──────────────────────────┘
 ```
+
+### Key Differences from Previous Architecture
+
+1. **Flutter is Primary**: Backend is optional, not required
+2. **Git for Sync**: Replaces custom HTTP sync endpoints
+3. **Local Services**: Whisper, storage, Git all run in Flutter
+4. **File-First**: All data in `~/Parachute/`, no database required
+5. **Backend Role**: Future agentic AI only, not daily use
 
 ---
 
-## Communication Flow: Sending a Message
+## Data Flow: Recording a Voice Note (Local-First)
+
+```
+1. User records audio in RecordingScreen
+   └─→ Flutter AudioRecorder captures audio
+
+2. User stops recording
+   └─→ Saves WAV file to ~/Parachute/captures/
+   └─→ Metadata saved to JSON file
+
+3. Transcription (Local Whisper)
+   └─→ WhisperService loads local model
+   └─→ Transcribes audio on-device
+   └─→ Saves markdown transcript to captures/
+
+4. Title Generation (Optional - Gemma 2B)
+   └─→ TitleGenerationService generates smart title
+   └─→ Updates recording metadata
+
+5. Git Sync (If configured)
+   └─→ GitService adds files to staging
+   └─→ Commits: "Add recording: YYYY-MM-DD_HH-MM-SS"
+   └─→ Pushes to GitHub (async, background)
+
+6. Recording appears in list
+   └─→ Loaded from local filesystem
+   └─→ No backend required
+```
+
+**Key Points:**
+
+- Everything happens locally first
+- Git sync is optional and asynchronous
+- Backend not involved in recording flow
+- Works completely offline
+
+---
+
+## Communication Flow: Sending a Message (With Backend)
 
 ```
 1. User types message in Flutter app
