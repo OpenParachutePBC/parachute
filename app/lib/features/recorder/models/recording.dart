@@ -68,6 +68,7 @@ class Recording {
   final Duration duration;
   final List<String> tags;
   final String transcript;
+  final String context; // Additional notes/context about the recording
   final double fileSizeKB;
   final RecordingSource source;
   final String? deviceId; // Omi device ID if from device
@@ -86,6 +87,7 @@ class Recording {
     required this.duration,
     required this.tags,
     required this.transcript,
+    this.context = '', // Default to empty string
     required this.fileSizeKB,
     this.source = RecordingSource.phone,
     this.deviceId,
@@ -116,6 +118,7 @@ class Recording {
     'duration': duration.inMilliseconds,
     'tags': tags,
     'transcript': transcript,
+    'context': context,
     'fileSizeKB': fileSizeKB,
     'source': source.toString(),
     'deviceId': deviceId,
@@ -134,6 +137,7 @@ class Recording {
     duration: Duration(milliseconds: json['duration'] as int? ?? 0),
     tags: (json['tags'] as List<dynamic>?)?.cast<String>() ?? [],
     transcript: json['transcript'] as String? ?? '',
+    context: json['context'] as String? ?? '',
     fileSizeKB: (json['fileSizeKB'] as num?)?.toDouble() ?? 0.0,
     source: json['source'] != null
         ? RecordingSource.fromString(json['source'] as String)
@@ -188,6 +192,7 @@ class Recording {
     Duration? duration,
     List<String>? tags,
     String? transcript,
+    String? context,
     double? fileSizeKB,
     RecordingSource? source,
     String? deviceId,
@@ -204,6 +209,7 @@ class Recording {
       duration: duration ?? this.duration,
       tags: tags ?? this.tags,
       transcript: transcript ?? this.transcript,
+      context: context ?? this.context,
       fileSizeKB: fileSizeKB ?? this.fileSizeKB,
       source: source ?? this.source,
       deviceId: deviceId ?? this.deviceId,

@@ -1,15 +1,18 @@
 import 'dart:async';
-
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
-import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/features/recorder/models/recording.dart';
-import 'package:app/features/recorder/widgets/playback_controls.dart';
+import 'package:app/features/recorder/providers/service_providers.dart';
+import 'package:app/features/recorder/services/whisper_service.dart';
+import 'package:app/features/recorder/services/whisper_local_service.dart';
+import 'package:app/features/recorder/models/whisper_models.dart';
+import 'package:app/core/providers/title_generation_provider.dart';
+import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/space_notes/screens/link_capture_to_space_screen.dart';
-import 'package:app/features/recorder/widgets/processing_status_indicator.dart';
-import 'package:app/features/recorder/screens/recording_edit_screen.dart';
 
+/// Unified recording detail screen with inline editing
+/// Inspired by LiveRecordingScreen design - clean, focused, contextual status
 class RecordingDetailScreen extends ConsumerStatefulWidget {
   final Recording recording;
 
@@ -24,24 +27,47 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   late Recording _recording;
   Timer? _refreshTimer;
 
+  // Controllers for inline editing
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _transcriptController = TextEditingController();
+  final TextEditingController _contextController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  // Edit mode states
+  bool _isTitleEditing = false;
+  bool _isTranscriptEditing = false;
+  bool _isContextEditing = false;
+
+  // Processing states
+  bool _isPlaying = false;
+  bool _isTranscribing = false;
+  bool _isGeneratingTitle = false;
+  double _transcriptionProgress = 0.0;
+  String _transcriptionStatus = '';
+
   @override
   void initState() {
     super.initState();
     _recording = widget.recording;
+    _titleController.text = _recording.title;
+    _transcriptController.text = _recording.transcript;
+    _contextController.text = _recording.context;
     _startPeriodicRefresh();
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _titleController.dispose();
+    _transcriptController.dispose();
+    _contextController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   void _startPeriodicRefresh() {
     // Only refresh while processing is happening
-    // Stop once both transcription and title generation are complete or failed
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      // Check if we still need to refresh
       final isProcessing =
           _recording.transcriptionStatus == ProcessingStatus.pending ||
           _recording.transcriptionStatus == ProcessingStatus.processing ||
@@ -49,168 +75,260 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           _recording.titleGenerationStatus == ProcessingStatus.processing;
 
       if (!isProcessing) {
-        // Processing complete, stop refreshing
         _refreshTimer?.cancel();
         return;
       }
 
-      // Fetch updated recording from backend
+      // Fetch updated recording from storage
       final updated = await ref
           .read(storageServiceProvider)
           .getRecording(_recording.id);
       if (updated != null && mounted) {
         setState(() {
           _recording = updated;
+          // Update controllers if not currently editing
+          if (!_isTitleEditing) _titleController.text = _recording.title;
+          if (!_isTranscriptEditing) {
+            _transcriptController.text = _recording.transcript;
+          }
+          if (!_isContextEditing) _contextController.text = _recording.context;
         });
       }
     });
   }
 
-  void _editRecording() async {
-    final result = await Navigator.push<Recording>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => RecordingEditScreen(recording: _recording),
-      ),
+  Future<void> _saveChanges() async {
+    final updatedRecording = _recording.copyWith(
+      title: _titleController.text.trim().isNotEmpty
+          ? _titleController.text.trim()
+          : 'Untitled Recording',
+      transcript: _transcriptController.text.trim(),
+      context: _contextController.text.trim(),
     );
 
-    if (result != null && mounted) {
+    final success = await ref
+        .read(storageServiceProvider)
+        .updateRecording(updatedRecording);
+
+    if (success && mounted) {
       setState(() {
-        _recording = result;
+        _recording = updatedRecording;
+        _isTitleEditing = false;
+        _isTranscriptEditing = false;
+        _isContextEditing = false;
       });
-    }
-  }
 
-  void _copyToClipboard() {
-    if (_recording.transcript.isNotEmpty) {
-      Clipboard.setData(ClipboardData(text: _recording.transcript));
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Transcript copied to clipboard')),
+        const SnackBar(
+          content: Text('Changes saved'),
+          duration: Duration(seconds: 1),
+        ),
       );
-    } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('No transcript available')));
     }
   }
 
-  void _addToCalendar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Calendar integration coming soon')),
-    );
+  Future<void> _togglePlayback() async {
+    if (_isPlaying) {
+      await ref.read(audioServiceProvider).stopPlayback();
+      setState(() => _isPlaying = false);
+    } else {
+      final success = await ref
+          .read(audioServiceProvider)
+          .playRecording(_recording.filePath);
+      if (success) {
+        setState(() => _isPlaying = true);
+        Future.delayed(_recording.duration, () {
+          if (mounted && _isPlaying) {
+            setState(() => _isPlaying = false);
+          }
+        });
+      }
+    }
   }
 
-  void _showEditDialog() {
-    final titleController = TextEditingController(text: _recording.title);
-    final transcriptController = TextEditingController(
-      text: _recording.transcript,
-    );
-    final tagsController = TextEditingController(
-      text: _recording.tags.join(', '),
-    );
+  Future<void> _transcribeRecording() async {
+    if (_isTranscribing) return;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Recording'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Title',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: tagsController,
-                decoration: const InputDecoration(
-                  labelText: 'Tags (comma-separated)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: transcriptController,
-                decoration: const InputDecoration(
-                  labelText: 'Transcript',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 4,
-              ),
-            ],
+    final storageService = ref.read(storageServiceProvider);
+    final modeString = await storageService.getTranscriptionMode();
+    final mode =
+        TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
+
+    setState(() {
+      _isTranscribing = true;
+      _transcriptionProgress = 0.0;
+      _transcriptionStatus = 'Starting...';
+    });
+
+    try {
+      String transcript;
+
+      if (mode == TranscriptionMode.local) {
+        transcript = await _transcribeWithLocal();
+      } else {
+        transcript = await _transcribeWithAPI();
+      }
+
+      if (mounted) {
+        _transcriptController.text = transcript;
+        setState(() {
+          _transcriptionProgress = 1.0;
+          _transcriptionStatus = 'Complete!';
+        });
+
+        // Auto-generate title from transcript
+        await _generateTitleFromTranscript(transcript);
+
+        // Auto-save after transcription
+        await _saveChanges();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Transcription failed: $e'),
+            backgroundColor: Colors.red,
           ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTranscribing = false;
+          _transcriptionProgress = 0.0;
+          _transcriptionStatus = '';
+        });
+      }
+    }
+  }
+
+  Future<void> _generateTitleFromTranscript(String transcript) async {
+    if (transcript.isEmpty) return;
+
+    setState(() {
+      _isGeneratingTitle = true;
+    });
+
+    try {
+      final titleService = ref.read(titleGenerationServiceProvider);
+      final generatedTitle = await titleService.generateTitle(transcript);
+
+      if (generatedTitle != null && generatedTitle.isNotEmpty && mounted) {
+        setState(() {
+          _titleController.text = generatedTitle;
+        });
+      }
+    } catch (e) {
+      debugPrint('[RecordingDetail] Title generation failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGeneratingTitle = false;
+        });
+      }
+    }
+  }
+
+  Future<String> _transcribeWithLocal() async {
+    final localService = ref.read(whisperLocalServiceProvider);
+
+    final isReady = await localService.isReady();
+    if (!isReady) {
+      if (!mounted) throw WhisperLocalException('Not mounted');
+
+      final goToSettings = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Model Required'),
+          content: const Text(
+            'To use local transcription, you need to download a Whisper model in Settings.\n\n'
+            'Would you like to go to Settings now?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Go to Settings'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final updatedRecording = Recording(
-                id: _recording.id,
-                title: titleController.text.trim(),
-                filePath: _recording.filePath,
-                timestamp: _recording.timestamp,
-                duration: _recording.duration,
-                tags: tagsController.text
-                    .split(',')
-                    .map((tag) => tag.trim())
-                    .where((tag) => tag.isNotEmpty)
-                    .toList(),
-                transcript: transcriptController.text.trim(),
-                fileSizeKB: _recording.fileSizeKB,
-              );
+      );
 
-              final success = await ref
-                  .read(storageServiceProvider)
-                  .updateRecording(updatedRecording);
-              if (success && mounted) {
-                setState(() {
-                  _recording = updatedRecording;
-                });
-                if (!mounted) return;
+      if (goToSettings == true && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      }
+      throw WhisperLocalException('Model not downloaded');
+    }
 
-                final navigator = Navigator.of(context);
-
-                final messenger = ScaffoldMessenger.of(context);
-
-                navigator.pop();
-
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Recording updated')),
-                );
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+    return await localService.transcribeAudio(
+      _recording.filePath,
+      onProgress: (progress) {
+        if (mounted) {
+          setState(() {
+            _transcriptionProgress = progress.progress;
+            _transcriptionStatus = progress.status;
+          });
+        }
+      },
     );
   }
 
-  void _shareRecording() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Share functionality coming soon')),
-    );
+  Future<String> _transcribeWithAPI() async {
+    final isConfigured = await ref.read(whisperServiceProvider).isConfigured();
+    if (!isConfigured) {
+      if (!mounted) throw WhisperException('Not mounted');
+
+      final goToSettings = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('API Key Required'),
+          content: const Text(
+            'To use transcription, you need to configure your OpenAI API key in Settings.\n\n'
+            'Would you like to go to Settings now?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Go to Settings'),
+            ),
+          ],
+        ),
+      );
+
+      if (goToSettings == true && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const SettingsScreen()),
+        );
+      }
+      throw WhisperException('API key not configured');
+    }
+
+    setState(() => _transcriptionStatus = 'Uploading to OpenAI...');
+
+    return await ref
+        .read(whisperServiceProvider)
+        .transcribeAudio(_recording.filePath);
   }
 
   void _linkToSpaces() async {
-    // Navigate to link screen
-    // Clean up the note path - remove /api/ prefix if present
     String cleanNotePath = _recording.filePath;
     if (cleanNotePath.startsWith('/api/')) {
-      cleanNotePath = cleanNotePath.substring(5); // Remove '/api/' prefix
+      cleanNotePath = cleanNotePath.substring(5);
     }
-    // Ensure it's the .md file, not .wav
     if (cleanNotePath.endsWith('.wav')) {
       cleanNotePath = cleanNotePath.replaceAll('.wav', '.md');
     }
-    // Ensure it starts with captures/
     if (!cleanNotePath.startsWith('captures/')) {
       cleanNotePath = 'captures/$cleanNotePath';
     }
@@ -225,7 +343,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       ),
     );
 
-    // Show confirmation if linking was successful
     if (result == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Successfully linked to spaces')),
@@ -233,50 +350,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     }
   }
 
-  void _showMoreOptions() {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Edit'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showEditDialog();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.share),
-                title: const Text('Share'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _shareRecording();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text(
-                  'Delete',
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _confirmDelete();
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _confirmDelete() {
-    showDialog(
+  void _confirmDelete() async {
+    final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
@@ -286,22 +361,11 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(context, false),
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                final success = await ref
-                    .read(storageServiceProvider)
-                    .deleteRecording(_recording.id);
-                if (success && mounted) {
-                  Navigator.pop(context, true);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Recording deleted')),
-                  );
-                }
-              },
+              onPressed: () => Navigator.pop(context, true),
               style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: const Text('Delete'),
             ),
@@ -309,239 +373,476 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         );
       },
     );
+
+    if (shouldDelete == true && mounted) {
+      final success = await ref
+          .read(storageServiceProvider)
+          .deleteRecording(_recording.id);
+      if (success && mounted) {
+        Navigator.pop(context, true);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Recording deleted')));
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_recording.title),
-        centerTitle: true,
-        elevation: 0,
-        actions: [
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      appBar: _buildAppBar(),
+      body: _buildBody(),
+      bottomNavigationBar: _buildBottomBar(),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: _isTitleEditing
+          ? TextField(
+              controller: _titleController,
+              autofocus: true,
+              style: const TextStyle(fontSize: 18),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Enter title...',
+              ),
+              onSubmitted: (_) => _saveChanges(),
+            )
+          : Text(_recording.title),
+      centerTitle: true,
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      actions: [
+        if (_isTitleEditing || _isTranscriptEditing || _isContextEditing)
           IconButton(
-            onPressed: _editRecording,
+            icon: const Icon(Icons.check),
+            onPressed: _saveChanges,
+            tooltip: 'Save',
+          )
+        else ...[
+          IconButton(
             icon: const Icon(Icons.edit),
-            tooltip: 'Edit',
+            onPressed: () => setState(() => _isTitleEditing = true),
+            tooltip: 'Edit title',
           ),
           IconButton(
-            onPressed: () => _linkToSpaces(),
             icon: const Icon(Icons.link),
+            onPressed: _linkToSpaces,
             tooltip: 'Link to Spaces',
           ),
+          PopupMenuButton(
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Delete', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+            onSelected: (value) {
+              if (value == 'delete') _confirmDelete();
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildBody() {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Playback section
+          _buildPlaybackSection(),
+
+          const SizedBox(height: 16),
+
+          // Metadata
+          _buildMetadataSection(),
+
+          const SizedBox(height: 24),
+
+          // Main content container (like LiveRecordingScreen)
+          _buildMainContentContainer(),
+
+          const SizedBox(height: 24),
+
+          // Context section
+          _buildContextSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlaybackSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
           IconButton(
-            onPressed: _showMoreOptions,
-            icon: const Icon(Icons.more_vert),
+            onPressed: _togglePlayback,
+            icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
+            iconSize: 32,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _recording.durationString,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  _recording.formattedSize,
+                  style: TextStyle(
+                    color: Colors.grey.withValues(alpha: 0.7),
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_isPlaying)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetadataSection() {
+    return Row(
+      children: [
+        Icon(Icons.access_time, size: 16, color: Colors.grey.shade600),
+        const SizedBox(width: 4),
+        Text(
+          _recording.timeAgo,
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+        ),
+        const SizedBox(width: 16),
+        Icon(Icons.folder, size: 16, color: Colors.grey.shade600),
+        const SizedBox(width: 4),
+        Text(
+          _recording.source == RecordingSource.omiDevice ? 'Omi' : 'Phone',
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMainContentContainer() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: _isTranscriptEditing
+            ? Border.all(
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.5),
+                width: 2,
+              )
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section header with actions
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Transcript',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              Row(
+                children: [
+                  if (_recording.transcript.isNotEmpty && !_isTranscriptEditing)
+                    IconButton(
+                      icon: const Icon(Icons.copy, size: 20),
+                      onPressed: () {
+                        Clipboard.setData(
+                          ClipboardData(text: _recording.transcript),
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Transcript copied to clipboard'),
+                          ),
+                        );
+                      },
+                      tooltip: 'Copy',
+                    ),
+                  if (_recording.transcript.isEmpty && !_isTranscribing)
+                    ElevatedButton.icon(
+                      onPressed: _transcribeRecording,
+                      icon: const Icon(Icons.auto_awesome, size: 18),
+                      label: const Text('Transcribe'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Inline status indicators (like LiveRecordingScreen)
+          if (_isGeneratingTitle) _buildTitleGeneratingIndicator(),
+          if (_isTranscribing) _buildTranscribingIndicator(),
+
+          // Content
+          if (_recording.transcript.isEmpty && !_isTranscribing)
+            Text(
+              'No transcript yet. Tap "Transcribe" to generate.',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else if (_isTranscriptEditing)
+            TextField(
+              controller: _transcriptController,
+              maxLines: null,
+              autofocus: true,
+              style: const TextStyle(fontSize: 16, height: 1.5),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Enter transcript...',
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: () => setState(() => _isTranscriptEditing = true),
+              child: Text(
+                _transcriptController.text.isNotEmpty
+                    ? _transcriptController.text
+                    : 'Tap to add transcript',
+                style: TextStyle(
+                  fontSize: 16,
+                  height: 1.5,
+                  color: _transcriptController.text.isEmpty
+                      ? Colors.grey.shade600
+                      : null,
+                  fontStyle: _transcriptController.text.isEmpty
+                      ? FontStyle.italic
+                      : null,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTitleGeneratingIndicator() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.blue.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation(Colors.blue.shade700),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Generating title',
+                  style: TextStyle(
+                    color: Colors.blue.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Playback controls
-            PlaybackControls(
-              filePath: _recording.filePath,
-              duration: _recording.duration,
-              onDelete: () async {
-                final success = await ref
-                    .read(storageServiceProvider)
-                    .deleteRecording(_recording.id);
-                if (success && mounted) {
-                  Navigator.of(context).pop(true);
-                }
-              },
+    );
+  }
+
+  Widget _buildTranscribingIndicator() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.orange.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.sync, color: Colors.orange.shade700, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Transcribing audio',
+                  style: TextStyle(
+                    color: Colors.orange.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _transcriptionStatus.isEmpty
+                      ? 'Please wait...'
+                      : '$_transcriptionStatus ${(_transcriptionProgress * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: Colors.orange.shade700.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
-
-            const SizedBox(height: 16),
-
-            // Processing status
-            ProcessingStatusBar(recording: _recording),
-
-            const SizedBox(height: 24),
-
-            // Recording info
-            _buildInfoSection(),
-
-            const SizedBox(height: 24),
-
-            // Tags
-            if (_recording.tags.isNotEmpty) ...[
-              _buildTagsSection(),
-              const SizedBox(height: 24),
-            ],
-
-            // Transcript section
-            _buildTranscriptSection(),
-
-            const SizedBox(height: 24),
-
-            // Action buttons
-            _buildActionButtons(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Recording Details',
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            _buildStatCard('Duration', _recording.durationString),
-            const SizedBox(width: 12),
-            _buildStatCard('Size', _recording.formattedSize),
-            const SizedBox(width: 12),
-            _buildStatCard('Date', _recording.timeAgo),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard(String label, String value) {
-    return Expanded(
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: Colors.grey.withValues(alpha: 0.7),
-                  fontSize: 12,
-                ),
-              ),
-            ],
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildTagsSection() {
+  Widget _buildContextSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Tags',
+          'Context',
           style: Theme.of(
             context,
           ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _recording.tags.map((tag) {
-            return Chip(
-              label: Text(tag),
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTranscriptSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Transcript',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            IconButton(
-              onPressed: _copyToClipboard,
-              icon: const Icon(Icons.copy, size: 20),
-              tooltip: 'Copy transcript',
-            ),
-          ],
         ),
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(
-                context,
-              ).colorScheme.outline.withValues(alpha: 0.2),
-            ),
+            border: _isContextEditing
+                ? Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.5),
+                    width: 2,
+                  )
+                : null,
           ),
-          child: Text(
-            _recording.transcript.isNotEmpty
-                ? _recording.transcript
-                : 'No transcript available',
-            style: TextStyle(
-              height: 1.5,
-              color: _recording.transcript.isNotEmpty
-                  ? null
-                  : Colors.grey.withValues(alpha: 0.7),
-              fontStyle: _recording.transcript.isEmpty
-                  ? FontStyle.italic
-                  : null,
-            ),
-          ),
+          child: _isContextEditing
+              ? TextField(
+                  controller: _contextController,
+                  maxLines: 3,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    hintText: 'Add context, notes, or tags...',
+                  ),
+                )
+              : GestureDetector(
+                  onTap: () => setState(() => _isContextEditing = true),
+                  child: Text(
+                    _contextController.text.isNotEmpty
+                        ? _contextController.text
+                        : 'Tap to add context, notes, or tags...',
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: _contextController.text.isEmpty
+                          ? Colors.grey.shade600
+                          : null,
+                      fontStyle: _contextController.text.isEmpty
+                          ? FontStyle.italic
+                          : null,
+                    ),
+                  ),
+                ),
         ),
       ],
     );
   }
 
-  Widget _buildActionButtons() {
-    return Row(
-      children: [
-        Expanded(
+  Widget _buildBottomBar() {
+    // Show save button if editing
+    if (_isTitleEditing || _isTranscriptEditing || _isContextEditing) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -5),
+            ),
+          ],
+        ),
+        child: SafeArea(
           child: ElevatedButton.icon(
-            onPressed: _addToCalendar,
-            icon: const Icon(Icons.calendar_today),
-            label: const Text('Add to Calendar'),
+            onPressed: _saveChanges,
+            icon: const Icon(Icons.check),
+            label: const Text('Save Changes'),
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: _shareRecording,
-            icon: const Icon(Icons.share),
-            label: const Text('Share'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-        ),
-      ],
-    );
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
