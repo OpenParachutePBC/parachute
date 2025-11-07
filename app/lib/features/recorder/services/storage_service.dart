@@ -195,6 +195,7 @@ class StorageService {
       // Parse YAML frontmatter
       String? durationStr;
       String? source;
+      String? title;
 
       final lines = content.split('\n');
       if (lines.isNotEmpty && lines[0] == '---') {
@@ -218,28 +219,84 @@ class StorageService {
 
               if (key == 'duration') durationStr = value;
               if (key == 'source') source = value;
+              if (key == 'title') title = value;
             }
           }
         }
       }
 
-      // Extract transcript (everything after frontmatter)
-      String transcript = content;
+      // Extract transcript (skip frontmatter AND markdown headers)
+      String transcript = '';
+      String context = '';
+
       if (lines.isNotEmpty && lines[0] == '---') {
         final endIndex = lines.indexOf('---', 1);
         if (endIndex > 0 && endIndex + 1 < lines.length) {
-          transcript = lines.sublist(endIndex + 1).join('\n').trim();
+          final bodyLines = lines.sublist(endIndex + 1);
+
+          // Parse the body to extract context and transcript
+          // Skip the title header (# Title)
+          // Look for ## Context and ## Transcription sections
+          int i = 0;
+
+          // Skip empty lines and title header
+          while (i < bodyLines.length) {
+            final line = bodyLines[i].trim();
+            if (line.isEmpty || line.startsWith('#')) {
+              i++;
+            } else {
+              break;
+            }
+          }
+
+          // Look for Context section
+          if (i < bodyLines.length && bodyLines[i].trim() == '## Context') {
+            i++; // Skip header
+            while (i < bodyLines.length && bodyLines[i].trim().isEmpty)
+              i++; // Skip empty lines
+
+            final contextLines = <String>[];
+            while (i < bodyLines.length &&
+                !bodyLines[i].trim().startsWith('##')) {
+              contextLines.add(bodyLines[i]);
+              i++;
+            }
+            context = contextLines.join('\n').trim();
+          }
+
+          // Look for Transcription section
+          if (i < bodyLines.length &&
+              bodyLines[i].trim() == '## Transcription') {
+            i++; // Skip header
+            while (i < bodyLines.length && bodyLines[i].trim().isEmpty)
+              i++; // Skip empty lines
+
+            // Rest is transcript
+            if (i < bodyLines.length) {
+              transcript = bodyLines.sublist(i).join('\n').trim();
+            }
+          } else if (i < bodyLines.length) {
+            // If no Transcription header, treat remaining content as transcript
+            transcript = bodyLines.sublist(i).join('\n').trim();
+          }
         }
       }
 
-      // Parse duration (format: "MM:SS")
+      // Parse duration (stored as seconds in frontmatter)
       Duration duration = Duration.zero;
       if (durationStr != null) {
-        final parts = durationStr.split(':');
-        if (parts.length == 2) {
-          final minutes = int.tryParse(parts[0]) ?? 0;
-          final seconds = int.tryParse(parts[1]) ?? 0;
-          duration = Duration(minutes: minutes, seconds: seconds);
+        // Try parsing as seconds (new format)
+        final seconds = int.tryParse(durationStr);
+        if (seconds != null) {
+          duration = Duration(seconds: seconds);
+        } else {
+          // Fallback: try parsing as "MM:SS" (legacy format)
+          final parts = durationStr.split(':');
+          if (parts.length == 2) {
+            final minutes = int.tryParse(parts[0]) ?? 0;
+            final secs = int.tryParse(parts[1]) ?? 0;
+            duration = Duration(minutes: minutes, seconds: secs);
+          }
         }
       }
 
@@ -247,8 +304,8 @@ class StorageService {
       final audioPath = mdFile.path.replaceAll('.md', '.wav');
       final audioExists = await File(audioPath).exists();
 
-      // Generate title from first line of transcript
-      final title = _extractTitleFromTranscript(transcript);
+      // Use title from frontmatter, or extract from transcript as fallback
+      final recordingTitle = title ?? _extractTitleFromTranscript(transcript);
 
       // Get file size
       final stat = await mdFile.stat();
@@ -261,12 +318,13 @@ class StorageService {
 
       return Recording(
         id: filename.replaceAll('.md', ''), // Use timestamp as ID
-        title: title,
+        title: recordingTitle,
         filePath: audioExists ? audioPath : mdFile.path,
         timestamp: timestamp,
         duration: duration,
         tags: [],
         transcript: transcript,
+        context: context,
         fileSizeKB: fileSizeKB,
         source: recordingSource,
         deviceId: recordingSource == RecordingSource.omiDevice

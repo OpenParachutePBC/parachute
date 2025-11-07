@@ -272,6 +272,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               return RecordingTile(
                 recording: recording,
                 onTap: () => _openRecordingDetail(recording),
+                onDeleted: _refreshRecordings,
               );
             },
           ),
