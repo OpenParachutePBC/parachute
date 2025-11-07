@@ -4,15 +4,26 @@
 
 ---
 
-## Current Focus: Recording UI Polish & Refinement
+## Current Focus: Auto-Pause Voice Recording with Noise Suppression
 
-**Status**: 🎯 Active Development
+**Status**: 🎯 Active Development (Week 1 of 3)
 **Priority**: P0
-**Timeline**: Week of November 6, 2025
+**Timeline**: November 7-27, 2025
 
-Polish and refine the recording interface based on the completed Git sync foundation. Focus on user experience, error handling, and performance.
+Implementing automatic silence detection and background noise suppression by porting [RichardTate](https://github.com/lucianHymer/richardtate)'s proven pipeline to Flutter. This eliminates the manual pause button and significantly improves transcription quality in real-world environments.
 
-**See**: [docs/polish-tasks.md](docs/polish-tasks.md)
+**Implementation Docs**:
+
+- [docs/implementation/IMPLEMENTATION-ROADMAP.md](docs/implementation/IMPLEMENTATION-ROADMAP.md) - Action plan
+- [docs/implementation/richardtate-port-strategy.md](docs/implementation/richardtate-port-strategy.md) - Technical guide
+- [docs/implementation/auto-pause-vad-implementation.md](docs/implementation/auto-pause-vad-implementation.md) - Research
+- [docs/implementation/noise-suppression-summary.md](docs/implementation/noise-suppression-summary.md) - Quick ref
+
+**Week 1** (Nov 7-13): Port VAD, Resampler, Chunker to Dart → Auto-pause working
+**Week 2** (Nov 14-20): RNNoise FFI bindings → Noise suppression added
+**Week 3** (Nov 21-27): UI polish, settings, testing → Ship to users
+
+**Deferred**: Recording UI polish, Space SQLite (resume after this feature)
 
 ### Recent Major Achievement: Git-Based Sync ✅
 

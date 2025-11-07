@@ -6,41 +6,51 @@
 
 ## Current Development Focus
 
-**🚧 Active Feature**: Local-First Recording with Git Sync (Nov 6, 2025)
+**🚧 Active Feature**: Auto-Pause Voice Recording with Noise Suppression (Nov 7, 2025)
 
-**Status**: ✅ Git sync core complete, 🎯 UI polish next
+**Status**: 📋 Planning complete, 🎯 Starting implementation
 
-### Completed (Nov 6, 2025):
+### Goal
 
-- ✅ Auto-sync after save/update/delete
-- ✅ Manual sync with UI indicator showing file counts
-- ✅ Periodic background sync (5 minutes)
-- ✅ Settings persistence across app restarts
-- ✅ Complete local-first architecture (removed all backend dependencies)
-- ✅ Git operations (commit, push, pull) working with GitHub PAT
+Port [RichardTate](https://github.com/lucianHymer/richardtate)'s proven auto-pause and noise suppression system to Parachute:
 
-### Next Steps:
+- **Auto-detect silence** - No manual pause button needed (1s silence → auto-segment)
+- **Remove background noise** - RNNoise removes keyboards, fans, traffic, TV
+- **Intelligent segmentation** - Natural speech boundaries, no mid-sentence cuts
+- **Better transcription** - Clean audio → better Whisper accuracy
 
-- 📝 Recording UI polish (inline editing refinement)
-- 🔍 Error handling improvements
-- ⚡ Performance optimization for large recordings
-- 🔗 Context field integration with space linking
+### Implementation Strategy
 
-**Strategic Pivot** (Nov 5, 2025):
+**Maximum code reuse**: Port ~1,040 lines of battle-tested Go algorithms to Dart + FFI bindings for RNNoise C library
 
-- **Local-first architecture** - All data in `~/Parachute/`, no backend required
-- **Git-based sync** - Multi-device sync via GitHub (replaces custom backend)
-- **Library**: `git2dart` (libgit2 bindings for Flutter)
-- **Backend role**: Optional, for agentic AI tasks only (future)
+**Three-week phased delivery**:
 
-**See**:
+- **Week 1**: Pure Dart ports (VAD, Resampler, Chunker) → Auto-pause working
+- **Week 2**: RNNoise FFI integration → Noise suppression added
+- **Week 3**: UI polish, settings, testing → Ship to users
 
-- [docs/implementation/github-sync-implementation.md](docs/implementation/github-sync-implementation.md) - Full implementation details
-- [docs/polish-tasks.md](docs/polish-tasks.md) - UI polish task breakdown
-- [docs/architecture/git-sync-strategy.md](docs/architecture/git-sync-strategy.md) - Sync architecture
+### Implementation Docs
 
-**Deferred** (Space SQLite Knowledge System) - Resume after UI polish complete
-**See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
+**Primary references** (read these for implementation details):
+
+- [docs/implementation/IMPLEMENTATION-ROADMAP.md](docs/implementation/IMPLEMENTATION-ROADMAP.md) - **START HERE** - Week-by-week action plan with checklists
+- [docs/implementation/richardtate-port-strategy.md](docs/implementation/richardtate-port-strategy.md) - Complete technical guide with Go→Dart code mappings
+- [docs/implementation/auto-pause-vad-implementation.md](docs/implementation/auto-pause-vad-implementation.md) - How RichardTate works, all research
+- [docs/implementation/noise-suppression-summary.md](docs/implementation/noise-suppression-summary.md) - Quick reference
+
+**RichardTate source code** (for reference during porting):
+
+- Located at: `~/Symbols/Codes/richardtate/`
+- Key files: `server/internal/transcription/{vad,chunker,resample,rnnoise,pipeline}.go`
+
+### Previously Completed
+
+**Git Sync (Nov 6, 2025)**: ✅ Complete
+
+- Local-first architecture with Git-based sync
+- See [docs/implementation/github-sync-implementation.md](docs/implementation/github-sync-implementation.md)
+
+**Deferred**: Space SQLite Knowledge System, Recording UI polish
 
 ---
 
