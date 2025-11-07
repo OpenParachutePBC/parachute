@@ -68,6 +68,10 @@ class SimpleTranscriptionService {
   final List<TranscriptionSegment> _segments = [];
   int _nextSegmentIndex = 1;
 
+  // Processing queue for concurrent segments
+  final List<_QueuedSegment> _processingQueue = [];
+  bool _isProcessingQueue = false;
+
   // Progress streaming
   final _segmentStreamController =
       StreamController<TranscriptionSegment>.broadcast();
@@ -163,8 +167,8 @@ class SimpleTranscriptionService {
         _segmentAudioFiles.add(_currentSegmentFile!);
       }
 
-      // Process this segment only (non-blocking)
-      _processCurrentSegment(_currentSegmentFile!);
+      // Queue this segment for processing (non-blocking)
+      _queueSegmentForProcessing(_currentSegmentFile!);
     } catch (e) {
       debugPrint('[SimpleTranscription] Failed to pause: $e');
     }
@@ -216,18 +220,18 @@ class SimpleTranscriptionService {
       _isRecording = false;
       _isPaused = false;
 
-      // If we need final transcription, process the last segment
+      // If we need final transcription, queue the last segment
       if (needsFinalTranscription && _currentSegmentFile != null) {
         debugPrint(
-          '[SimpleTranscription] Processing final segment before stopping...',
+          '[SimpleTranscription] Queuing final segment before stopping...',
         );
         _segmentAudioFiles.add(_currentSegmentFile!);
-        await _processCurrentSegment(_currentSegmentFile!);
-      } else {
-        // Wait for any ongoing processing to complete
-        while (_isProcessing) {
-          await Future.delayed(const Duration(milliseconds: 100));
-        }
+        _queueSegmentForProcessing(_currentSegmentFile!);
+      }
+
+      // Wait for all queued segments to finish processing
+      while (_isProcessingQueue || _processingQueue.isNotEmpty) {
+        await Future.delayed(const Duration(milliseconds: 100));
       }
 
       // Merge all segment files into final audio file
@@ -307,16 +311,19 @@ class SimpleTranscriptionService {
 
   // Private methods
 
-  /// Process the audio file recorded so far
-  Future<void> _processCurrentSegment(String segmentFilePath) async {
-    if (_isProcessing) return;
+  /// Queue a segment for processing (handles concurrency properly)
+  void _queueSegmentForProcessing(String segmentFilePath) {
+    // Create queued segment
+    final queuedSegment = _QueuedSegment(
+      filePath: segmentFilePath,
+      segmentIndex: _nextSegmentIndex,
+    );
+    _processingQueue.add(queuedSegment);
+    _nextSegmentIndex++;
 
-    _isProcessing = true;
-    _processingStreamController.add(true);
-
-    // Create a pending segment
+    // Create a pending segment in the UI
     final segment = TranscriptionSegment(
-      index: _nextSegmentIndex,
+      index: queuedSegment.segmentIndex,
       text: '',
       status: TranscriptionSegmentStatus.pending,
       timestamp: DateTime.now(),
@@ -324,51 +331,94 @@ class SimpleTranscriptionService {
     _segments.add(segment);
     _segmentStreamController.add(segment);
 
-    try {
-      // Update to processing
-      final processingSegment = segment.copyWith(
-        status: TranscriptionSegmentStatus.processing,
-      );
-      _segments[_segments.length - 1] = processingSegment;
-      _segmentStreamController.add(processingSegment);
+    debugPrint(
+      '[SimpleTranscription] Queued segment ${queuedSegment.segmentIndex} for processing (queue size: ${_processingQueue.length})',
+    );
 
-      debugPrint(
-        '[SimpleTranscription] Transcribing segment $_nextSegmentIndex from $segmentFilePath...',
-      );
-
-      // Transcribe ONLY this segment file
-      final segmentText = await _whisperService.transcribeAudio(
-        segmentFilePath,
-      );
-
-      debugPrint(
-        '[SimpleTranscription] Segment transcribed: ${segmentText.length} chars',
-      );
-
-      // Update to completed
-      final completedSegment = processingSegment.copyWith(
-        text: segmentText.trim(),
-        status: TranscriptionSegmentStatus.completed,
-      );
-      _segments[_segments.length - 1] = completedSegment;
-      _segmentStreamController.add(completedSegment);
-
-      _nextSegmentIndex++;
-
-      debugPrint('[SimpleTranscription] Segment completed successfully');
-    } catch (e) {
-      debugPrint('[SimpleTranscription] Transcription failed: $e');
-
-      // Update to failed
-      final failedSegment = segment.copyWith(
-        status: TranscriptionSegmentStatus.failed,
-      );
-      _segments[_segments.length - 1] = failedSegment;
-      _segmentStreamController.add(failedSegment);
-    } finally {
-      _isProcessing = false;
-      _processingStreamController.add(false);
+    // Start processing queue if not already processing
+    if (!_isProcessingQueue) {
+      _processQueue();
     }
+  }
+
+  /// Process queued segments one at a time (sequential processing)
+  Future<void> _processQueue() async {
+    if (_isProcessingQueue) return;
+
+    _isProcessingQueue = true;
+    _isProcessing = true;
+    _processingStreamController.add(true);
+
+    while (_processingQueue.isNotEmpty) {
+      final queuedSegment = _processingQueue.removeAt(0);
+
+      debugPrint(
+        '[SimpleTranscription] Processing segment ${queuedSegment.segmentIndex} (${_processingQueue.length} remaining in queue)',
+      );
+
+      // Find the segment in our list
+      final segmentIndex = _segments.indexWhere(
+        (s) => s.index == queuedSegment.segmentIndex,
+      );
+
+      if (segmentIndex == -1) {
+        debugPrint(
+          '[SimpleTranscription] ERROR: Segment ${queuedSegment.segmentIndex} not found in list!',
+        );
+        continue;
+      }
+
+      try {
+        // Update to processing
+        final processingSegment = _segments[segmentIndex].copyWith(
+          status: TranscriptionSegmentStatus.processing,
+        );
+        _segments[segmentIndex] = processingSegment;
+        _segmentStreamController.add(processingSegment);
+
+        debugPrint(
+          '[SimpleTranscription] Transcribing segment ${queuedSegment.segmentIndex} from ${queuedSegment.filePath}...',
+        );
+
+        // Transcribe this segment file
+        final segmentText = await _whisperService.transcribeAudio(
+          queuedSegment.filePath,
+        );
+
+        debugPrint(
+          '[SimpleTranscription] Segment ${queuedSegment.segmentIndex} transcribed: ${segmentText.length} chars',
+        );
+
+        // Update to completed
+        final completedSegment = processingSegment.copyWith(
+          text: segmentText.trim(),
+          status: TranscriptionSegmentStatus.completed,
+        );
+        _segments[segmentIndex] = completedSegment;
+        _segmentStreamController.add(completedSegment);
+
+        debugPrint(
+          '[SimpleTranscription] Segment ${queuedSegment.segmentIndex} completed successfully',
+        );
+      } catch (e) {
+        debugPrint(
+          '[SimpleTranscription] Segment ${queuedSegment.segmentIndex} transcription failed: $e',
+        );
+
+        // Update to failed
+        final failedSegment = _segments[segmentIndex].copyWith(
+          status: TranscriptionSegmentStatus.failed,
+        );
+        _segments[segmentIndex] = failedSegment;
+        _segmentStreamController.add(failedSegment);
+      }
+    }
+
+    _isProcessingQueue = false;
+    _isProcessing = false;
+    _processingStreamController.add(false);
+
+    debugPrint('[SimpleTranscription] Queue processing completed');
   }
 
   Future<String> _createTempDirectory() async {
@@ -469,4 +519,12 @@ class SimpleTranscriptionException implements Exception {
 
   @override
   String toString() => 'SimpleTranscriptionException: $message';
+}
+
+/// Internal class for queued segments awaiting transcription
+class _QueuedSegment {
+  final String filePath;
+  final int segmentIndex;
+
+  _QueuedSegment({required this.filePath, required this.segmentIndex});
 }

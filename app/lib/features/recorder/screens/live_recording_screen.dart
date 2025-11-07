@@ -506,20 +506,18 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       );
     }
 
-    // Count how many status indicators we need to show
-    int statusIndicatorCount = 0;
-    if (_isProcessing) statusIndicatorCount++;
-    if (_isRecording && !_isPaused) statusIndicatorCount++;
-    if (_isPaused)
-      statusIndicatorCount = 1; // Paused replaces recording indicator
-
     return ListView.builder(
       controller: _scrollController,
-      itemCount: _segments.length + statusIndicatorCount,
+      itemCount:
+          _segments.length +
+          (_isRecording && !_isPaused ? 1 : 0) +
+          (_isPaused ? 1 : 0),
       itemBuilder: (context, index) {
-        // Show completed segments
+        // Show all segments (completed, processing, pending)
         if (index < _segments.length) {
           final segment = _segments[index];
+
+          // Show completed segments as text
           if (segment.status == TranscriptionSegmentStatus.completed) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
@@ -529,23 +527,38 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
               ),
             );
           }
+
+          // Show processing segments with indicator
+          if (segment.status == TranscriptionSegmentStatus.processing) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: _buildProcessingIndicator(segmentNumber: segment.index),
+            );
+          }
+
+          // Show pending (queued) segments with indicator
+          if (segment.status == TranscriptionSegmentStatus.pending) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: _buildQueuedIndicator(segmentNumber: segment.index),
+            );
+          }
+
+          // Show failed segments with indicator
+          if (segment.status == TranscriptionSegmentStatus.failed) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: _buildFailedIndicator(segmentNumber: segment.index),
+            );
+          }
+
           return const SizedBox.shrink();
         }
 
-        // Show status indicators after segments
+        // Show recording/paused indicator after all segments
         final statusIndex = index - _segments.length;
 
-        // First status: Processing indicator (if processing)
-        if (statusIndex == 0 && _isProcessing) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16.0),
-            child: _buildProcessingIndicator(),
-          );
-        }
-
-        // Second status (or first if not processing): Recording/Paused indicator
-        if ((_isProcessing && statusIndex == 1) ||
-            (!_isProcessing && statusIndex == 0)) {
+        if (statusIndex == 0) {
           if (_isPaused) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16.0),
@@ -565,7 +578,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   /// Build processing status indicator
-  Widget _buildProcessingIndicator() {
+  Widget _buildProcessingIndicator({int? segmentNumber}) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -578,14 +591,23 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       ),
       child: Row(
         children: [
-          Icon(Icons.sync, color: Colors.orange.shade700, size: 20),
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.orange.shade700),
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Processing transcription',
+                  segmentNumber != null
+                      ? 'Processing segment #$segmentNumber'
+                      : 'Processing transcription',
                   style: TextStyle(
                     color: Colors.orange.shade700,
                     fontWeight: FontWeight.w600,
@@ -594,9 +616,97 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Please wait...',
+                  'Transcribing audio...',
                   style: TextStyle(
                     color: Colors.orange.shade700.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build queued (pending) status indicator
+  Widget _buildQueuedIndicator({required int segmentNumber}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.blue.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.schedule, color: Colors.blue.shade700, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Segment #$segmentNumber queued',
+                  style: TextStyle(
+                    color: Colors.blue.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Waiting to process...',
+                  style: TextStyle(
+                    color: Colors.blue.shade700.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build failed status indicator
+  Widget _buildFailedIndicator({required int segmentNumber}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.red.shade700.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error, color: Colors.red.shade700, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Segment #$segmentNumber failed',
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Transcription error',
+                  style: TextStyle(
+                    color: Colors.red.shade700.withValues(alpha: 0.8),
                     fontSize: 12,
                   ),
                 ),
