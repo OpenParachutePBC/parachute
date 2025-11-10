@@ -43,6 +43,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   TranscriptionMode _transcriptionMode = TranscriptionMode.api;
   WhisperModelType _preferredModel = WhisperModelType.base;
   bool _autoTranscribe = false;
+  bool _autoPauseRecording = false;
   String _storageInfo = '0 MB used';
 
   // Title Generation settings
@@ -144,6 +145,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     // Load auto-transcribe setting
     _autoTranscribe = await storageService.getAutoTranscribe();
+
+    // Load auto-pause recording setting
+    _autoPauseRecording = await storageService.getAutoPauseRecording();
 
     // Load storage info
     _storageInfo = await modelManager.getStorageInfo();
@@ -611,6 +615,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _setAutoTranscribe(bool enabled) async {
     await ref.read(storageServiceProvider).setAutoTranscribe(enabled);
     setState(() => _autoTranscribe = enabled);
+  }
+
+  Future<void> _setAutoPauseRecording(bool enabled) async {
+    await ref.read(storageServiceProvider).setAutoPauseRecording(enabled);
+    setState(() => _autoPauseRecording = enabled);
   }
 
   Future<void> _refreshWhisperStorage() async {
@@ -1729,6 +1738,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     value: _autoTranscribe,
                     onChanged: _setAutoTranscribe,
+                    activeTrackColor: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Auto-pause toggle (VAD-based chunking)
+                  SwitchListTile(
+                    title: const Text('Auto-pause recording'),
+                    subtitle: const Text(
+                      'Automatically detect silence and segment recordings (experimental)',
+                    ),
+                    value: _autoPauseRecording,
+                    onChanged: _setAutoPauseRecording,
                     activeTrackColor: Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(height: 32),
