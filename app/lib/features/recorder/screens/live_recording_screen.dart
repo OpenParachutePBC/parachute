@@ -7,6 +7,7 @@ import 'package:app/features/recorder/services/live_transcription_service_v2.dar
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart'
     as v3;
 import 'package:app/features/recorder/providers/service_providers.dart';
+import 'package:app/features/recorder/widgets/audio_debug_overlay.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/core/providers/git_sync_provider.dart';
@@ -32,6 +33,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   dynamic
   _transcriptionService; // SimpleTranscriptionService OR AutoPauseTranscriptionService
   bool _useAutoPause = false; // Determined at init time
+  bool _showDebugOverlay = false; // Determined at init time
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _textFocusNode = FocusNode();
@@ -74,6 +76,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
       // Check if auto-pause is enabled
       _useAutoPause = await storageService.getAutoPauseRecording();
+
+      // Check if debug overlay is enabled
+      _showDebugOverlay = await storageService.getAudioDebugOverlay();
 
       // Initialize appropriate service
       if (_useAutoPause) {
@@ -417,7 +422,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: _buildAppBar(),
-      body: _buildBody(),
+      body: _buildBodyWithDebugOverlay(),
       bottomNavigationBar: _buildBottomBar(),
     );
   }
@@ -488,6 +493,28 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         Text('Synced', style: TextStyle(fontSize: 14, color: Colors.green)),
       ],
     );
+  }
+
+  Widget _buildBodyWithDebugOverlay() {
+    // Wrap body with debug overlay if enabled and using auto-pause (V3)
+    if (_showDebugOverlay &&
+        _useAutoPause &&
+        _transcriptionService is v3.AutoPauseTranscriptionService) {
+      return Stack(
+        children: [
+          _buildBody(),
+          // Only show overlay while recording
+          if (_isRecording)
+            AudioDebugOverlay(
+              metricsStream:
+                  (_transcriptionService as v3.AutoPauseTranscriptionService)
+                      .debugMetricsStream,
+            ),
+        ],
+      );
+    }
+
+    return _buildBody();
   }
 
   Widget _buildBody() {

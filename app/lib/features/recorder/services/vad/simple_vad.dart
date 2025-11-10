@@ -86,8 +86,6 @@ class SimpleVAD {
     return isSpeech;
   }
 
-  int _debugFrameCount = 0; // For sampling energy values
-
   /// Calculate RMS energy of audio samples
   ///
   /// This is the core algorithm that determines speech vs silence.
@@ -104,14 +102,6 @@ class SimpleVAD {
     }
 
     final rms = sqrt(sumSquares / samples.length);
-
-    // Debug: Log energy every 100 frames (~1 second)
-    _debugFrameCount++;
-    if (_debugFrameCount % 100 == 0) {
-      debugPrint(
-        '[VAD] Energy: ${rms.toStringAsFixed(1)}, Threshold: ${config.energyThreshold}, Speech: ${rms > config.energyThreshold}',
-      );
-    }
 
     return rms;
   }

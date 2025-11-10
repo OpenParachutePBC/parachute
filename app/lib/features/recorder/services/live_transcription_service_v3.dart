@@ -9,6 +9,25 @@ import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/vad/smart_chunker.dart';
 import 'package:app/features/recorder/services/audio_processing/simple_noise_filter.dart';
 
+/// Audio debug metrics for visualization
+class AudioDebugMetrics {
+  final double rawEnergy;
+  final double cleanEnergy;
+  final double filterReduction; // Percentage
+  final double vadThreshold;
+  final bool isSpeech;
+  final DateTime timestamp;
+
+  AudioDebugMetrics({
+    required this.rawEnergy,
+    required this.cleanEnergy,
+    required this.filterReduction,
+    required this.vadThreshold,
+    required this.isSpeech,
+    required this.timestamp,
+  });
+}
+
 /// Represents a transcribed segment (auto-detected via VAD)
 class TranscriptionSegment {
   final int index; // Segment number (1, 2, 3, ...)
@@ -88,12 +107,16 @@ class AutoPauseTranscriptionService {
       StreamController<TranscriptionSegment>.broadcast();
   final _processingStreamController = StreamController<bool>.broadcast();
   final _vadActivityController = StreamController<bool>.broadcast();
+  final _debugMetricsController =
+      StreamController<AudioDebugMetrics>.broadcast();
 
   Stream<TranscriptionSegment> get segmentStream =>
       _segmentStreamController.stream;
   Stream<bool> get isProcessingStream => _processingStreamController.stream;
   Stream<bool> get vadActivityStream =>
       _vadActivityController.stream; // true = speech, false = silence
+  Stream<AudioDebugMetrics> get debugMetricsStream =>
+      _debugMetricsController.stream;
 
   bool get isRecording => _isRecording;
   bool get isProcessing => _isProcessingQueue;
@@ -209,14 +232,23 @@ class AutoPauseTranscriptionService {
     // Apply noise filter BEFORE VAD (removes low-frequency background noise)
     final cleanSamples = _noiseFilter!.process(rawSamples);
 
-    // Debug: Log filter effectiveness periodically
-    if (_allAudioSamples.length % 100 == 0) {
-      final rawEnergy = _calculateRMS(rawSamples);
-      final cleanEnergy = _calculateRMS(cleanSamples);
-      debugPrint(
-        '[NoiseFilter] Raw: ${rawEnergy.toStringAsFixed(1)}, '
-        'Clean: ${cleanEnergy.toStringAsFixed(1)}, '
-        'Reduction: ${((1 - cleanEnergy / rawEnergy) * 100).toStringAsFixed(1)}%',
+    // Emit debug metrics for visualization (every 10ms frame)
+    final rawEnergy = _calculateRMS(rawSamples);
+    final cleanEnergy = _calculateRMS(cleanSamples);
+    final reduction = rawEnergy > 0
+        ? ((1 - cleanEnergy / rawEnergy) * 100)
+        : 0.0;
+
+    if (!_debugMetricsController.isClosed) {
+      _debugMetricsController.add(
+        AudioDebugMetrics(
+          rawEnergy: rawEnergy,
+          cleanEnergy: cleanEnergy,
+          filterReduction: reduction,
+          vadThreshold: _chunker!.stats.vadStats.isSpeaking ? cleanEnergy : 0,
+          isSpeech: cleanEnergy > 200.0, // Using current threshold
+          timestamp: DateTime.now(),
+        ),
       );
     }
 
@@ -608,6 +640,7 @@ class AutoPauseTranscriptionService {
     await _segmentStreamController.close();
     await _processingStreamController.close();
     await _vadActivityController.close();
+    await _debugMetricsController.close();
 
     // Clean up temp directory
     if (_tempDirectory != null) {
