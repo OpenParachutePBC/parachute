@@ -183,7 +183,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to start recording. Check permissions.'),
+            content: Text('Failed to start listening. Check permissions.'),
           ),
         );
         Navigator.of(context).pop();
@@ -291,24 +291,25 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       _triggerAutoSync();
 
       if (mounted) {
+        // Navigate immediately - don't wait for transcription
+        Navigator.of(context).pop();
+
+        // Show subtle notification that note is saved
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Journal entry saved!\n$timestamp\n$_wordCount words',
+              'Note saved!\n$timestamp${_isProcessing ? ' (transcribing in background...)' : '\n$_wordCount words'}',
             ),
             duration: const Duration(seconds: 2),
             backgroundColor: Colors.green,
           ),
         );
-
-        // Go back to home screen
-        Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to save: $e'),
+            content: Text('Failed to save note: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -430,9 +431,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
             final shouldExit = await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
-                title: const Text('Discard Journal Entry?'),
+                title: const Text('Discard Note?'),
                 content: const Text(
-                  'Are you sure you want to discard your thoughts?',
+                  'Are you sure you want to discard this note?',
                 ),
                 actions: [
                   TextButton(
@@ -654,8 +655,8 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
               children: [
                 Text(
                   segmentNumber != null
-                      ? 'Processing segment #$segmentNumber'
-                      : 'Processing transcription',
+                      ? 'Transcribing #$segmentNumber'
+                      : 'Transcribing',
                   style: TextStyle(
                     color: Colors.orange.shade700,
                     fontWeight: FontWeight.w600,
@@ -960,9 +961,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
           flex: 3,
           child: ElevatedButton.icon(
             onPressed: _stopAndSave, // Single action to finish
-            icon: const Icon(Icons.book, size: 28),
+            icon: const Icon(Icons.save, size: 28),
             label: const Text(
-              'Save Journal Entry',
+              'Save Note',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
