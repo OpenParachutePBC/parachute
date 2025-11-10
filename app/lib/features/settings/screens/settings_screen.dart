@@ -1746,7 +1746,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   SwitchListTile(
                     title: const Text('Auto-pause recording'),
                     subtitle: const Text(
-                      'Automatically detect silence and segment recordings (experimental)',
+                      'Automatically detect silence and segment recordings',
                     ),
                     value: _autoPauseRecording,
                     onChanged: _setAutoPauseRecording,

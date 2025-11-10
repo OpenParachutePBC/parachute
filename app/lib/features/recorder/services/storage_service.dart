@@ -853,10 +853,10 @@ class StorageService {
   Future<bool> getAutoPauseRecording() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_autoPauseRecordingKey) ?? false;
+      return prefs.getBool(_autoPauseRecordingKey) ?? true; // Default: ON
     } catch (e) {
       debugPrint('Error getting auto-pause recording setting: $e');
-      return false;
+      return true; // Default: ON
     }
   }
 

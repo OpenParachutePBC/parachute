@@ -12,14 +12,14 @@ import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/core/providers/git_sync_provider.dart';
 import 'package:path/path.dart' as path;
 
-/// Live journaling recording screen with manual pause-based transcription
+/// Live journaling screen with auto-pause transcription
 ///
 /// User flow:
-/// 1. Tap "Start Recording" → Begin speaking
-/// 2. Tap "Pause" when done with a thought → Text appears
-/// 3. Tap "Resume" → Continue speaking
-/// 4. Repeat pause/resume for each paragraph
-/// 5. Tap "Stop & Save" → Save complete recording
+/// 1. Start listening → Begin speaking your thoughts
+/// 2. Auto-pause detects silence → Text appears naturally
+/// 3. Continue speaking → Seamless journaling experience
+/// 4. Tap "Pause" if you need a break
+/// 5. Tap "Save Journal Entry" → Save your thoughts
 class LiveRecordingScreen extends ConsumerStatefulWidget {
   const LiveRecordingScreen({super.key});
 
@@ -293,7 +293,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Recording saved!\n$timestamp\n$_wordCount words'),
+            content: Text(
+              'Journal entry saved!\n$timestamp\n$_wordCount words',
+            ),
             duration: const Duration(seconds: 2),
             backgroundColor: Colors.green,
           ),
@@ -396,7 +398,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
             icon: const Icon(Icons.close),
             onPressed: () => Navigator.of(context).pop(),
           ),
-          title: const Text('Initializing...'),
+          title: const Text('Getting ready...'),
         ),
         body: const Center(
           child: Column(
@@ -404,7 +406,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text('Preparing recorder...'),
+              Text('Preparing to listen...'),
             ],
           ),
         ),
@@ -428,9 +430,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
             final shouldExit = await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
-                title: const Text('Discard Recording?'),
+                title: const Text('Discard Journal Entry?'),
                 content: const Text(
-                  'Are you sure you want to discard this recording?',
+                  'Are you sure you want to discard your thoughts?',
                 ),
                 actions: [
                   TextButton(
@@ -498,12 +500,12 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
-                // Add subtle border when recording
+                // Add subtle border when listening
                 border: _isRecording
                     ? Border.all(
                         color: _isPaused
-                            ? Colors.orange.withValues(alpha: 0.5)
-                            : Colors.red.withValues(alpha: 0.5),
+                            ? Colors.orange.withValues(alpha: 0.3)
+                            : Colors.blue.withValues(alpha: 0.4),
                         width: 2,
                       )
                     : null,
@@ -527,11 +529,27 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   /// Build the content list showing segments and current status inline
   Widget _buildContentList() {
     if (_segments.isEmpty && !_isRecording && !_isProcessing) {
-      // Empty state
+      // Empty state - warm, inviting
       return Center(
-        child: Text(
-          'Tap "Start Recording" to begin...',
-          style: const TextStyle(fontSize: 16, color: Colors.grey),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.auto_awesome, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              'Ready to listen',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Start speaking your thoughts...',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+            ),
+          ],
         ),
       );
     }
@@ -773,7 +791,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Recording paused',
+                  'Paused',
                   style: TextStyle(
                     color: Colors.orange.shade700,
                     fontWeight: FontWeight.w600,
@@ -782,7 +800,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Press Resume to continue',
+                  'Ready when you are...',
                   style: TextStyle(
                     color: Colors.orange.shade700.withValues(alpha: 0.8),
                     fontSize: 12,
@@ -896,11 +914,11 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       onPressed: _startRecording,
       icon: const Icon(Icons.mic, size: 28),
       label: const Text(
-        'Start Recording',
+        'Start Listening',
         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.red,
+        backgroundColor: Colors.blue.shade600,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 18),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -912,45 +930,39 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   Widget _buildRecordingControls() {
     return Row(
       children: [
-        // Pause/Resume button (only in manual mode)
-        if (!_useAutoPause) ...[
-          Expanded(
-            flex: 2,
-            child: ElevatedButton.icon(
-              onPressed:
-                  _togglePause, // Always enabled - can resume during processing
-              icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, size: 24),
-              label: Text(
-                _isPaused ? 'Resume' : 'Pause',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+        // Pause/Resume button (always available)
+        Expanded(
+          flex: 2,
+          child: ElevatedButton.icon(
+            onPressed: _togglePause,
+            icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, size: 24),
+            label: Text(
+              _isPaused ? 'Resume' : 'Pause',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _isPaused
+                  ? Colors.green
+                  : Colors.orange.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isPaused
-                    ? Colors.green
-                    : Colors.orange.shade700,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-              ),
+              elevation: 2,
             ),
           ),
-          const SizedBox(width: 12),
-        ],
+        ),
+        const SizedBox(width: 12),
 
         // Stop & Save button (prominent, single action)
         Expanded(
-          flex: _useAutoPause ? 1 : 3,
+          flex: 3,
           child: ElevatedButton.icon(
             onPressed: _stopAndSave, // Single action to finish
-            icon: const Icon(Icons.check_circle, size: 28),
+            icon: const Icon(Icons.book, size: 28),
             label: const Text(
-              'Stop & Save',
+              'Save Journal Entry',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
