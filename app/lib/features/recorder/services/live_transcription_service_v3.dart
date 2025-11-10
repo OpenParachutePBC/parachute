@@ -455,10 +455,13 @@ class AutoPauseTranscriptionService {
   /// Get complete transcript (all segments combined)
   String getCompleteTranscript() {
     return _segments
-        .where((s) => s.status == TranscriptionSegmentStatus.completed)
+        .where((s) => s.status.toString().contains('completed'))
         .map((s) => s.text)
         .join('\n\n');
   }
+
+  /// Alias for V2 compatibility
+  String getCombinedText() => getCompleteTranscript();
 
   /// Convert byte array to int16 samples
   List<int> _bytesToInt16(Uint8List bytes) {
