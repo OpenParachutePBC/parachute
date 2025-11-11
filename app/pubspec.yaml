@@ -50,7 +50,7 @@ dependencies:
   just_audio: ^0.9.42
 
   # Permissions
-  permission_handler: ^12.0.0
+  permission_handler: ^12.0.1
 
   # Omi Device Integration
   flutter_blue_plus: ^1.33.6
