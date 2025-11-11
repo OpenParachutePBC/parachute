@@ -38,6 +38,14 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
+
+    # Fix deployment target warnings - enforce minimum macOS 10.15
+    # whisper_ggml requires 10.15, so we need to use that as the minimum
+    target.build_configurations.each do |config|
+      if config.build_settings['MACOSX_DEPLOYMENT_TARGET'].to_f < 10.15
+        config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '10.15'
+      end
+    end
   end
 
   # Fix git2dart_binaries: Copy libssh2.1.dylib to Frameworks
@@ -56,7 +64,14 @@ post_install do |installer|
     if runner_target
       existing_phase = runner_target.shell_script_build_phases.find { |p| p.name == 'Copy Git Libraries' }
 
-      unless existing_phase
+      if existing_phase
+        puts "Updating 'Copy Git Libraries' build phase output paths"
+        existing_phase.output_paths = [
+          "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libssh2.1.dylib",
+          "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libgit2-experimental.1.9.dylib"
+        ]
+        runner_project.save
+      else
         puts "Adding 'Copy Git Libraries' build phase to Runner target"
         phase = runner_target.new_shell_script_build_phase('Copy Git Libraries')
         phase.shell_script = <<~SCRIPT
@@ -86,9 +101,12 @@ if [ -f "$LIBGIT2_TARGET" ]; then
     echo "✅ Created symlink: libgit2-experimental.1.9.dylib -> libgit2.dylib"
 fi
         SCRIPT
+        # Declare output files to prevent "run during every build" warning
+        phase.output_paths = [
+          "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libssh2.1.dylib",
+          "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libgit2-experimental.1.9.dylib"
+        ]
         runner_project.save
-      else
-        puts "✓ 'Copy Git Libraries' build phase already exists"
       end
     end
   end
@@ -106,7 +124,11 @@ fi
       # Check if the build phase already exists
       existing_phase = runner_target.shell_script_build_phases.find { |p| p.name == 'Copy Opus Library' }
 
-      unless existing_phase
+      if existing_phase
+        puts "Updating 'Copy Opus Library' build phase output paths"
+        existing_phase.output_paths = ["${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libopus.dylib"]
+        runner_project.save
+      else
         puts "Adding 'Copy Opus Library' build phase to Runner target"
         phase = runner_target.new_shell_script_build_phase('Copy Opus Library')
         phase.shell_script = <<-SCRIPT
@@ -125,9 +147,9 @@ else
     echo "⚠️  Warning: Opus library not found at: $OPUS_SOURCE"
 fi
         SCRIPT
+        # Declare output file to prevent "run during every build" warning
+        phase.output_paths = ["${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libopus.dylib"]
         runner_project.save
-      else
-        puts "✓ 'Copy Opus Library' build phase already exists"
       end
     end
   else
