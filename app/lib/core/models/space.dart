@@ -20,15 +20,20 @@ class Space {
   });
 
   factory Space.fromJson(Map<String, dynamic> json) {
+    // Support both backend format (snake_case) and local format (camelCase)
     return Space(
       id: json['id'] as String,
-      userId: json['user_id'] as String,
+      userId: (json['userId'] ?? json['user_id'] ?? 'local') as String,
       name: json['name'] as String,
       path: json['path'] as String,
       icon: json['icon'] as String?,
       color: json['color'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdAt: DateTime.parse(
+        (json['createdAt'] ?? json['created_at']) as String,
+      ),
+      updatedAt: DateTime.parse(
+        (json['updatedAt'] ?? json['updated_at']) as String,
+      ),
     );
   }
 

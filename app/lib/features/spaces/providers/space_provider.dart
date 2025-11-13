@@ -1,11 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/space.dart';
-import '../../../core/providers/api_provider.dart';
+import './space_storage_provider.dart';
+import '../../../core/services/git/git_service.dart';
+import '../../../core/services/file_system_service.dart';
 
-// Space List Provider
+// Space List Provider - Now uses local storage
 final spaceListProvider = FutureProvider<List<Space>>((ref) async {
-  final apiClient = ref.watch(apiClientProvider);
-  return apiClient.getSpaces();
+  final storageService = ref.watch(spaceStorageServiceProvider);
+  return storageService.listSpaces();
 });
 
 // Selected Space Provider
@@ -24,12 +26,15 @@ class SpaceActions {
     String? icon,
     String? color,
   }) async {
-    final apiClient = ref.read(apiClientProvider);
-    final space = await apiClient.createSpace(
+    final storageService = ref.read(spaceStorageServiceProvider);
+    final space = await storageService.createSpace(
       name: name,
       icon: icon,
       color: color,
     );
+
+    // Trigger Git auto-commit
+    await _commitSpaceChange('Create space: $name');
 
     // Refresh the space list
     ref.invalidate(spaceListProvider);
@@ -43,13 +48,16 @@ class SpaceActions {
     String? icon,
     String? color,
   }) async {
-    final apiClient = ref.read(apiClientProvider);
-    final space = await apiClient.updateSpace(
+    final storageService = ref.read(spaceStorageServiceProvider);
+    final space = await storageService.updateSpace(
       id: id,
       name: name,
       icon: icon,
       color: color,
     );
+
+    // Trigger Git auto-commit
+    await _commitSpaceChange('Update space: ${space.name}');
 
     // Refresh the space list
     ref.invalidate(spaceListProvider);
@@ -58,8 +66,16 @@ class SpaceActions {
   }
 
   Future<void> deleteSpace(String id) async {
-    final apiClient = ref.read(apiClientProvider);
-    await apiClient.deleteSpace(id);
+    final storageService = ref.read(spaceStorageServiceProvider);
+
+    // Get space name before deletion for commit message
+    final space = await storageService.getSpace(id);
+    final spaceName = space?.name ?? id;
+
+    await storageService.deleteSpace(id);
+
+    // Trigger Git auto-commit
+    await _commitSpaceChange('Delete space: $spaceName');
 
     // Clear selection if the deleted space was selected
     final selectedSpace = ref.read(selectedSpaceProvider);
@@ -73,5 +89,36 @@ class SpaceActions {
 
   void selectSpace(Space space) {
     ref.read(selectedSpaceProvider.notifier).state = space;
+  }
+
+  /// Helper to commit space changes to Git
+  Future<void> _commitSpaceChange(String message) async {
+    try {
+      final gitService = GitService.instance;
+      final fileSystemService = FileSystemService();
+      final vaultPath = await fileSystemService.getRootPath();
+
+      // Check if Git is initialized
+      final isGitRepo = await gitService.isGitRepository(vaultPath);
+      if (!isGitRepo) return;
+
+      // Open repository
+      final repo = await gitService.openRepository(vaultPath);
+      if (repo == null) return;
+
+      // Stage all changes
+      await gitService.addAll(repo: repo);
+
+      // Commit changes
+      await gitService.commit(
+        repo: repo,
+        message: message,
+        authorName: 'Parachute',
+        authorEmail: 'parachute@local',
+      );
+    } catch (e) {
+      // Don't fail the operation if Git commit fails
+      print('[SpaceActions] Git commit failed: $e');
+    }
   }
 }
