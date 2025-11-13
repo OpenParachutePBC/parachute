@@ -6,51 +6,47 @@
 
 ## Current Development Focus
 
-**🚧 Active Feature**: Auto-Pause Voice Recording with Noise Suppression (Nov 7, 2025)
+**🎯 Status**: Ready for next feature (Nov 13, 2025)
 
-**Status**: 📋 Planning complete, 🎯 Starting implementation
+### Recently Completed
 
-### Goal
+**Auto-Pause Voice Recording (Nov 10, 2025)**: ✅ Complete
 
-Port [RichardTate](https://github.com/lucianHymer/richardtate)'s proven auto-pause and noise suppression system to Parachute:
+Automatic silence detection with intelligent noise suppression is now fully functional:
 
-- **Auto-detect silence** - No manual pause button needed (1s silence → auto-segment)
-- **Remove background noise** - RNNoise removes keyboards, fans, traffic, TV
-- **Intelligent segmentation** - Natural speech boundaries, no mid-sentence cuts
-- **Better transcription** - Clean audio → better Whisper accuracy
+- ✅ VAD (Voice Activity Detection) - RMS energy-based speech detection
+- ✅ SmartChunker - Auto-segment on 1s silence
+- ✅ OS-level noise suppression (echoCancel, autoGain, noiseSuppress)
+- ✅ High-pass filter (80Hz cutoff) - Removes low-frequency rumble
+- ✅ Visual debug overlay with real-time audio graphs
+- ✅ Settings toggle for auto-pause and debug mode
+- ✅ 116 comprehensive tests covering all components
 
-### Implementation Strategy
+**Audio Pipeline**: `Mic → OS Suppression → High-Pass Filter → VAD → SmartChunker → Whisper`
 
-**Maximum code reuse**: Port ~1,040 lines of battle-tested Go algorithms to Dart + FFI bindings for RNNoise C library
+**See**: [docs/implementation/auto-pause-branch-audit.md](docs/implementation/auto-pause-branch-audit.md)
 
-**Three-week phased delivery**:
+**Recording UI Polish (Nov 6-13, 2025)**: ✅ Complete
 
-- **Week 1**: Pure Dart ports (VAD, Resampler, Chunker) → Auto-pause working
-- **Week 2**: RNNoise FFI integration → Noise suppression added
-- **Week 3**: UI polish, settings, testing → Ship to users
-
-### Implementation Docs
-
-**Primary references** (read these for implementation details):
-
-- [docs/implementation/IMPLEMENTATION-ROADMAP.md](docs/implementation/IMPLEMENTATION-ROADMAP.md) - **START HERE** - Week-by-week action plan with checklists
-- [docs/implementation/richardtate-port-strategy.md](docs/implementation/richardtate-port-strategy.md) - Complete technical guide with Go→Dart code mappings
-- [docs/implementation/auto-pause-vad-implementation.md](docs/implementation/auto-pause-vad-implementation.md) - How RichardTate works, all research
-- [docs/implementation/noise-suppression-summary.md](docs/implementation/noise-suppression-summary.md) - Quick reference
-
-**RichardTate source code** (for reference during porting):
-
-- Located at: `~/Symbols/Codes/richardtate/`
-- Key files: `server/internal/transcription/{vad,chunker,resample,rnnoise,pipeline}.go`
-
-### Previously Completed
+- ✅ Context field with voice input (record → transcribe → insert)
+- ✅ Background transcription service (continues when app backgrounded)
+- ✅ Incomplete transcription detection and resume
+- ✅ Immediate recording persistence (no data loss on exit)
+- ✅ Android permissions and ProGuard fixes
+- ✅ App branding ("Parachute" on all platforms)
+- ✅ Custom app icon (yellow parachute design)
+- ✅ Google Keep-inspired notes grid/list view
 
 **Git Sync (Nov 6, 2025)**: ✅ Complete
 
 - Local-first architecture with Git-based sync
 - See [docs/implementation/github-sync-implementation.md](docs/implementation/github-sync-implementation.md)
 
-**Deferred**: Space SQLite Knowledge System, Recording UI polish
+### Next Up
+
+**Space SQLite Knowledge System** - Link captures to spaces with structured metadata
+
+**See**: [ROADMAP.md](ROADMAP.md) for full feature queue
 
 ---
 
@@ -324,35 +320,48 @@ This space tracks development discussions, architecture decisions, and feature p
 - Markdown + WAV files saved to `~/Parachute/captures/`
 - Immediate discard without unnecessary processing
 
-**Recording UI Enhancements (Nov 6, 2025)**
+**Recording UI Enhancements (Nov 6-13, 2025)**
 
 - Context field for space-specific interpretation
+- Context voice input (record → transcribe → insert)
 - Inline editing for title, transcript, context
 - Unified RecordingDetailScreen
+- Background transcription service (continues when app backgrounded)
+- Incomplete transcription detection and resume
+- Immediate recording persistence (no data loss on exit)
 - Link captures to spaces integration
 
-**Git Sync Foundation (Nov 5, 2025)**
+**Git Sync Complete (Nov 6, 2025)**
 
 - Library research and selection (✅ git2dart chosen)
 - Proof-of-concept complete (✅ all tests passing)
 - Local Git operations (init, add, commit, status)
-
-### 🚧 In Progress (Week of Nov 6, 2025)
-
-**Priority 1: Recording UI Polish**
-
-- Refine inline editing UX
-- Error handling improvements
-- Performance optimization
-- Context field refinement
-
-**Priority 2: GitHub Sync Completion**
-
 - Remote Git operations (clone, push, pull)
 - GitHub PAT authentication
 - Settings screen for Git config
 - Auto-commit on recording save
-- Sync status indicators
+- Manual sync with UI indicators
+- Periodic background sync (every 5 minutes)
+- Settings persistence across restarts
+
+**Auto-Pause Voice Recording (Nov 7-10, 2025)**
+
+- VAD (Voice Activity Detection) with RMS energy calculation
+- SmartChunker for auto-segmentation on 1s silence
+- Resampler for 16kHz audio processing
+- AutoPauseTranscriptionService with VAD-based chunking
+- OS-level noise suppression (echoCancel, autoGain, noiseSuppress)
+- High-pass filter (80Hz cutoff) for low-frequency noise removal
+- Visual debug overlay with real-time audio graphs
+- Settings toggle for auto-pause and debug mode
+- 116 comprehensive unit tests (all passing)
+
+**Android Stability (Nov 13, 2025)**
+
+- Required Android permissions (storage, audio, Bluetooth, notifications)
+- ProGuard/R8 fixes (disabled minification, comprehensive keep rules)
+- App branding corrections ("Parachute" on all platforms)
+- Custom app icon (yellow parachute design)
 
 ### 🔜 Next Up
 
@@ -535,5 +544,5 @@ Read these files as needed for specific tasks. Context is your friend!
 
 ---
 
-**Last Updated**: November 6, 2025
-**Next Review**: After documentation cleanup and Git sync completion
+**Last Updated**: November 13, 2025
+**Next Review**: After Space SQLite Knowledge System implementation

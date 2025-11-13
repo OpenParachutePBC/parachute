@@ -127,11 +127,24 @@ The app includes three main features accessible via bottom navigation:
 
 ## Current Status
 
-🚀 **Active Development** - Local-First Alpha with Git Sync
+🚀 **Active Development** - Local-First Alpha with Complete Recorder
 
-Core functionality is working with full local-first architecture. Current focus: Recording UI polish and refinement.
+Core functionality is working with full local-first architecture. All recorder features complete!
 
-**Recently Completed (Nov 6, 2025):**
+**Recently Completed (Nov 13, 2025):**
+
+**Recording Features:**
+
+- [x] **Auto-pause voice recording** - VAD-based silence detection (hands-free journaling)
+- [x] **Noise suppression** - OS-level suppression + high-pass filter
+- [x] **Context field with voice input** - Record → transcribe → insert
+- [x] **Background transcription** - Continues even when app backgrounded
+- [x] **Incomplete transcription recovery** - Detect and resume interrupted transcriptions
+- [x] **Immediate persistence** - No data loss on exit
+- [x] **Custom app icon** - Yellow parachute design on all platforms
+- [x] **Android stability** - Permissions and ProGuard fixes
+
+**Sync & Infrastructure:**
 
 - [x] **Git-based sync** - Multi-device synchronization via GitHub
 - [x] **Auto-sync** - Automatic commits after save/update/delete
@@ -139,8 +152,6 @@ Core functionality is working with full local-first architecture. Current focus:
 - [x] **Periodic sync** - Background sync every 5 minutes
 - [x] **Settings persistence** - Git configuration saved across restarts
 - [x] **Local-first architecture** - Complete removal of backend dependencies for recordings
-- [x] **Context field** - Space-specific interpretation notes for recordings
-- [x] **Inline editing** - Edit title, transcript, and context directly
 
 **Core Features Complete:**
 
@@ -156,9 +167,7 @@ Core functionality is working with full local-first architecture. Current focus:
 
 **Next Steps:**
 
-- [ ] Recording UI polish (error handling, loading states)
-- [ ] Performance optimization for large recordings
-- [ ] Space SQLite Knowledge System (deferred until polish complete)
+- [ ] Space SQLite Knowledge System - Link captures to spaces with structured metadata
 
 See [ROADMAP.md](ROADMAP.md) for detailed progress and future plans.
 
@@ -217,4 +226,4 @@ Questions? Ideas? Reach out: [contact info TBD]
 
 ---
 
-**Status:** Active Development (Alpha) - Last Updated: November 6, 2025
+**Status:** Active Development (Alpha) - Last Updated: November 13, 2025
