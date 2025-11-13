@@ -223,5 +223,11 @@ final backgroundTranscriptionProvider =
       // This is critical for background transcription to complete
       ref.keepAlive();
 
+      // Set callback to trigger UI refresh when file is saved
+      // This updates the recordings list even when user navigates away
+      service.onFileSaved = () {
+        ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+      };
+
       return service;
     });

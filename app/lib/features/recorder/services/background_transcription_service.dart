@@ -20,6 +20,9 @@ class BackgroundTranscriptionService {
   final List<Function(TranscriptionSegment)> _segmentListeners = [];
   final List<Function(bool)> _completionListeners = [];
 
+  // Callback for when a file is saved (used to trigger UI refresh)
+  Function()? onFileSaved;
+
   /// Start monitoring a transcription service in the background
   void startMonitoring({
     required AutoPauseTranscriptionService service,
@@ -164,6 +167,12 @@ class BackgroundTranscriptionService {
       // Notify completion listeners
       for (final listener in _completionListeners) {
         listener(true);
+      }
+
+      // Trigger UI refresh callback (for HomeScreen to reload recordings list)
+      if (onFileSaved != null) {
+        debugPrint('[BackgroundTranscription] Triggering UI refresh callback');
+        onFileSaved!();
       }
 
       // Clean up

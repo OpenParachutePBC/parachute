@@ -9,6 +9,7 @@ import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/services/whisper_service.dart';
 import 'package:app/features/recorder/services/whisper_local_service.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
+import 'package:app/features/recorder/services/background_transcription_service.dart';
 import 'package:app/features/recorder/models/whisper_models.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
 import 'package:app/core/services/file_system_service.dart';
@@ -59,6 +60,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   Recording? _recording; // Nullable now - might not exist yet if transcribing
   Timer? _refreshTimer;
   StreamSubscription? _transcriptionSubscription;
+  BackgroundTranscriptionService?
+  _backgroundServiceRef; // Store reference for cleanup
 
   // Controllers for inline editing
   final TextEditingController _titleController = TextEditingController();
@@ -110,17 +113,19 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     _refreshTimer?.cancel();
     _transcriptionSubscription?.cancel();
 
-    // Remove listeners from background service (only if widget is still mounted)
-    if (mounted) {
+    // Remove listeners from background service using stored reference
+    // IMPORTANT: Don't use ref.read() during dispose - causes "ref after dispose" error
+    if (_backgroundServiceRef != null) {
       try {
-        final backgroundService = ref.read(backgroundTranscriptionProvider);
-        backgroundService.removeSegmentListener(_handleSegmentUpdate);
-        backgroundService.removeCompletionListener(
+        _backgroundServiceRef!.removeSegmentListener(_handleSegmentUpdate);
+        _backgroundServiceRef!.removeCompletionListener(
           _handleTranscriptionComplete,
         );
+        debugPrint(
+          '[RecordingDetail] Removed listeners from background service',
+        );
       } catch (e) {
-        // Ignore errors during disposal
-        debugPrint('[RecordingDetail] Error during dispose: $e');
+        debugPrint('[RecordingDetail] Error removing listeners: $e');
       }
     }
 
@@ -134,6 +139,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   /// Listen to transcription updates from the background service
   void _listenToTranscriptionUpdates() {
     final backgroundService = ref.read(backgroundTranscriptionProvider);
+
+    // Store reference for cleanup in dispose()
+    _backgroundServiceRef = backgroundService;
 
     // Check if background service is already monitoring this recording
     if (backgroundService.isMonitoring &&
