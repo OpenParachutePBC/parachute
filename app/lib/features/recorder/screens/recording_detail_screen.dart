@@ -15,6 +15,9 @@ import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/space_notes/screens/link_capture_to_space_screen.dart';
+import 'package:app/features/spaces/providers/space_provider.dart';
+import 'package:app/features/spaces/providers/space_knowledge_provider.dart';
+import 'package:app/core/models/space.dart';
 
 /// Unified recording detail screen with inline editing
 /// Inspired by LiveRecordingScreen design - clean, focused, contextual status
@@ -922,6 +925,11 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           // Metadata
           _buildMetadataSection(),
 
+          const SizedBox(height: 12),
+
+          // Linked spaces indicator
+          if (_recording != null) _buildLinkedSpacesIndicator(),
+
           const SizedBox(height: 24),
 
           // Main content container (like LiveRecordingScreen)
@@ -1003,6 +1011,127 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildLinkedSpacesIndicator() {
+    if (_recording == null) return const SizedBox.shrink();
+
+    final spacesAsync = ref.watch(spaceListProvider);
+
+    return spacesAsync.when(
+      data: (allSpaces) {
+        return FutureBuilder<List<Space>>(
+          future: _getLinkedSpaces(allSpaces),
+          builder: (context, snapshot) {
+            final linkedSpaces = snapshot.data ?? [];
+
+            if (linkedSpaces.isEmpty) {
+              return const SizedBox.shrink();
+            }
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.link,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: linkedSpaces.map((space) {
+                        return InkWell(
+                          onTap: () {
+                            // Navigate to space detail (optional)
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (space.icon?.isNotEmpty ?? false)
+                                  Text(
+                                    space.icon!,
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                if (space.icon?.isNotEmpty ?? false)
+                                  const SizedBox(width: 4),
+                                Text(
+                                  space.name,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  Future<List<Space>> _getLinkedSpaces(List<Space> allSpaces) async {
+    if (_recording == null) return [];
+
+    try {
+      final fileSystemService = FileSystemService();
+      final spacesPath = await fileSystemService.getSpacesPath();
+      final knowledgeService = ref.read(spaceKnowledgeServiceProvider);
+
+      final linkedSpaces = <Space>[];
+
+      for (final space in allSpaces) {
+        final spacePath = '$spacesPath/${space.path}';
+        final isLinked = await knowledgeService.isCaptureLinked(
+          spacePath: spacePath,
+          captureId: _recording!.id,
+        );
+
+        if (isLinked) {
+          linkedSpaces.add(space);
+        }
+      }
+
+      return linkedSpaces;
+    } catch (e) {
+      debugPrint('[RecordingDetail] Error getting linked spaces: $e');
+      return [];
+    }
   }
 
   Widget _buildMainContentContainer() {

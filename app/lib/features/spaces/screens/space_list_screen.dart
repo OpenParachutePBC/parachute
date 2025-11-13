@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/space_provider.dart';
 import '../widgets/create_space_dialog.dart';
-import '../../conversations/screens/conversation_list_screen.dart';
+import './space_detail_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 
 class SpaceListScreen extends ConsumerWidget {
@@ -123,7 +123,7 @@ class SpaceListScreen extends ConsumerWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const ConversationListScreen(),
+                          builder: (context) => SpaceDetailScreen(space: space),
                         ),
                       );
                     },
