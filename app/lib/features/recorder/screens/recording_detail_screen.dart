@@ -166,26 +166,51 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   /// Save the completed recording (called when transcription finishes)
+  /// Updates the existing placeholder .md file with complete transcription
   Future<void> _saveCompletedRecording() async {
     try {
-      debugPrint('[RecordingDetail] Saving completed recording...');
+      debugPrint(
+        '[RecordingDetail] Updating recording with complete transcription...',
+      );
 
       final fileSystemService = ref.read(fileSystemServiceProvider);
       final timestamp = widget.timestamp!;
       final capturesPath = await fileSystemService.getCapturesPath();
+      final markdownPath = path.join(capturesPath, '$timestamp.md');
 
-      // Create metadata
+      // Read existing file to preserve created timestamp if it exists
+      DateTime createdTime = DateTime.now();
+      if (await File(markdownPath).exists()) {
+        try {
+          final existingContent = await File(markdownPath).readAsString();
+          final lines = existingContent.split('\n');
+          for (final line in lines) {
+            if (line.startsWith('created:')) {
+              final timeStr = line.substring('created:'.length).trim();
+              createdTime = DateTime.tryParse(timeStr) ?? DateTime.now();
+              break;
+            }
+          }
+        } catch (e) {
+          debugPrint(
+            '[RecordingDetail] Could not read existing created time: $e',
+          );
+        }
+      }
+
+      // Create updated metadata
       final metadata = StringBuffer();
       metadata.writeln('---');
       metadata.writeln(
         'title: ${_titleController.text.trim().isNotEmpty ? _titleController.text.trim() : "Untitled Recording"}',
       );
-      metadata.writeln('created: ${DateTime.now().toIso8601String()}');
+      metadata.writeln('created: ${createdTime.toIso8601String()}');
       metadata.writeln('duration: ${widget.duration?.inSeconds ?? 0}');
       metadata.writeln(
         'words: ${_transcriptController.text.trim().isEmpty ? 0 : _transcriptController.text.trim().split(RegExp(r'\\s+')).length}',
       );
       metadata.writeln('source: live_recording');
+      metadata.writeln('transcription_status: completed');
       metadata.writeln('---');
       metadata.writeln();
 
@@ -210,11 +235,12 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         metadata.writeln(_transcriptController.text.trim());
       }
 
-      // Save markdown file
-      final markdownPath = path.join(capturesPath, '$timestamp.md');
+      // Update markdown file (overwrites placeholder)
       await File(markdownPath).writeAsString(metadata.toString());
 
-      debugPrint('[RecordingDetail] ✅ Markdown saved: $markdownPath');
+      debugPrint(
+        '[RecordingDetail] ✅ Markdown updated with complete transcription: $markdownPath',
+      );
 
       // Clean up the provider session
       ref.read(activeRecordingProvider.notifier).clearSession();

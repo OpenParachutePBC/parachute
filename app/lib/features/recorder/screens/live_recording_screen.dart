@@ -270,13 +270,50 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
       );
       final capturesPath = await fileSystem.getCapturesPath();
 
+      // Save WAV file
       if (await File(audioPath).exists()) {
         final audioDestPath = path.join(capturesPath, '$timestamp.wav');
         await File(audioPath).copy(audioDestPath);
         debugPrint('[LiveRecording] ✅ WAV file saved: $audioDestPath');
       }
+
+      // Save placeholder .md file IMMEDIATELY so recording is visible
+      // This will be updated when transcription completes
+      final markdownPath = path.join(capturesPath, '$timestamp.md');
+      final partialTranscript = _transcriptionService!.getCombinedText();
+
+      final metadata = StringBuffer();
+      metadata.writeln('---');
+      metadata.writeln('title: Untitled Recording');
+      metadata.writeln('created: ${_startTime!.toIso8601String()}');
+      metadata.writeln('duration: ${_recordingDuration.inSeconds}');
+      metadata.writeln(
+        'words: ${partialTranscript.trim().isEmpty ? 0 : partialTranscript.trim().split(RegExp(r'\\s+')).length}',
+      );
+      metadata.writeln('source: live_recording');
+      metadata.writeln('transcription_status: in_progress');
+      metadata.writeln('---');
+      metadata.writeln();
+      metadata.writeln('# Untitled Recording');
+      metadata.writeln();
+
+      if (partialTranscript.isNotEmpty) {
+        metadata.writeln('## Transcription');
+        metadata.writeln();
+        metadata.writeln(partialTranscript);
+        metadata.writeln();
+        metadata.writeln('_Transcription in progress..._');
+      } else {
+        metadata.writeln('_Transcribing audio..._');
+      }
+
+      await File(markdownPath).writeAsString(metadata.toString());
+      debugPrint('[LiveRecording] ✅ Placeholder .md file saved: $markdownPath');
+
+      // Trigger refresh so recording appears immediately in list
+      ref.read(recordingsRefreshTriggerProvider.notifier).state++;
     } catch (e) {
-      debugPrint('[LiveRecording] ❌ Error saving WAV: $e');
+      debugPrint('[LiveRecording] ❌ Error saving files: $e');
     }
   }
 
