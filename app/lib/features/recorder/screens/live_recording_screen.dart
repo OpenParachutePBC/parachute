@@ -1089,7 +1089,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         ],
       ),
       child: SafeArea(
-        child: _isRecording ? _buildRecordingControls() : _buildIdleControls(),
+        child: (_isRecording || _isSaving)
+            ? _buildRecordingControls()
+            : _buildIdleControls(),
       ),
     );
   }
@@ -1115,11 +1117,11 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   Widget _buildRecordingControls() {
     return Row(
       children: [
-        // Pause/Resume button (always available)
+        // Pause/Resume button (disabled during save)
         Expanded(
           flex: 2,
           child: ElevatedButton.icon(
-            onPressed: _togglePause,
+            onPressed: _isSaving ? null : _togglePause,
             icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, size: 24),
             label: Text(
               _isPaused ? 'Resume' : 'Pause',
@@ -1140,15 +1142,24 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         ),
         const SizedBox(width: 12),
 
-        // Stop & Save button (prominent, single action)
+        // Stop & Save button (disabled during save to prevent double-click)
         Expanded(
           flex: 3,
           child: ElevatedButton.icon(
-            onPressed: _stopAndSave, // Single action to finish
-            icon: const Icon(Icons.save, size: 28),
-            label: const Text(
-              'Save Note',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            onPressed: _isSaving ? null : _stopAndSave,
+            icon: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.save, size: 28),
+            label: Text(
+              _isSaving ? 'Saving...' : 'Save Note',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
