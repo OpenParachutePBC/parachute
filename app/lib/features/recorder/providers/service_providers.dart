@@ -2,14 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/features/recorder/repositories/recording_repository.dart';
 import 'package:app/features/recorder/services/audio_service.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
-import 'package:app/features/recorder/services/whisper_service.dart';
-import 'package:app/features/recorder/services/whisper_local_service.dart';
-import 'package:app/features/recorder/services/whisper_model_manager.dart';
 import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/services/background_transcription_service.dart';
-import 'package:app/features/recorder/models/whisper_models.dart';
 
 /// Provider for AudioService
 ///
@@ -42,15 +38,6 @@ final storageServiceProvider = Provider<StorageService>((ref) {
   return service;
 });
 
-/// Provider for WhisperService
-///
-/// This manages transcription via OpenAI's Whisper API.
-final whisperServiceProvider = Provider<WhisperService>((ref) {
-  // WhisperService depends on StorageService for API key management
-  final storageService = ref.watch(storageServiceProvider);
-  return WhisperService(storageService);
-});
-
 /// Provider for RecordingRepository
 ///
 /// This provides data access for recordings following the Repository Pattern.
@@ -60,47 +47,14 @@ final recordingRepositoryProvider = Provider<RecordingRepository>((ref) {
   return RecordingRepository(storageService);
 });
 
-/// Provider for WhisperModelManager
-///
-/// This manages Whisper model downloads and lifecycle.
-final whisperModelManagerProvider = Provider<WhisperModelManager>((ref) {
-  final manager = WhisperModelManager();
-
-  ref.onDispose(() {
-    manager.dispose();
-  });
-
-  return manager;
-});
-
-/// Provider for WhisperLocalService
-///
-/// This manages local on-device transcription using Whisper models.
-final whisperLocalServiceProvider = Provider<WhisperLocalService>((ref) {
-  final modelManager = ref.watch(whisperModelManagerProvider);
-  final storageService = ref.watch(storageServiceProvider);
-
-  final service = WhisperLocalService(modelManager, storageService);
-
-  ref.onDispose(() {
-    service.dispose();
-  });
-
-  return service;
-});
-
 /// Provider for TranscriptionServiceAdapter
 ///
-/// Platform-adaptive transcription:
-/// - iOS/macOS: Uses Parakeet v3 (fast, high-quality)
-/// - Android: Uses Whisper (fallback)
+/// Platform-adaptive transcription using Parakeet v3:
+/// - iOS/macOS: FluidAudio (CoreML + Apple Neural Engine)
+/// - Android: Sherpa-ONNX (ONNX Runtime)
 final transcriptionServiceAdapterProvider =
     Provider<TranscriptionServiceAdapter>((ref) {
-      final whisperService = ref.watch(whisperLocalServiceProvider);
-
-      final service = TranscriptionServiceAdapter(
-        whisperService: whisperService,
-      );
+      final service = TranscriptionServiceAdapter();
 
       ref.onDispose(() {
         service.dispose();
@@ -108,25 +62,6 @@ final transcriptionServiceAdapterProvider =
 
       return service;
     });
-
-/// Provider for transcription mode
-///
-/// Returns the current transcription mode (API or Local)
-final transcriptionModeProvider = FutureProvider<TranscriptionMode>((
-  ref,
-) async {
-  final storageService = ref.watch(storageServiceProvider);
-  final modeString = await storageService.getTranscriptionMode();
-  return TranscriptionMode.fromString(modeString) ?? TranscriptionMode.api;
-});
-
-/// Provider for auto-transcribe setting
-///
-/// Returns whether auto-transcribe is enabled
-final autoTranscribeProvider = FutureProvider<bool>((ref) async {
-  final storageService = ref.watch(storageServiceProvider);
-  return await storageService.getAutoTranscribe();
-});
 
 /// Provider for triggering recordings list refresh
 ///

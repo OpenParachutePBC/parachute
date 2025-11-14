@@ -1,25 +1,19 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:app/services/parakeet_service.dart';
 import 'package:app/services/sherpa_onnx_service.dart';
-import 'package:app/features/recorder/services/whisper_local_service.dart';
-import 'package:app/features/recorder/models/whisper_models.dart'
-    show WhisperModelType, TranscriptionProgress;
 
-/// Platform-adaptive transcription service
+/// Platform-adaptive transcription service using Parakeet v3
 ///
 /// Uses Parakeet via different implementations:
 /// - iOS/macOS: FluidAudio (CoreML-based, Apple Neural Engine)
 /// - Android: Sherpa-ONNX (ONNX Runtime-based)
-/// - Fallback: Whisper (for legacy/testing)
 ///
-/// This is a drop-in replacement for WhisperLocalService with the same interface.
+/// This provides fast, offline transcription with 25-language support.
 class TranscriptionServiceAdapter {
   final ParakeetService _parakeetService = ParakeetService();
   final SherpaOnnxService _sherpaService = SherpaOnnxService();
-  final WhisperLocalService? _whisperService;
 
   // Progress tracking
   final _transcriptionProgressController =
@@ -30,25 +24,22 @@ class TranscriptionServiceAdapter {
 
   bool get isUsingParakeet =>
       _parakeetService.isSupported || _sherpaService.isSupported;
+
   String get engineName {
     if (_parakeetService.isSupported && _parakeetService.isInitialized) {
       return 'Parakeet v3 (FluidAudio)';
     } else if (_sherpaService.isInitialized) {
       return 'Parakeet v3 (Sherpa-ONNX)';
     } else {
-      return 'Whisper';
+      return 'Parakeet v3';
     }
   }
-
-  TranscriptionServiceAdapter({WhisperLocalService? whisperService})
-    : _whisperService = whisperService;
 
   /// Initialize the transcription service
   ///
   /// Platform-specific initialization:
   /// - iOS/macOS: Parakeet via FluidAudio (CoreML)
   /// - Android: Parakeet via Sherpa-ONNX
-  /// - Fallback: Whisper (if Parakeet fails)
   Future<void> initialize() async {
     if (_parakeetService.isSupported) {
       // iOS/macOS: Initialize Parakeet via FluidAudio
@@ -74,21 +65,9 @@ class TranscriptionServiceAdapter {
         debugPrint('[TranscriptionAdapter] ✅ Parakeet (Sherpa-ONNX) ready');
       } catch (e) {
         debugPrint('[TranscriptionAdapter] ⚠️ Sherpa-ONNX init failed: $e');
-        debugPrint('[TranscriptionAdapter] Falling back to Whisper');
-
-        // Fallback to Whisper if Sherpa-ONNX fails
-        if (_whisperService == null) {
-          throw TranscriptionException(
-            'Sherpa-ONNX init failed and Whisper not available: ${e.toString()}',
-          );
-        }
-
-        final isReady = await _whisperService!.isReady();
-        if (!isReady) {
-          throw TranscriptionException(
-            'Sherpa-ONNX init failed and Whisper not ready. Please download a Whisper model in Settings.',
-          );
-        }
+        throw TranscriptionException(
+          'Failed to initialize Parakeet: ${e.toString()}',
+        );
       }
     }
   }
@@ -96,14 +75,12 @@ class TranscriptionServiceAdapter {
   /// Transcribe audio file
   ///
   /// [audioPath] - Absolute path to audio file (WAV, 16kHz mono)
-  /// [modelType] - Only used for Whisper fallback. Ignored for Parakeet.
-  /// [language] - Optional language hint. Parakeet auto-detects, Whisper uses this.
+  /// [language] - Optional language hint (auto-detected by default)
   /// [onProgress] - Progress callback
   ///
   /// Returns transcribed text
   Future<String> transcribeAudio(
     String audioPath, {
-    WhisperModelType? modelType,
     String? language,
     Function(TranscriptionProgress)? onProgress,
   }) async {
@@ -114,12 +91,7 @@ class TranscriptionServiceAdapter {
 
     if (needsInit) {
       debugPrint('[TranscriptionAdapter] Lazy-initializing...');
-      try {
-        await initialize();
-      } catch (e) {
-        debugPrint('[TranscriptionAdapter] ⚠️ Lazy init failed: $e');
-        // Will fall through to Whisper if initialization fails
-      }
+      await initialize();
     }
 
     // Try Parakeet (FluidAudio on iOS/macOS)
@@ -132,13 +104,7 @@ class TranscriptionServiceAdapter {
       return await _transcribeWithSherpa(audioPath, onProgress: onProgress);
     }
 
-    // Fallback to Whisper
-    return await _transcribeWithWhisper(
-      audioPath,
-      modelType: modelType,
-      language: language,
-      onProgress: onProgress,
-    );
+    throw TranscriptionException('No transcription service available');
   }
 
   /// Transcribe using Parakeet via FluidAudio (iOS/macOS)
@@ -205,29 +171,6 @@ class TranscriptionServiceAdapter {
     }
   }
 
-  /// Transcribe using Whisper (Android)
-  Future<String> _transcribeWithWhisper(
-    String audioPath, {
-    WhisperModelType? modelType,
-    String? language,
-    Function(TranscriptionProgress)? onProgress,
-  }) async {
-    if (_whisperService == null) {
-      throw TranscriptionException('Whisper service not available');
-    }
-
-    try {
-      return await _whisperService!.transcribeAudio(
-        audioPath,
-        modelType: modelType,
-        language: language,
-        onProgress: onProgress,
-      );
-    } on WhisperLocalException catch (e) {
-      throw TranscriptionException(e.message);
-    }
-  }
-
   /// Update and broadcast progress
   void _updateProgress(
     double progress,
@@ -253,43 +196,25 @@ class TranscriptionServiceAdapter {
     }
 
     // Check Sherpa-ONNX (Android)
-    if (await _sherpaService.isReady()) {
-      return true;
-    }
-
-    // Check Whisper (fallback)
-    return _whisperService?.isReady() ?? false;
-  }
-
-  /// Get preferred model (Whisper only, returns base for Parakeet)
-  Future<WhisperModelType> getPreferredModel() async {
-    if (_parakeetService.isSupported) {
-      return WhisperModelType.base; // Dummy value for compatibility
-    } else {
-      return await _whisperService?.getPreferredModel() ??
-          WhisperModelType.base;
-    }
-  }
-
-  /// Set preferred model (Whisper only, no-op for Parakeet)
-  Future<void> setPreferredModel(WhisperModelType model) async {
-    if (!_parakeetService.isSupported && _whisperService != null) {
-      await _whisperService!.setPreferredModel(model);
-    }
-  }
-
-  /// Get available models (Whisper only, returns empty for Parakeet)
-  Future<List<WhisperModelType>> getAvailableModels() async {
-    if (_parakeetService.isSupported) {
-      return []; // Parakeet doesn't expose model selection
-    } else {
-      return await _whisperService?.getAvailableModels() ?? [];
-    }
+    return await _sherpaService.isReady();
   }
 
   void dispose() {
     _transcriptionProgressController.close();
   }
+}
+
+/// Transcription progress data
+class TranscriptionProgress {
+  final double progress;
+  final String status;
+  final bool isComplete;
+
+  TranscriptionProgress({
+    required this.progress,
+    required this.status,
+    this.isComplete = false,
+  });
 }
 
 /// Generic transcription exception

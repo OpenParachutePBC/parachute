@@ -62,9 +62,6 @@ dependencies:
   opus_dart: ^3.0.1
   opus_flutter: ^3.0.3
 
-  # Local Whisper Transcription
-  whisper_ggml: ^1.7.0
-
   # Sherpa-ONNX for cross-platform ASR (Parakeet on Android)
   sherpa_onnx: ^1.12.12
 
