@@ -50,7 +50,8 @@ class SherpaOnnxService {
           tokens: path.join(modelDir, 'tokens.txt'),
           numThreads: 4, // Adjust based on device
           debug: kDebugMode,
-          modelType: 'transducer',
+          modelType:
+              'nemo_transducer', // Use NeMo-specific type for Parakeet models
         ),
       );
 
@@ -81,53 +82,65 @@ class SherpaOnnxService {
     // Check if models already exist and are valid
     final encoderFile = File(path.join(modelDir, 'encoder.int8.onnx'));
     final tokensFile = File(path.join(modelDir, 'tokens.txt'));
-    
+
     if (await encoderFile.exists() && await tokensFile.exists()) {
       // Verify the files are not empty
       final encoderSize = await encoderFile.length();
       final tokensSize = await tokensFile.length();
-      
+
       if (encoderSize > 100 * 1024 * 1024 && tokensSize > 1000) {
         debugPrint('[SherpaOnnxService] Valid models found');
         return modelDir;
       }
-      
+
       // Models are corrupted, delete and re-download
-      debugPrint('[SherpaOnnxService] Corrupted models detected, cleaning up...');
+      debugPrint(
+        '[SherpaOnnxService] Corrupted models detected, cleaning up...',
+      );
       if (await modelDirFile.exists()) {
         await modelDirFile.delete(recursive: true);
       }
     }
 
-    debugPrint('[SherpaOnnxService] Downloading Parakeet v3 archive (~465 MB)...');
+    debugPrint(
+      '[SherpaOnnxService] Downloading Parakeet v3 archive (~465 MB)...',
+    );
     await modelDirFile.create(recursive: true);
 
     // Download tar.bz2 archive from GitHub
-    const archiveUrl = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2';
-    final archivePath = path.join(appDir.path, 'models', 'parakeet-v3-int8.tar.bz2');
+    const archiveUrl =
+        'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2';
+    final archivePath = path.join(
+      appDir.path,
+      'models',
+      'parakeet-v3-int8.tar.bz2',
+    );
 
     try {
       debugPrint('[SherpaOnnxService] Downloading from GitHub...');
       final response = await http.get(Uri.parse(archiveUrl));
-      
+
       if (response.statusCode == 200) {
         await File(archivePath).writeAsBytes(response.bodyBytes);
-        final sizeMB = (response.bodyBytes.length / (1024 * 1024)).toStringAsFixed(1);
+        final sizeMB = (response.bodyBytes.length / (1024 * 1024))
+            .toStringAsFixed(1);
         debugPrint('[SherpaOnnxService] ✅ Downloaded ($sizeMB MB)');
       } else {
-        throw Exception('HTTP ${response.statusCode}: ${response.reasonPhrase}');
+        throw Exception(
+          'HTTP ${response.statusCode}: ${response.reasonPhrase}',
+        );
       }
 
       // Extract tar.bz2 archive
       debugPrint('[SherpaOnnxService] Extracting archive...');
       final archiveBytes = await File(archivePath).readAsBytes();
-      
+
       // Decompress bz2
       final decompressed = BZip2Decoder().decodeBytes(archiveBytes);
-      
+
       // Extract tar
       final archive = TarDecoder().decodeBytes(decompressed);
-      
+
       for (final file in archive) {
         final filename = file.name;
         if (file.isFile) {
@@ -141,8 +154,11 @@ class SherpaOnnxService {
             final outputFile = File(outputPath);
             await outputFile.create(recursive: true);
             await outputFile.writeAsBytes(file.content as List<int>);
-            final sizeMB = (file.content.length / (1024 * 1024)).toStringAsFixed(1);
-            debugPrint('[SherpaOnnxService] ✅ Extracted $basename ($sizeMB MB)');
+            final sizeMB = (file.content.length / (1024 * 1024))
+                .toStringAsFixed(1);
+            debugPrint(
+              '[SherpaOnnxService] ✅ Extracted $basename ($sizeMB MB)',
+            );
           }
         }
       }
@@ -150,7 +166,7 @@ class SherpaOnnxService {
       // Clean up archive file
       await File(archivePath).delete();
       debugPrint('[SherpaOnnxService] ✅ Models ready');
-      
+
       return modelDir;
     } catch (e) {
       debugPrint('[SherpaOnnxService] ❌ Download/extract failed: $e');
@@ -161,7 +177,6 @@ class SherpaOnnxService {
       rethrow;
     }
   }
-
 
   /// Transcribe audio file
   ///
