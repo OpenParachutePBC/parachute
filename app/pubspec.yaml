@@ -98,7 +98,6 @@ flutter:
   assets:
     - assets/firmware/
     - assets/models/
-    - assets/models/parakeet-v3/
     - assets/icon/
 
 flutter_launcher_icons:

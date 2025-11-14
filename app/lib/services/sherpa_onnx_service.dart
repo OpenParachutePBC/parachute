@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:http/http.dart' as http;
 
 /// Flutter service for Parakeet ASR via sherpa-onnx (Android/cross-platform)
 ///
@@ -68,7 +69,7 @@ class SherpaOnnxService {
     }
   }
 
-  /// Copy model files from assets to local storage
+  /// Download model files from GitHub if not already cached
   ///
   /// Returns the directory path where models are stored.
   Future<String> _ensureModelsInLocalStorage() async {
@@ -79,40 +80,57 @@ class SherpaOnnxService {
     // Check if models already exist
     final encoderFile = File(path.join(modelDir, 'encoder.int8.onnx'));
     if (await encoderFile.exists()) {
-      debugPrint('[SherpaOnnxService] Models already in local storage');
+      debugPrint('[SherpaOnnxService] Models already downloaded');
       return modelDir;
     }
 
-    debugPrint('[SherpaOnnxService] Copying models from assets...');
+    debugPrint(
+      '[SherpaOnnxService] Downloading Parakeet v3 models from GitHub...',
+    );
     await modelDirFile.create(recursive: true);
 
-    // List of files to copy
-    final files = [
-      'encoder.int8.onnx',
-      'decoder.int8.onnx',
-      'joiner.int8.onnx',
-      'tokens.txt',
-    ];
+    // GitHub release URL for sherpa-onnx Parakeet models
+    const baseUrl =
+        'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models';
 
-    for (final fileName in files) {
-      debugPrint('[SherpaOnnxService] Copying $fileName...');
-      final assetPath = 'assets/models/parakeet-v3/$fileName';
+    // List of files to download
+    final files = {
+      'encoder.int8.onnx':
+          '$baseUrl/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8-encoder.onnx',
+      'decoder.int8.onnx':
+          '$baseUrl/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8-decoder.onnx',
+      'joiner.int8.onnx':
+          '$baseUrl/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8-joiner.onnx',
+      'tokens.txt':
+          '$baseUrl/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8-tokens.txt',
+    };
+
+    for (final entry in files.entries) {
+      final fileName = entry.key;
+      final url = entry.value;
       final destPath = path.join(modelDir, fileName);
 
       try {
-        final data = await rootBundle.load(assetPath);
-        final buffer = data.buffer;
-        await File(destPath).writeAsBytes(
-          buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        );
-        debugPrint('[SherpaOnnxService] ✅ Copied $fileName');
+        debugPrint('[SherpaOnnxService] Downloading $fileName...');
+        final response = await http.get(Uri.parse(url));
+
+        if (response.statusCode == 200) {
+          await File(destPath).writeAsBytes(response.bodyBytes);
+          final sizeMB = (response.bodyBytes.length / (1024 * 1024))
+              .toStringAsFixed(1);
+          debugPrint('[SherpaOnnxService] ✅ Downloaded $fileName ($sizeMB MB)');
+        } else {
+          throw Exception(
+            'HTTP ${response.statusCode}: ${response.reasonPhrase}',
+          );
+        }
       } catch (e) {
-        debugPrint('[SherpaOnnxService] ❌ Failed to copy $fileName: $e');
+        debugPrint('[SherpaOnnxService] ❌ Failed to download $fileName: $e');
         rethrow;
       }
     }
 
-    debugPrint('[SherpaOnnxService] All models copied successfully');
+    debugPrint('[SherpaOnnxService] All models downloaded successfully');
     return modelDir;
   }
 
