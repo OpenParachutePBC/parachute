@@ -43,6 +43,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   bool _isPaused = false;
   bool _isProcessing = false;
   bool _streamHealthy = true;
+  bool _isSaving = false; // Prevent UI flash during save transition
   Duration _recordingDuration = Duration.zero;
   Timer? _durationTimer;
   DateTime? _startTime;
@@ -227,6 +228,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
     setState(() {
       _isRecording = false;
+      _isSaving = true; // Show saving state instead of empty state
     });
 
     // Register service with provider BEFORE stopping
@@ -686,8 +688,8 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
   /// Build the content list showing segments and current status inline
   Widget _buildContentList() {
-    if (_segments.isEmpty && !_isRecording && !_isProcessing) {
-      // Empty state - warm, inviting
+    if (_segments.isEmpty && !_isRecording && !_isProcessing && !_isSaving) {
+      // Empty state - warm, inviting (only show when truly idle)
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -709,6 +711,31 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
             ),
           ],
         ),
+      );
+    }
+
+    // If saving, show the transcript that was just recorded
+    if (_isSaving && _segments.isNotEmpty) {
+      return ListView.builder(
+        controller: _scrollController,
+        itemCount: _segments.length,
+        itemBuilder: (context, index) {
+          final segment = _segments[index];
+          if (segment.status == v3.TranscriptionSegmentStatus.completed) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Text(
+                segment.text,
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 1.6,
+                  color: Colors.black87,
+                ),
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        },
       );
     }
 
