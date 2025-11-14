@@ -52,6 +52,10 @@ class SherpaOnnxService {
         ),
       );
 
+      // Initialize sherpa-onnx native library (first time only)
+      debugPrint('[SherpaOnnxService] Initializing native bindings...');
+      sherpa.initBindings();
+
       debugPrint('[SherpaOnnxService] Creating recognizer...');
       _recognizer = sherpa.OfflineRecognizer(config);
 
