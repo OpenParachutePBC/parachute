@@ -6,6 +6,7 @@ import 'package:app/features/recorder/services/transcription_service_adapter.dar
 import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/services/background_transcription_service.dart';
+import 'package:app/features/recorder/services/recording_post_processing_service.dart';
 
 /// Provider for AudioService
 ///
@@ -61,6 +62,21 @@ final transcriptionServiceAdapterProvider =
       });
 
       return service;
+    });
+
+/// Provider for RecordingPostProcessingService
+///
+/// Pipeline for processing recordings:
+/// - Transcription (Parakeet v3 via FluidAudio or Sherpa-ONNX)
+final recordingPostProcessingProvider =
+    Provider<RecordingPostProcessingService>((ref) {
+      final transcriptionService = ref.watch(
+        transcriptionServiceAdapterProvider,
+      );
+
+      return RecordingPostProcessingService(
+        transcriptionService: transcriptionService,
+      );
     });
 
 /// Provider for triggering recordings list refresh

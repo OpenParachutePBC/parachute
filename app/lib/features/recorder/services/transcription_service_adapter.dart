@@ -23,13 +23,13 @@ class TranscriptionServiceAdapter {
       _transcriptionProgressController.stream;
 
   bool get isUsingParakeet =>
-      _parakeetService.isSupported || _sherpaService.isSupported;
+      _sherpaService.isSupported || _parakeetService.isSupported;
 
   String get engineName {
-    if (_parakeetService.isSupported && _parakeetService.isInitialized) {
-      return 'Parakeet v3 (FluidAudio)';
-    } else if (_sherpaService.isInitialized) {
+    if (_sherpaService.isInitialized) {
       return 'Parakeet v3 (Sherpa-ONNX)';
+    } else if (_parakeetService.isSupported && _parakeetService.isInitialized) {
+      return 'Parakeet v3 (FluidAudio)';
     } else {
       return 'Parakeet v3';
     }
@@ -37,39 +37,57 @@ class TranscriptionServiceAdapter {
 
   /// Initialize the transcription service
   ///
-  /// Platform-specific initialization:
-  /// - iOS/macOS: Parakeet via FluidAudio (CoreML)
-  /// - Android: Parakeet via Sherpa-ONNX
-  Future<void> initialize() async {
+  /// Platform-specific strategy:
+  /// - iOS/macOS: Prefer FluidAudio (faster, CoreML-optimized)
+  /// - Android: Use Sherpa-ONNX (cross-platform ONNX)
+  ///
+  /// [onProgress] - Optional callback for initialization progress (0.0-1.0)
+  /// [onStatus] - Optional callback for status messages
+  Future<void> initialize({
+    Function(double progress)? onProgress,
+    Function(String status)? onStatus,
+  }) async {
+    // iOS/macOS: Prefer FluidAudio for faster initialization
     if (_parakeetService.isSupported) {
-      // iOS/macOS: Initialize Parakeet via FluidAudio
       debugPrint(
         '[TranscriptionAdapter] Initializing Parakeet (FluidAudio)...',
       );
+      onStatus?.call('Initializing Parakeet (FluidAudio)...');
       try {
         await _parakeetService.initialize(version: 'v3');
         debugPrint('[TranscriptionAdapter] ✅ Parakeet (FluidAudio) ready');
+        onProgress?.call(1.0);
+        onStatus?.call('Ready');
+        return;
       } catch (e) {
-        debugPrint('[TranscriptionAdapter] ⚠️ Parakeet init failed: $e');
-        throw TranscriptionException(
-          'Failed to initialize Parakeet: ${e.toString()}',
-        );
+        debugPrint('[TranscriptionAdapter] ⚠️ FluidAudio init failed: $e');
+        // Continue to Sherpa-ONNX fallback if available
       }
-    } else {
-      // Android/other: Initialize Parakeet via Sherpa-ONNX
+    }
+
+    // Android (or fallback): Use Sherpa-ONNX
+    if (_sherpaService.isSupported) {
       debugPrint(
         '[TranscriptionAdapter] Initializing Parakeet (Sherpa-ONNX)...',
       );
+      onStatus?.call('Initializing Parakeet (Sherpa-ONNX)...');
       try {
-        await _sherpaService.initialize();
+        await _sherpaService.initialize(
+          onProgress: onProgress,
+          onStatus: onStatus,
+        );
         debugPrint('[TranscriptionAdapter] ✅ Parakeet (Sherpa-ONNX) ready');
+        return;
       } catch (e) {
         debugPrint('[TranscriptionAdapter] ⚠️ Sherpa-ONNX init failed: $e');
+        onStatus?.call('Initialization failed: $e');
         throw TranscriptionException(
           'Failed to initialize Parakeet: ${e.toString()}',
         );
       }
     }
+
+    throw TranscriptionException('No transcription service available');
   }
 
   /// Transcribe audio file
@@ -78,28 +96,27 @@ class TranscriptionServiceAdapter {
   /// [language] - Optional language hint (auto-detected by default)
   /// [onProgress] - Progress callback
   ///
-  /// Returns transcribed text
-  Future<String> transcribeAudio(
+  /// Returns transcription result with optional word-level timestamps
+  Future<AdapterTranscriptionResult> transcribeAudio(
     String audioPath, {
     String? language,
     Function(TranscriptionProgress)? onProgress,
   }) async {
     // Lazy initialization - initialize on first use if not already done
     final needsInit =
-        (_parakeetService.isSupported && !_parakeetService.isInitialized) ||
-        (!_parakeetService.isSupported && !_sherpaService.isInitialized);
+        !_sherpaService.isInitialized && !_parakeetService.isInitialized;
 
     if (needsInit) {
       debugPrint('[TranscriptionAdapter] Lazy-initializing...');
       await initialize();
     }
 
-    // Try Parakeet (FluidAudio on iOS/macOS)
-    if (_parakeetService.isSupported && _parakeetService.isInitialized) {
+    // iOS/macOS: Prefer FluidAudio (faster, CoreML-optimized)
+    if (_parakeetService.isInitialized) {
       return await _transcribeWithParakeet(audioPath, onProgress: onProgress);
     }
 
-    // Try Parakeet (Sherpa-ONNX on Android)
+    // Android (or fallback): Use Sherpa-ONNX
     if (_sherpaService.isInitialized) {
       return await _transcribeWithSherpa(audioPath, onProgress: onProgress);
     }
@@ -108,7 +125,7 @@ class TranscriptionServiceAdapter {
   }
 
   /// Transcribe using Parakeet via FluidAudio (iOS/macOS)
-  Future<String> _transcribeWithParakeet(
+  Future<AdapterTranscriptionResult> _transcribeWithParakeet(
     String audioPath, {
     Function(TranscriptionProgress)? onProgress,
   }) async {
@@ -131,7 +148,8 @@ class TranscriptionServiceAdapter {
         '[TranscriptionAdapter] ✅ Parakeet (FluidAudio) transcribed in ${result.duration.inMilliseconds}ms',
       );
 
-      return result.text;
+      // Parakeet (FluidAudio) doesn't provide timestamps currently
+      return AdapterTranscriptionResult(text: result.text);
     } on PlatformException catch (e) {
       throw TranscriptionException('Parakeet failed: ${e.message}');
     } catch (e) {
@@ -140,7 +158,7 @@ class TranscriptionServiceAdapter {
   }
 
   /// Transcribe using Parakeet via Sherpa-ONNX (Android)
-  Future<String> _transcribeWithSherpa(
+  Future<AdapterTranscriptionResult> _transcribeWithSherpa(
     String audioPath, {
     Function(TranscriptionProgress)? onProgress,
   }) async {
@@ -163,7 +181,17 @@ class TranscriptionServiceAdapter {
         '[TranscriptionAdapter] ✅ Parakeet (Sherpa-ONNX) transcribed in ${result.duration.inMilliseconds}ms',
       );
 
-      return result.text;
+      if (result.timestamps != null && result.timestamps!.isNotEmpty) {
+        debugPrint(
+          '[TranscriptionAdapter] ✅ Got ${result.timestamps!.length} word timestamps!',
+        );
+      }
+
+      return AdapterTranscriptionResult(
+        text: result.text,
+        tokens: result.tokens,
+        timestamps: result.timestamps,
+      );
     } catch (e) {
       throw TranscriptionException(
         'Parakeet (Sherpa-ONNX) failed: ${e.toString()}',
@@ -190,18 +218,40 @@ class TranscriptionServiceAdapter {
 
   /// Check if transcription service is ready
   Future<bool> isReady() async {
-    // Check FluidAudio (iOS/macOS)
+    // Check Sherpa-ONNX first (all platforms)
+    if (_sherpaService.isSupported) {
+      return await _sherpaService.isReady();
+    }
+
+    // Fallback to FluidAudio (iOS/macOS)
     if (_parakeetService.isSupported) {
       return await _parakeetService.isReady();
     }
 
-    // Check Sherpa-ONNX (Android)
-    return await _sherpaService.isReady();
+    return false;
   }
 
   void dispose() {
     _transcriptionProgressController.close();
   }
+}
+
+/// Transcription result with optional word-level timestamps
+class AdapterTranscriptionResult {
+  final String text;
+  final List<String>? tokens;
+  final List<double>? timestamps;
+
+  AdapterTranscriptionResult({
+    required this.text,
+    this.tokens,
+    this.timestamps,
+  });
+
+  bool get hasWordTimestamps =>
+      tokens != null &&
+      timestamps != null &&
+      tokens!.length == timestamps!.length;
 }
 
 /// Transcription progress data

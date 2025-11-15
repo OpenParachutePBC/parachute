@@ -5,9 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:app/features/recorder/models/recording.dart';
+
 import 'package:app/features/recorder/providers/service_providers.dart';
+import 'package:app/features/recorder/providers/model_download_provider.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/services/background_transcription_service.dart';
+import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
@@ -511,7 +514,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       final transcriptionService = ref.read(
         transcriptionServiceAdapterProvider,
       );
-      final transcript = await transcriptionService.transcribeAudio(
+      final transcriptResult = await transcriptionService.transcribeAudio(
         _recording!.filePath,
         language: 'auto',
         onProgress: (progress) {
@@ -525,14 +528,14 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       );
 
       if (mounted) {
-        _transcriptController.text = transcript;
+        _transcriptController.text = transcriptResult.text;
         setState(() {
           _transcriptionProgress = 1.0;
           _transcriptionStatus = 'Complete!';
         });
 
         // Auto-generate title from transcript
-        await _generateTitleFromTranscript(transcript);
+        await _generateTitleFromTranscript(transcriptResult.text);
 
         // Auto-save after transcription
         await _saveChanges();
@@ -716,7 +719,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         transcriptionServiceAdapterProvider,
       );
 
-      final transcript = await transcriptionService.transcribeAudio(
+      final transcriptResult = await transcriptionService.transcribeAudio(
         recordingPath,
         language: 'auto',
       );
@@ -725,8 +728,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       if (mounted) {
         final currentContext = _contextController.text.trim();
         final newContext = currentContext.isEmpty
-            ? transcript
-            : '$currentContext ${transcript}';
+            ? transcriptResult.text
+            : '$currentContext ${transcriptResult.text}';
 
         setState(() {
           _contextController.text = newContext;
@@ -760,7 +763,15 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: _buildAppBar(),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          // Model download banner (shows when downloading)
+          const ModelDownloadBanner(),
+
+          // Main content
+          Expanded(child: _buildBody()),
+        ],
+      ),
       bottomNavigationBar: _buildBottomBar(),
     );
   }
@@ -1047,8 +1058,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   Widget _buildMainContentContainer() {
-    // Check if transcription is incomplete
+    // Check if transcription is incomplete or in progress
     final isIncomplete = _recording?.isTranscriptionIncomplete ?? false;
+    final isProcessing =
+        _recording?.transcriptionStatus == ProcessingStatus.processing;
 
     return Container(
       width: double.infinity,
@@ -1108,8 +1121,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                         foregroundColor: Colors.white,
                       ),
                     ),
-                  // Show "Complete Transcription" button for incomplete transcriptions
-                  if (isIncomplete && !_isTranscribing)
+                  // Show "Complete Transcription" button only for interrupted (not processing)
+                  if (isIncomplete && !isProcessing && !_isTranscribing)
                     ElevatedButton.icon(
                       onPressed: _transcribeRecording,
                       icon: const Icon(Icons.refresh, size: 18),
@@ -1126,38 +1139,96 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
 
           const SizedBox(height: 12),
 
-          // Warning for incomplete transcriptions
-          if (isIncomplete && !_isTranscribing)
+          // Show processing indicator for background transcription
+          if (isProcessing && !_isTranscribing)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.orange.shade50,
+                color: Colors.blue.shade50,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.orange.shade700.withValues(alpha: 0.3),
+                  color: Colors.blue.shade700.withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.warning_amber,
-                    color: Colors.orange.shade700,
-                    size: 20,
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.blue.shade700,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Transcription was interrupted. Tap "Complete Transcription" to finish.',
+                      'Transcribing in background...',
                       style: TextStyle(
-                        color: Colors.orange.shade700,
+                        color: Colors.blue.shade700,
                         fontSize: 14,
                       ),
                     ),
                   ),
                 ],
               ),
+            ),
+
+          // Warning for incomplete transcriptions (interrupted, not processing)
+          if (isIncomplete && !isProcessing && !_isTranscribing)
+            Consumer(
+              builder: (context, ref, child) {
+                final downloadState = ref.watch(modelDownloadProvider);
+                final isDownloadingModels = downloadState.isDownloading;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDownloadingModels
+                        ? Colors.blue.shade50
+                        : Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDownloadingModels
+                          ? Colors.blue.shade700.withValues(alpha: 0.3)
+                          : Colors.orange.shade700.withValues(alpha: 0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isDownloadingModels
+                            ? Icons.download
+                            : Icons.warning_amber,
+                        color: isDownloadingModels
+                            ? Colors.blue.shade700
+                            : Colors.orange.shade700,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          isDownloadingModels
+                              ? 'Downloading transcription models... Transcription will start automatically when ready.'
+                              : 'Transcription was interrupted. Tap "Complete Transcription" to finish.',
+                          style: TextStyle(
+                            color: isDownloadingModels
+                                ? Colors.blue.shade700
+                                : Colors.orange.shade700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
 
           // Inline status indicators (like LiveRecordingScreen)

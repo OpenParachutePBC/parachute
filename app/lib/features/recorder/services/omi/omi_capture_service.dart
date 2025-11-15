@@ -384,7 +384,7 @@ class OmiCaptureService {
       onStatusMessage?.call('Transcribing...');
 
       // Use Parakeet transcription service
-      final transcript = await transcriptionService.transcribeAudio(
+      final transcriptResult = await transcriptionService.transcribeAudio(
         recording.filePath,
         language: 'auto',
         onProgress: (progress) {
@@ -400,7 +400,7 @@ class OmiCaptureService {
         timestamp: recording.timestamp,
         duration: recording.duration,
         tags: recording.tags,
-        transcript: transcript,
+        transcript: transcriptResult.text,
         fileSizeKB: recording.fileSizeKB,
         source: recording.source,
         deviceId: recording.deviceId,
@@ -409,7 +409,7 @@ class OmiCaptureService {
       await storageService.saveRecording(updatedRecording);
 
       debugPrint(
-        '[OmiCaptureService] Transcription complete: ${transcript.length} chars',
+        '[OmiCaptureService] Transcription complete: ${transcriptResult.text.length} chars',
       );
       onStatusMessage?.call('Transcription complete!');
 

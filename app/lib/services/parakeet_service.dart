@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:app/features/recorder/models/speaker_segment.dart';
 
 /// Flutter service for Parakeet ASR via native FluidAudio bridge
 ///
@@ -10,8 +11,10 @@ class ParakeetService {
 
   bool _isInitialized = false;
   String _version = 'v3';
+  bool _isDiarizerInitialized = false;
 
   bool get isInitialized => _isInitialized;
+  bool get isDiarizerInitialized => _isDiarizerInitialized;
   bool get isSupported => Platform.isIOS || Platform.isMacOS;
   String get version => _version;
 
@@ -137,6 +140,127 @@ class ParakeetService {
     } catch (e) {
       debugPrint('[ParakeetService] getModelInfo failed: $e');
       return null;
+    }
+  }
+
+  // MARK: - Speaker Diarization
+
+  /// Initialize speaker diarization models
+  ///
+  /// Downloads and prepares FluidAudio diarization models.
+  /// This may take some time on first run.
+  Future<void> initializeDiarizer() async {
+    if (!isSupported) {
+      throw UnsupportedError(
+        'Speaker diarization is only supported on iOS/macOS. Current platform: ${Platform.operatingSystem}',
+      );
+    }
+
+    if (_isDiarizerInitialized) {
+      debugPrint('[ParakeetService] Diarizer already initialized');
+      return;
+    }
+
+    try {
+      debugPrint('[ParakeetService] Initializing speaker diarization...');
+      final result = await _channel.invokeMethod('initializeDiarizer');
+
+      if (result != null) {
+        final resultMap = result as Map<Object?, Object?>;
+        if (resultMap['status'] == 'success') {
+          _isDiarizerInitialized = true;
+          debugPrint('[ParakeetService] ✅ Diarizer initialized successfully');
+        } else {
+          throw Exception('Diarizer initialization failed: $result');
+        }
+      } else {
+        throw Exception('Diarizer initialization returned null');
+      }
+    } on PlatformException catch (e) {
+      debugPrint(
+        '[ParakeetService] ❌ Diarizer initialization failed: ${e.message}',
+      );
+      rethrow;
+    }
+  }
+
+  /// Perform speaker diarization on audio file
+  ///
+  /// [audioPath] - Absolute path to WAV file (16kHz mono PCM16)
+  ///
+  /// Returns list of speaker segments with timing information.
+  Future<List<SpeakerSegment>> diarizeAudio(String audioPath) async {
+    if (!isSupported) {
+      throw UnsupportedError(
+        'Speaker diarization is only supported on iOS/macOS. Current platform: ${Platform.operatingSystem}',
+      );
+    }
+
+    if (!_isDiarizerInitialized) {
+      throw StateError(
+        'Diarizer not initialized. Call initializeDiarizer() first.',
+      );
+    }
+
+    // Validate file exists
+    final file = File(audioPath);
+    if (!await file.exists()) {
+      throw ArgumentError('Audio file not found: $audioPath');
+    }
+
+    try {
+      debugPrint('[ParakeetService] Diarizing audio: $audioPath');
+      final startTime = DateTime.now();
+
+      final result = await _channel.invokeMethod('diarizeAudio', {
+        'audioPath': audioPath,
+      });
+
+      final duration = DateTime.now().difference(startTime);
+
+      if (result == null) {
+        throw Exception('Diarization returned null');
+      }
+
+      // Handle platform channel type (Map<Object?, Object?>)
+      final resultMap = result as Map<Object?, Object?>;
+      final segmentsData = resultMap['segments'] as List<dynamic>?;
+      if (segmentsData == null) {
+        throw Exception('No segments returned from diarization');
+      }
+
+      final segments = segmentsData.map((s) {
+        final segmentMap = s as Map<Object?, Object?>;
+        return SpeakerSegment.fromJson({
+          'speakerId': segmentMap['speakerId'] as String,
+          'startTimeSeconds': segmentMap['startTimeSeconds'] as double,
+          'endTimeSeconds': segmentMap['endTimeSeconds'] as double,
+        });
+      }).toList();
+
+      debugPrint(
+        '[ParakeetService] ✅ Diarized in ${duration.inMilliseconds}ms: ${segments.length} segments',
+      );
+
+      return segments;
+    } on PlatformException catch (e) {
+      debugPrint('[ParakeetService] ❌ Diarization failed: ${e.message}');
+      rethrow;
+    }
+  }
+
+  /// Check if diarizer is ready
+  Future<bool> isDiarizerReady() async {
+    if (!isSupported) return false;
+
+    try {
+      final result = await _channel.invokeMethod('isDiarizerReady');
+      if (result == null) return false;
+      final resultMap = result as Map<Object?, Object?>;
+      return resultMap['ready'] as bool? ?? false;
+    } catch (e) {
+      debugPrint('[ParakeetService] isDiarizerReady check failed: $e');
+      return false;
     }
   }
 }

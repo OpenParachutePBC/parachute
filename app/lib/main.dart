@@ -12,6 +12,7 @@ import 'core/providers/feature_flags_provider.dart';
 import 'features/spaces/screens/space_list_screen.dart';
 import 'features/recorder/screens/home_screen.dart' as recorder;
 import 'features/recorder/providers/service_providers.dart';
+import 'features/recorder/providers/model_download_provider.dart';
 import 'features/files/screens/file_browser_screen.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 
@@ -152,16 +153,41 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       final transcriptionService = ref.read(
         transcriptionServiceAdapterProvider,
       );
+      final downloadNotifier = ref.read(modelDownloadProvider.notifier);
 
       // Initialize in background (non-blocking)
       unawaited(
         transcriptionService
-            .initialize()
+            .initialize(
+              onProgress: (progress) {
+                // Update UI with progress
+                downloadNotifier.updateProgress(
+                  progress,
+                  downloadNotifier.state.status,
+                );
+              },
+              onStatus: (status) {
+                // Update UI with status
+                debugPrint('[Main] $status');
+                downloadNotifier.updateProgress(
+                  downloadNotifier.state.progress,
+                  status,
+                );
+
+                // Start download indicator on first meaningful status
+                if (status.contains('Downloading') ||
+                    status.contains('Initializing')) {
+                  downloadNotifier.startDownload();
+                }
+              },
+            )
             .then((_) {
               debugPrint('[Main] ✅ Transcription service initialized');
+              downloadNotifier.complete();
             })
             .catchError((e) {
               debugPrint('[Main] ⚠️ Transcription service init failed: $e');
+              downloadNotifier.complete();
             }),
       );
     } catch (e) {

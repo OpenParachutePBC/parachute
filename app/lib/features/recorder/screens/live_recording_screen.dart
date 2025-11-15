@@ -44,6 +44,7 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   bool _isProcessing = false;
   bool _streamHealthy = true;
   bool _isSaving = false; // Prevent UI flash during save transition
+  bool _enableDiarization = false; // Toggle for speaker identification
   Duration _recordingDuration = Duration.zero;
   Timer? _durationTimer;
   DateTime? _startTime;
@@ -626,11 +627,17 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         Icon(Icons.auto_awesome, size: 16, color: Colors.blue),
         const SizedBox(width: 4),
         Text('Auto-pause', style: TextStyle(fontSize: 14, color: Colors.blue)),
-        const SizedBox(width: 12),
-        // Git sync status
-        Icon(Icons.cloud_done, size: 16, color: Colors.green),
-        const SizedBox(width: 4),
-        Text('Synced', style: TextStyle(fontSize: 14, color: Colors.green)),
+
+        // Speaker identification indicator (if enabled)
+        if (_enableDiarization) ...[
+          const SizedBox(width: 12),
+          Icon(Icons.people, size: 16, color: Colors.purple),
+          const SizedBox(width: 4),
+          Text(
+            'Speakers',
+            style: TextStyle(fontSize: 14, color: Colors.purple),
+          ),
+        ],
       ],
     );
   }
@@ -1101,20 +1108,59 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   }
 
   Widget _buildIdleControls() {
-    return ElevatedButton.icon(
-      onPressed: _startRecording,
-      icon: const Icon(Icons.mic, size: 28),
-      label: const Text(
-        'Start Listening',
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-      ),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.blue.shade600,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        elevation: 2,
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Speaker identification toggle (iOS/macOS only)
+        if (Platform.isIOS || Platform.isMacOS)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.people,
+                  size: 20,
+                  color: _enableDiarization
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey.shade600,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Identify speakers',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                  ),
+                ),
+                Switch(
+                  value: _enableDiarization,
+                  onChanged: (value) {
+                    setState(() => _enableDiarization = value);
+                  },
+                  activeColor: Theme.of(context).colorScheme.primary,
+                ),
+              ],
+            ),
+          ),
+
+        // Start recording button
+        ElevatedButton.icon(
+          onPressed: _startRecording,
+          icon: const Icon(Icons.mic, size: 28),
+          label: const Text(
+            'Start Listening',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue.shade600,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 2,
+          ),
+        ),
+      ],
     );
   }
 

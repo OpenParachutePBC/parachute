@@ -15,27 +15,64 @@ import 'package:archive/archive.dart';
 class SherpaOnnxService {
   sherpa.OfflineRecognizer? _recognizer;
   bool _isInitialized = false;
+  bool _isInitializing = false;
   String _modelPath = '';
 
   bool get isInitialized => _isInitialized;
-  bool get isSupported => true; // sherpa-onnx supports all platforms
+  bool get isSupported =>
+      true; // sherpa-onnx supports all platforms (Android, iOS, macOS, etc.)
 
   /// Initialize Parakeet v3 models
   ///
   /// Downloads models from app assets to local storage if needed.
   /// First run may take time to copy assets (~640MB).
-  Future<void> initialize() async {
+  ///
+  /// [onProgress] - Optional callback for download/extraction progress (0.0-1.0)
+  /// [onStatus] - Optional callback for status messages
+  Future<void> initialize({
+    Function(double progress)? onProgress,
+    Function(String status)? onStatus,
+  }) async {
     if (_isInitialized) {
       debugPrint('[SherpaOnnxService] Already initialized');
+      onProgress?.call(1.0);
+      onStatus?.call('Ready');
       return;
     }
 
+    // Prevent multiple simultaneous initializations
+    if (_isInitializing) {
+      debugPrint(
+        '[SherpaOnnxService] Initialization already in progress, waiting...',
+      );
+      onStatus?.call('Initialization in progress...');
+      // Wait for the ongoing initialization to complete
+      while (_isInitializing && !_isInitialized) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      if (_isInitialized) {
+        onProgress?.call(1.0);
+        onStatus?.call('Ready');
+        return;
+      }
+      // If still not initialized after waiting, throw error
+      throw StateError('Initialization failed');
+    }
+
+    _isInitializing = true;
     try {
       debugPrint('[SherpaOnnxService] Initializing Parakeet v3 INT8...');
+      onStatus?.call('Initializing Parakeet v3...');
 
       // Copy models from assets to local storage (one-time operation)
-      final modelDir = await _ensureModelsInLocalStorage();
+      final modelDir = await _ensureModelsInLocalStorage(
+        onProgress: onProgress,
+        onStatus: onStatus,
+      );
       _modelPath = modelDir;
+
+      onStatus?.call('Configuring model...');
+      onProgress?.call(0.9);
 
       // Configure Parakeet TDT model (Transducer)
       final modelConfig = sherpa.OfflineTransducerModelConfig(
@@ -57,24 +94,34 @@ class SherpaOnnxService {
 
       // Initialize sherpa-onnx native library (first time only)
       debugPrint('[SherpaOnnxService] Initializing native bindings...');
+      onStatus?.call('Initializing native bindings...');
       sherpa.initBindings();
 
       debugPrint('[SherpaOnnxService] Creating recognizer...');
+      onStatus?.call('Creating recognizer...');
       _recognizer = sherpa.OfflineRecognizer(config);
 
       _isInitialized = true;
+      onProgress?.call(1.0);
+      onStatus?.call('Ready');
       debugPrint('[SherpaOnnxService] ✅ Initialized successfully');
     } catch (e, stackTrace) {
       debugPrint('[SherpaOnnxService] ❌ Initialization failed: $e');
       debugPrint('[SherpaOnnxService] Stack trace: $stackTrace');
+      onStatus?.call('Initialization failed: $e');
       rethrow;
+    } finally {
+      _isInitializing = false;
     }
   }
 
   /// Download and extract model archive from GitHub if not already cached
   ///
   /// Returns the directory path where models are stored.
-  Future<String> _ensureModelsInLocalStorage() async {
+  Future<String> _ensureModelsInLocalStorage({
+    Function(double progress)? onProgress,
+    Function(String status)? onStatus,
+  }) async {
     final appDir = await getApplicationDocumentsDirectory();
     final modelDir = path.join(appDir.path, 'models', 'parakeet-v3');
     final modelDirFile = Directory(modelDir);
@@ -105,6 +152,7 @@ class SherpaOnnxService {
     debugPrint(
       '[SherpaOnnxService] Downloading Parakeet v3 archive (~465 MB)...',
     );
+    onStatus?.call('Downloading Parakeet v3 models...');
     await modelDirFile.create(recursive: true);
 
     // Download tar.bz2 archive from GitHub
@@ -118,63 +166,131 @@ class SherpaOnnxService {
 
     try {
       debugPrint('[SherpaOnnxService] Downloading from GitHub...');
-      final response = await http.get(Uri.parse(archiveUrl));
 
-      if (response.statusCode == 200) {
-        await File(archivePath).writeAsBytes(response.bodyBytes);
-        final sizeMB = (response.bodyBytes.length / (1024 * 1024))
-            .toStringAsFixed(1);
-        debugPrint('[SherpaOnnxService] ✅ Downloaded ($sizeMB MB)');
-      } else {
+      // Stream download with progress tracking
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(archiveUrl));
+      final response = await client.send(request);
+
+      if (response.statusCode != 200) {
         throw Exception(
           'HTTP ${response.statusCode}: ${response.reasonPhrase}',
         );
       }
 
-      // Extract tar.bz2 archive
-      debugPrint('[SherpaOnnxService] Extracting archive...');
-      final archiveBytes = await File(archivePath).readAsBytes();
+      final totalBytes = response.contentLength ?? 465 * 1024 * 1024; // ~465MB
+      int receivedBytes = 0;
 
-      // Decompress bz2
-      final decompressed = BZip2Decoder().decodeBytes(archiveBytes);
+      final archiveFile = File(archivePath);
+      final sink = archiveFile.openWrite();
 
-      // Extract tar
-      final archive = TarDecoder().decodeBytes(decompressed);
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
 
-      for (final file in archive) {
-        final filename = file.name;
-        if (file.isFile) {
-          // Extract files from sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/ directory
-          final basename = path.basename(filename);
-          if (basename == 'encoder.int8.onnx' ||
-              basename == 'decoder.int8.onnx' ||
-              basename == 'joiner.int8.onnx' ||
-              basename == 'tokens.txt') {
-            final outputPath = path.join(modelDir, basename);
-            final outputFile = File(outputPath);
-            await outputFile.create(recursive: true);
-            await outputFile.writeAsBytes(file.content as List<int>);
-            final sizeMB = (file.content.length / (1024 * 1024))
-                .toStringAsFixed(1);
-            debugPrint(
-              '[SherpaOnnxService] ✅ Extracted $basename ($sizeMB MB)',
-            );
-          }
+        // Report download progress (0.0 - 0.7 of total)
+        final downloadProgress = receivedBytes / totalBytes * 0.7;
+        onProgress?.call(downloadProgress);
+
+        // Update status every 50MB to reduce log spam
+        if (receivedBytes % (50 * 1024 * 1024) < chunk.length) {
+          final receivedMB = (receivedBytes / (1024 * 1024)).toStringAsFixed(0);
+          final totalMB = (totalBytes / (1024 * 1024)).toStringAsFixed(0);
+          final percent = ((receivedBytes / totalBytes) * 100).toStringAsFixed(
+            0,
+          );
+          onStatus?.call(
+            'Downloading models: $percent% ($receivedMB/$totalMB MB)',
+          );
         }
       }
+
+      await sink.flush(); // Ensure all data is written
+      await sink.close();
+      client.close();
+
+      // Validate download size
+      final downloadedFile = File(archivePath);
+      final actualSize = await downloadedFile.length();
+      final sizeMB = (actualSize / (1024 * 1024)).toStringAsFixed(1);
+
+      debugPrint('[SherpaOnnxService] ✅ Downloaded ($sizeMB MB)');
+
+      // Verify we got all the data
+      if (actualSize != receivedBytes) {
+        throw Exception(
+          'Download incomplete: expected $receivedBytes bytes, got $actualSize bytes',
+        );
+      }
+
+      // Basic validation - file should be at least 400MB
+      if (actualSize < 400 * 1024 * 1024) {
+        throw Exception(
+          'Downloaded file too small: $sizeMB MB (expected ~465 MB)',
+        );
+      }
+
+      onStatus?.call('Extracting models...');
+      onProgress?.call(0.75);
+
+      // Extract tar.bz2 archive in compute isolate to avoid UI freeze
+      debugPrint('[SherpaOnnxService] Extracting archive...');
+      await compute(_extractArchive, {
+        'archivePath': archivePath,
+        'modelDir': modelDir,
+      });
+
+      onProgress?.call(0.85);
 
       // Clean up archive file
       await File(archivePath).delete();
       debugPrint('[SherpaOnnxService] ✅ Models ready');
+      onStatus?.call('Models ready');
 
       return modelDir;
     } catch (e) {
       debugPrint('[SherpaOnnxService] ❌ Download/extract failed: $e');
+      onStatus?.call('Download failed: $e');
       // Clean up on failure
       if (await File(archivePath).exists()) {
         await File(archivePath).delete();
       }
       rethrow;
+    }
+  }
+
+  /// Extract tar.bz2 archive in separate isolate to avoid UI freeze
+  static Future<void> _extractArchive(Map<String, String> params) async {
+    final archivePath = params['archivePath']!;
+    final modelDir = params['modelDir']!;
+
+    final archiveBytes = await File(archivePath).readAsBytes();
+
+    // Decompress bz2
+    final decompressed = BZip2Decoder().decodeBytes(archiveBytes);
+
+    // Extract tar
+    final archive = TarDecoder().decodeBytes(decompressed);
+
+    for (final file in archive) {
+      final filename = file.name;
+      if (file.isFile) {
+        // Extract files from sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/ directory
+        final basename = path.basename(filename);
+        if (basename == 'encoder.int8.onnx' ||
+            basename == 'decoder.int8.onnx' ||
+            basename == 'joiner.int8.onnx' ||
+            basename == 'tokens.txt') {
+          final outputPath = path.join(modelDir, basename);
+          final outputFile = File(outputPath);
+          await outputFile.create(recursive: true);
+          await outputFile.writeAsBytes(file.content as List<int>);
+          final sizeMB = (file.content.length / (1024 * 1024)).toStringAsFixed(
+            1,
+          );
+          print('[SherpaOnnxService] ✅ Extracted $basename ($sizeMB MB)');
+        }
+      }
     }
   }
 
@@ -219,6 +335,8 @@ class SherpaOnnxService {
       // Get result
       final result = _recognizer!.getResult(stream);
       final text = result.text;
+      final tokens = result.tokens;
+      final timestamps = result.timestamps;
 
       // Free stream
       stream.free();
@@ -228,11 +346,16 @@ class SherpaOnnxService {
       debugPrint(
         '[SherpaOnnxService] ✅ Transcribed in ${duration.inMilliseconds}ms: "$text"',
       );
+      debugPrint(
+        '[SherpaOnnxService] Tokens: ${tokens.length}, Timestamps: ${timestamps.length}',
+      );
 
       return TranscriptionResult(
         text: text,
         language: 'auto', // Parakeet auto-detects language
         duration: duration,
+        tokens: tokens.isNotEmpty ? tokens : null,
+        timestamps: timestamps.isNotEmpty ? timestamps : null,
       );
     } catch (e, stackTrace) {
       debugPrint('[SherpaOnnxService] ❌ Transcription failed: $e');
@@ -305,16 +428,20 @@ class TranscriptionResult {
   final String text;
   final String language;
   final Duration duration;
+  final List<String>? tokens;
+  final List<double>? timestamps;
 
   TranscriptionResult({
     required this.text,
     required this.language,
     required this.duration,
+    this.tokens,
+    this.timestamps,
   });
 
   @override
   String toString() =>
-      'TranscriptionResult(text: "$text", language: $language, duration: ${duration.inMilliseconds}ms)';
+      'TranscriptionResult(text: "$text", language: $language, duration: ${duration.inMilliseconds}ms, tokens: ${tokens?.length ?? 0}, timestamps: ${timestamps?.length ?? 0})';
 }
 
 /// Model information

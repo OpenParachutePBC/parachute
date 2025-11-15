@@ -6,10 +6,11 @@ import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/providers/omi_providers.dart';
 import 'package:app/features/recorder/screens/recording_detail_screen.dart';
-import 'package:app/features/recorder/screens/live_recording_screen.dart';
+import 'package:app/features/recorder/screens/simple_recording_screen.dart';
 import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/recorder/widgets/recording_card.dart';
+import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:app/core/widgets/git_sync_status_indicator.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -131,9 +132,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Future<void> _startRecording() async {
-    // Use new live recording screen with journal-style interface
+    // Use new simple recording screen with manual pause/resume
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const LiveRecordingScreen()),
+      MaterialPageRoute(builder: (context) => const SimpleRecordingScreen()),
     );
     // Always refresh when returning from recording flow
     _refreshRecordings();
@@ -221,13 +222,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _recordings.isEmpty
-          ? _buildEmptyState()
-          : _isGridView
-          ? _buildRecordingsGrid()
-          : _buildRecordingsList(),
+      body: Column(
+        children: [
+          // Model download banner (shows when downloading)
+          const ModelDownloadBanner(),
+
+          // Main content
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _recordings.isEmpty
+                ? _buildEmptyState()
+                : _isGridView
+                ? _buildRecordingsGrid()
+                : _buildRecordingsList(),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _startRecording,
         child: const Icon(Icons.mic),

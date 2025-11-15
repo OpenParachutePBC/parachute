@@ -3,13 +3,17 @@ import Foundation
 import FluidAudio
 
 /// Flutter bridge for FluidAudio Parakeet ASR
-/// Provides async transcription via platform channels
+/// Provides async transcription and speaker diarization via platform channels
 class ParakeetBridge {
     static let shared = ParakeetBridge()
 
     private var asrManager: AsrManager?
     private var models: AsrModels?
     private var isInitialized = false
+
+    // Speaker diarization
+    private var diarizerManager: OfflineDiarizerManager?
+    private var isDiarizerInitialized = false
 
     private init() {}
 
@@ -96,6 +100,79 @@ class ParakeetBridge {
             "version": "v3", // TODO: Track actual version
             "languages": 25 // v3 supports 25 European languages
         ])
+    }
+
+    // MARK: - Speaker Diarization
+
+    /// Initialize speaker diarization models
+    func initializeDiarizer(result: @escaping FlutterResult) {
+        Task {
+            do {
+                let config = OfflineDiarizerConfig()
+                let manager = OfflineDiarizerManager(config: config)
+                try await manager.prepareModels()
+
+                self.diarizerManager = manager
+                self.isDiarizerInitialized = true
+
+                await MainActor.run {
+                    result(["status": "success"])
+                }
+            } catch {
+                await MainActor.run {
+                    result(FlutterError(
+                        code: "DIARIZER_INIT_FAILED",
+                        message: "Failed to initialize diarizer: \(error.localizedDescription)",
+                        details: nil
+                    ))
+                }
+            }
+        }
+    }
+
+    /// Perform speaker diarization on audio file
+    func diarizeAudio(audioPath: String, result: @escaping FlutterResult) {
+        guard isDiarizerInitialized, let manager = diarizerManager else {
+            result(FlutterError(
+                code: "DIARIZER_NOT_INITIALIZED",
+                message: "Diarizer not initialized. Call initializeDiarizer() first.",
+                details: nil
+            ))
+            return
+        }
+
+        Task {
+            do {
+                let url = URL(fileURLWithPath: audioPath)
+                let diarizationResult = try await manager.process(url)
+
+                // Convert segments to Flutter-friendly format
+                let segments = diarizationResult.segments.map { segment in
+                    return [
+                        "speakerId": segment.speakerId,
+                        "startTimeSeconds": segment.startTimeSeconds,
+                        "endTimeSeconds": segment.endTimeSeconds
+                    ] as [String: Any]
+                }
+
+                await MainActor.run {
+                    result(["segments": segments])
+                }
+            } catch {
+                await MainActor.run {
+                    result(FlutterError(
+                        code: "DIARIZATION_FAILED",
+                        message: "Failed to diarize audio: \(error.localizedDescription)",
+                        details: nil
+                    ))
+                }
+            }
+        }
+    }
+
+    /// Check if diarizer is ready
+    func isDiarizerReady(result: FlutterResult) {
+        result(["ready": isDiarizerInitialized])
     }
 
     // MARK: - Audio Loading

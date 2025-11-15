@@ -39,6 +39,21 @@ import FluidAudio
       case "getModelInfo":
         ParakeetBridge.shared.getModelInfo(result: result)
 
+      // Speaker diarization methods
+      case "initializeDiarizer":
+        ParakeetBridge.shared.initializeDiarizer(result: result)
+
+      case "diarizeAudio":
+        guard let args = call.arguments as? [String: Any],
+              let audioPath = args["audioPath"] as? String else {
+          result(FlutterError(code: "INVALID_ARGS", message: "Missing audioPath", details: nil))
+          return
+        }
+        ParakeetBridge.shared.diarizeAudio(audioPath: audioPath, result: result)
+
+      case "isDiarizerReady":
+        ParakeetBridge.shared.isDiarizerReady(result: result)
+
       default:
         result(FlutterMethodNotImplemented)
       }

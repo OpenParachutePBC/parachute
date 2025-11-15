@@ -640,7 +640,9 @@ class AutoPauseTranscriptionService {
       );
 
       try {
-        final text = await _transcriptionService.transcribeAudio(tempWavPath);
+        final transcriptResult = await _transcriptionService.transcribeAudio(
+          tempWavPath,
+        );
 
         // Clean up temp WAV file after successful transcription
         try {
@@ -653,13 +655,13 @@ class AutoPauseTranscriptionService {
         }
 
         // Check if text is empty (Whisper sometimes returns empty for noise)
-        if (text.trim().isEmpty) {
+        if (transcriptResult.text.trim().isEmpty) {
           throw Exception('Transcription returned empty text');
         }
 
         // Update with result
         _segments[segmentIndex] = _segments[segmentIndex].copyWith(
-          text: text.trim(),
+          text: transcriptResult.text.trim(),
           status: TranscriptionSegmentStatus.completed,
         );
         if (!_segmentStreamController.isClosed) {
@@ -667,7 +669,7 @@ class AutoPauseTranscriptionService {
         }
 
         debugPrint(
-          '[AutoPauseTranscription] Segment ${segment.index} done: "$text"',
+          '[AutoPauseTranscription] Segment ${segment.index} done: "${transcriptResult.text}"',
         );
       } catch (e) {
         debugPrint('[AutoPauseTranscription] Transcription failed: $e');

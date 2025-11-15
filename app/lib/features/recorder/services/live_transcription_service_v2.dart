@@ -381,17 +381,17 @@ class SimpleTranscriptionService {
         );
 
         // Transcribe this segment file
-        final segmentText = await _transcriptionService.transcribeAudio(
+        final segmentResult = await _transcriptionService.transcribeAudio(
           queuedSegment.filePath,
         );
 
         debugPrint(
-          '[SimpleTranscription] Segment ${queuedSegment.segmentIndex} transcribed: ${segmentText.length} chars',
+          '[SimpleTranscription] Segment ${queuedSegment.segmentIndex} transcribed: ${segmentResult.text.length} chars',
         );
 
         // Update to completed
         final completedSegment = processingSegment.copyWith(
-          text: segmentText.trim(),
+          text: segmentResult.text.trim(),
           status: TranscriptionSegmentStatus.completed,
         );
         _segments[segmentIndex] = completedSegment;

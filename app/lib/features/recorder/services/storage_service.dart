@@ -199,6 +199,7 @@ class StorageService {
       String? source;
       String? title;
       String? transcriptionStatus;
+      String? contextFromFrontmatter;
 
       final lines = content.split('\n');
       if (lines.isNotEmpty && lines[0] == '---') {
@@ -224,63 +225,45 @@ class StorageService {
               if (key == 'source') source = value;
               if (key == 'title') title = value;
               if (key == 'transcription_status') transcriptionStatus = value;
+              if (key == 'context') {
+                // Unescape the context value (remove quotes and unescape)
+                String unescapedContext = value;
+                if (unescapedContext.startsWith('"') &&
+                    unescapedContext.endsWith('"')) {
+                  unescapedContext = unescapedContext.substring(
+                    1,
+                    unescapedContext.length - 1,
+                  );
+                }
+                unescapedContext = unescapedContext
+                    .replaceAll('\\n', '\n')
+                    .replaceAll('\\"', '"');
+                contextFromFrontmatter = unescapedContext;
+              }
             }
           }
         }
       }
 
-      // Extract transcript (skip frontmatter AND markdown headers)
+      // Extract transcript (skip frontmatter)
       String transcript = '';
-      String context = '';
+
+      // Context comes from frontmatter now
+      String context = contextFromFrontmatter ?? '';
 
       if (lines.isNotEmpty && lines[0] == '---') {
         final endIndex = lines.indexOf('---', 1);
         if (endIndex > 0 && endIndex + 1 < lines.length) {
           final bodyLines = lines.sublist(endIndex + 1);
 
-          // Parse the body to extract context and transcript
-          // Skip the title header (# Title)
-          // Look for ## Context and ## Transcription sections
+          // Skip empty lines at the beginning
           int i = 0;
-
-          // Skip empty lines and title header
-          while (i < bodyLines.length) {
-            final line = bodyLines[i].trim();
-            if (line.isEmpty || line.startsWith('#')) {
-              i++;
-            } else {
-              break;
-            }
+          while (i < bodyLines.length && bodyLines[i].trim().isEmpty) {
+            i++;
           }
 
-          // Look for Context section
-          if (i < bodyLines.length && bodyLines[i].trim() == '## Context') {
-            i++; // Skip header
-            while (i < bodyLines.length && bodyLines[i].trim().isEmpty)
-              i++; // Skip empty lines
-
-            final contextLines = <String>[];
-            while (i < bodyLines.length &&
-                !bodyLines[i].trim().startsWith('##')) {
-              contextLines.add(bodyLines[i]);
-              i++;
-            }
-            context = contextLines.join('\n').trim();
-          }
-
-          // Look for Transcription section
-          if (i < bodyLines.length &&
-              bodyLines[i].trim() == '## Transcription') {
-            i++; // Skip header
-            while (i < bodyLines.length && bodyLines[i].trim().isEmpty)
-              i++; // Skip empty lines
-
-            // Rest is transcript
-            if (i < bodyLines.length) {
-              transcript = bodyLines.sublist(i).join('\n').trim();
-            }
-          } else if (i < bodyLines.length) {
-            // If no Transcription header, treat remaining content as transcript
+          // Rest is transcript (no more sections)
+          if (i < bodyLines.length) {
             transcript = bodyLines.sublist(i).join('\n').trim();
           }
         }
@@ -490,6 +473,15 @@ class StorageService {
       buffer.writeln('buttonTapCount: ${recording.buttonTapCount}');
     }
 
+    // Context in frontmatter (if provided)
+    if (recording.context.isNotEmpty) {
+      // Escape quotes and newlines for YAML
+      final escapedContext = recording.context
+          .replaceAll('"', '\\"')
+          .replaceAll('\n', '\\n');
+      buffer.writeln('context: "$escapedContext"');
+    }
+
     if (recording.tags.isNotEmpty) {
       buffer.writeln('tags:');
       for (final tag in recording.tags) {
@@ -506,22 +498,8 @@ class StorageService {
     buffer.writeln('---');
     buffer.writeln();
 
-    // Content
-    buffer.writeln('# ${recording.title}');
-    buffer.writeln();
-
-    // Context field (if provided)
-    if (recording.context.isNotEmpty) {
-      buffer.writeln('## Context');
-      buffer.writeln();
-      buffer.writeln(recording.context);
-      buffer.writeln();
-    }
-
-    // Transcription
+    // Content - just the transcript (no sections)
     if (recording.transcript.isNotEmpty) {
-      buffer.writeln('## Transcription');
-      buffer.writeln();
       buffer.writeln(recording.transcript);
     }
 
