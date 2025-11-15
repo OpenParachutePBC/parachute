@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:app/core/providers/git_sync_provider.dart';
+import 'package:app/core/providers/github_auth_provider.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
+import 'package:app/features/settings/widgets/github/github_connect_wizard.dart';
 
 class GitSyncSettingsCard extends ConsumerStatefulWidget {
   const GitSyncSettingsCard({super.key});
@@ -154,6 +156,19 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
     }
   }
 
+  Future<void> _showGitHubWizard() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const GitHubConnectWizard(),
+    );
+
+    // Reload settings if wizard was successful
+    if (result == true && mounted) {
+      await _loadSettings();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final gitSyncState = ref.watch(gitSyncProvider);
@@ -280,10 +295,24 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
             const SizedBox(height: 16),
 
             // Action buttons
-            if (!gitSyncState.isEnabled)
+            if (!gitSyncState.isEnabled) ...[
+              // Quick setup with OAuth (recommended)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
+                  onPressed: _showGitHubWizard,
+                  icon: const Icon(Icons.hub),
+                  label: const Text('Connect with GitHub (Recommended)'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Manual setup (advanced)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
                   onPressed: _isSaving ? null : _saveSettings,
                   icon: _isSaving
                       ? const SizedBox(
@@ -291,14 +320,16 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.cloud_sync),
-                  label: Text(_isSaving ? 'Setting up...' : 'Enable Git Sync'),
-                  style: ElevatedButton.styleFrom(
+                      : const Icon(Icons.settings),
+                  label: Text(
+                    _isSaving ? 'Setting up...' : 'Manual Setup (Advanced)',
+                  ),
+                  style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
-              )
-            else
+              ),
+            ] else
               Row(
                 children: [
                   Expanded(

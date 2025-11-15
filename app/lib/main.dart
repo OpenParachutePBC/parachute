@@ -7,6 +7,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opus_dart/opus_dart.dart' as opus_dart;
 import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/feature_flags_provider.dart';
 import 'features/spaces/screens/space_list_screen.dart';
@@ -20,6 +21,16 @@ import 'features/onboarding/screens/onboarding_flow.dart';
 void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables from .env file (optional, fails silently if not found)
+  try {
+    await dotenv.load(fileName: '.env');
+    debugPrint('[Main] ✅ Loaded .env file');
+  } catch (e) {
+    debugPrint(
+      '[Main] ⚠️  No .env file found (this is ok, using --dart-define or defaults)',
+    );
+  }
 
   // Disable verbose FlutterBluePlus logs (reduces spam from onCharacteristicChanged)
   FlutterBluePlus.setLogLevel(LogLevel.none, color: false);

@@ -1,7 +1,8 @@
 # GitHub Sync Implementation Summary
 
-**Date**: November 6, 2025
+**Date**: November 6, 2025 (Updated: November 15, 2025)
 **Status**: ✅ Complete - Ready for Testing
+**Authentication**: GitHub Apps (repository-specific access)
 
 ---
 
@@ -128,12 +129,24 @@
 
 ### User Flow
 
-1. **Setup (One Time)**
+1. **Setup (One Time) - GitHub App Method (Recommended)**
    - Go to Settings → Git Sync
-   - Enter GitHub repository URL
-   - Enter GitHub Personal Access Token
-   - Click "Enable Git Sync"
+   - Click "Connect with GitHub"
+   - Browser opens GitHub authorization page
+   - Select repositories to authorize (or choose "All repositories")
+   - Authorize the app
+   - Return to Parachute (deep link: `open-parachute://auth/github/callback`)
+   - Select repository from list (only shows authorized repos)
+   - Click "Complete Setup"
    - ✅ Repo initialized, periodic sync starts
+
+1b. **Setup (One Time) - Manual PAT Method (Legacy)**
+
+- Go to Settings → Git Sync
+- Enter GitHub repository URL
+- Enter GitHub Personal Access Token
+- Click "Enable Git Sync"
+- ✅ Repo initialized, periodic sync starts
 
 2. **Recording Flow (Automatic)**
    - User records audio
@@ -155,6 +168,42 @@
 ---
 
 ## Technical Details
+
+### GitHub Apps Authentication Flow
+
+```
+1. User clicks "Connect with GitHub"
+   └─ GitHubOAuthService.authorize() called
+   └─ Generates CSRF state token
+   └─ Opens browser: https://github.com/login/oauth/authorize?client_id=...
+
+2. GitHub shows authorization page
+   └─ User selects repositories to authorize
+   └─ User clicks "Authorize"
+   └─ GitHub redirects: open-parachute://auth/github/callback?code=...&state=...
+
+3. Deep link captured by app
+   └─ GitHubOAuthService.handleCallback() validates state
+   └─ Exchanges authorization code for user access token
+   └─ Gets user's installation ID (which repos they authorized)
+   └─ Gets installation access token (repository-scoped, expires in 1 hour)
+
+4. Tokens stored
+   └─ User access token: For API calls (listing repos, creating repos)
+   └─ Installation token: For Git operations (clone, push, pull)
+   └─ Installation ID: Tracks which repositories are authorized
+
+5. Repository selection
+   └─ GitHubApiService.listRepositories(installationId: ...)
+   └─ API returns ONLY authorized repositories
+   └─ User selects their vault repository
+
+6. Git sync setup
+   └─ Uses installation token (repository-scoped) for Git operations
+   └─ Installation token automatically refreshes when expired
+```
+
+**Key Security Feature**: Installation tokens are scoped to ONLY the repositories the user selected during authorization. Even if the token is compromised, it cannot access other repositories.
 
 ### Git Operations Flow
 
@@ -206,11 +255,25 @@ sync() method:
 - ✅ `app/lib/features/recorder/services/storage_service.dart` - Added auto-sync hook
 - ✅ `app/lib/features/recorder/providers/service_providers.dart` - Pass Ref to StorageService
 
+### GitHub OAuth Integration (Nov 15, 2025)
+
+- ✨ `app/lib/core/services/github/github_oauth_service.dart` - NEW: GitHub App OAuth flow with installation support
+- ✨ `app/lib/core/services/github/github_api_service.dart` - NEW: GitHub API operations (list/create repos)
+- ✨ `app/lib/core/providers/github_auth_provider.dart` - NEW: Authentication state management
+- ✨ `app/lib/features/settings/widgets/github/github_connect_wizard.dart` - NEW: 3-step OAuth wizard
+- ✨ `app/lib/features/settings/widgets/github/repository_selector.dart` - NEW: Browse and select repositories
+- ✨ `app/lib/features/settings/widgets/github/repository_creator.dart` - NEW: Create new repositories
+- ✅ `app/lib/main.dart` - Added `.env` file loading support
+- ✅ `app/pubspec.yaml` - Added `oauth2`, `app_links`, `crypto`, `flutter_dotenv` packages
+- ✅ `app/ios/Runner/Info.plist` - Added `open-parachute://` URL scheme
+- ✅ `app/macos/Runner/Info.plist` - Added `open-parachute://` URL scheme
+- ✅ `app/android/app/src/main/AndroidManifest.xml` - Added deep link intent filter
+
 ### UI
 
 - ✨ `app/lib/core/widgets/git_sync_status_indicator.dart` - NEW: Sync status widget
 - ✅ `app/lib/features/recorder/screens/home_screen.dart` - Added sync indicator to app bar
-- ✅ `app/lib/features/settings/widgets/git_sync_settings_card.dart` - Already had UI
+- ✅ `app/lib/features/settings/widgets/git_sync_settings_card.dart` - Updated with "Connect with GitHub" button
 
 ---
 
@@ -285,7 +348,29 @@ sync() method:
 
 ## Configuration
 
-### GitHub Personal Access Token Scopes
+### GitHub App Setup (Recommended)
+
+Parachute now uses **GitHub Apps** for repository-specific access instead of OAuth Apps or Personal Access Tokens. This provides:
+
+- **Repository-scoped tokens**: Only access repositories you explicitly authorize
+- **Better security**: Installation tokens expire after 1 hour and auto-refresh
+- **Granular permissions**: Only request "Contents: Read/Write" permission
+- **User control**: Select specific repositories during authorization
+
+**Setup Guide**: See [docs/guides/github-app-registration.md](../guides/github-app-registration.md) for complete instructions.
+
+**Quick Setup**:
+
+1. Register a GitHub App at https://github.com/settings/apps/new
+2. Set **Callback URL** to: `open-parachute://auth/github/callback`
+3. Set **Repository Permissions** → **Contents**: `Read and write`
+4. Copy Client ID and Client Secret to `app/.env` file
+5. Install the app and select your vault repository
+6. Connect in Parachute Settings → Git Sync → "Connect with GitHub"
+
+### Legacy: Personal Access Token (Still Supported)
+
+If you prefer using Personal Access Tokens:
 
 Required scopes for PAT:
 
@@ -293,13 +378,15 @@ Required scopes for PAT:
 
 Create token at: https://github.com/settings/tokens
 
+**Note**: PAT approach grants access to ALL repositories, which is less secure than GitHub Apps.
+
 ### Recommended Repository Setup
 
 1. Create a new **private** repository on GitHub
 2. Name it something like `parachute-vault`
 3. Do NOT initialize with README (empty repo)
 4. Copy the HTTPS URL: `https://github.com/username/parachute-vault.git`
-5. Use this URL in Parachute settings
+5. Use this URL in Parachute settings (or select it in the GitHub App wizard)
 
 ---
 
@@ -367,6 +454,27 @@ debugPrint('[GitSync] ✅ Push successful');
 
 ## Next Steps for User
 
+### Option A: GitHub App Setup (Recommended)
+
+1. **Register a GitHub App**
+   - Follow the guide: [docs/guides/github-app-registration.md](../guides/github-app-registration.md)
+   - Get your Client ID and Client Secret
+   - Add to `app/.env` file
+
+2. **Connect in Parachute**
+   - Go to Settings → Git Sync
+   - Click "Connect with GitHub"
+   - Authorize the app and select your vault repository
+   - Complete the setup wizard
+
+3. **Test It**
+   - Record a new audio note
+   - Watch the sync indicator (should show syncing)
+   - Check your GitHub repository for the files
+   - Try on another device!
+
+### Option B: Manual PAT Setup (Legacy)
+
 1. **Enable Git Sync**
    - Go to Settings
    - Scroll to "Git Sync (Multi-Device)"
@@ -380,14 +488,17 @@ debugPrint('[GitSync] ✅ Push successful');
    - Check your GitHub repository for the files
    - Try on another device!
 
-3. **Report Issues**
-   - Check debug logs if something doesn't work
-   - Note any error messages
-   - Test with network on/off to verify behavior
+### Troubleshooting
+
+- Check debug logs if something doesn't work
+- Note any error messages
+- Test with network on/off to verify behavior
+- For GitHub App issues, see the troubleshooting section in [github-app-registration.md](../guides/github-app-registration.md)
 
 ---
 
 **Implementation Complete**: November 6, 2025
+**GitHub Apps Integration**: November 15, 2025
 **Ready for Testing**: YES ✅
 **Breaking Changes**: None
-**Migration Required**: No (existing installs work as before)
+**Migration Required**: No (existing installs work as before, GitHub App setup is optional)
