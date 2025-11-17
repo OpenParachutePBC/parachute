@@ -329,22 +329,36 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
                   ),
                 ),
               ),
-            ] else
+            ] else ...[
+              // Sync Now button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: gitSyncState.isSyncing ? null : _syncNow,
+                  icon: gitSyncState.isSyncing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.sync),
+                  label: Text(
+                    gitSyncState.isSyncing ? 'Syncing...' : 'Sync Now',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Change Repository and Disable buttons
               Row(
                 children: [
                   Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: gitSyncState.isSyncing ? null : _syncNow,
-                      icon: gitSyncState.isSyncing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.sync),
-                      label: Text(
-                        gitSyncState.isSyncing ? 'Syncing...' : 'Sync Now',
-                      ),
+                    child: OutlinedButton.icon(
+                      onPressed: _isSaving ? null : _showGitHubWizard,
+                      icon: const Icon(Icons.edit),
+                      label: const Text('Change Repo'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -360,6 +374,7 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
                   ),
                 ],
               ),
+            ],
 
             // Error message
             if (gitSyncState.lastError != null) ...[

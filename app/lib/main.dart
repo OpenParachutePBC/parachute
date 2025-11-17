@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:opus_dart/opus_dart.dart' as opus_dart;
 import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:git2dart/git2dart.dart' as git2dart;
+import 'package:git2dart_binaries/git2dart_binaries.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/feature_flags_provider.dart';
 import 'features/spaces/screens/space_list_screen.dart';
@@ -21,6 +23,25 @@ import 'features/onboarding/screens/onboarding_flow.dart';
 void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+
+  // Initialize Git SSL certificates for Android
+  if (Platform.isAndroid) {
+    try {
+      debugPrint('[Main] Initializing Android SSL certificates for Git...');
+
+      // 1. Initialize libgit2 FIRST
+      final version = git2dart.Libgit2.version;
+      debugPrint('[Main] libgit2 version: $version');
+
+      // 2. NOW initialize SSL
+      final certPath = await AndroidSSLHelper.initialize();
+      git2dart.Libgit2.setSSLCertLocations(file: certPath);
+      debugPrint('[Main] ✅ Git SSL certificates configured: $certPath');
+    } catch (e) {
+      debugPrint('[Main] ❌ Failed to initialize Git SSL: $e');
+    }
+  }
 
   // Load environment variables from .env file (optional, fails silently if not found)
   try {

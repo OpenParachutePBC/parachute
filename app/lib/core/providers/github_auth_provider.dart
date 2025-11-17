@@ -141,11 +141,21 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
         return false;
       }
 
-      // Get installation ID (which repositories user authorized)
-      debugPrint('[GitHubAuth] Getting installation ID...');
-      final installationId = await _oauthService.getUserInstallationId(
-        accessToken,
-      );
+      // Get installation ID (check callback first, then API)
+      int? installationId;
+      final installationIdFromCallback = authResult['installation_id'];
+      if (installationIdFromCallback != null) {
+        debugPrint(
+          '[GitHubAuth] Using installation ID from callback: $installationIdFromCallback',
+        );
+        installationId = int.tryParse(installationIdFromCallback);
+      }
+
+      // If not in callback, query API
+      if (installationId == null) {
+        debugPrint('[GitHubAuth] Querying installation ID from API...');
+        installationId = await _oauthService.getUserInstallationId(accessToken);
+      }
 
       if (installationId == null) {
         // App not installed - need to redirect user to installation page

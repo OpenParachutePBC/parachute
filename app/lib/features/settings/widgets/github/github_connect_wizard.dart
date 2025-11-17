@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/providers/github_auth_provider.dart';
 import 'package:app/core/services/github/github_api_service.dart';
 import 'package:app/features/settings/widgets/github/repository_selector.dart';
-import 'package:app/features/settings/widgets/github/create_repository_dialog.dart';
 import 'package:app/core/providers/git_sync_provider.dart';
 
 /// GitHub connection wizard - guides user through OAuth and repository selection
@@ -24,6 +23,20 @@ class _GitHubConnectWizardState extends ConsumerState<GitHubConnectWizard> {
   int _currentStep = 0;
   GitHubRepository? _selectedRepository;
   bool _isSettingUp = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Skip to step 1 if already authenticated
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final gitHubAuth = ref.read(gitHubAuthProvider);
+      if (gitHubAuth.isAuthenticated) {
+        setState(() {
+          _currentStep = 1;
+        });
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -199,7 +212,6 @@ class _GitHubConnectWizardState extends ConsumerState<GitHubConnectWizard> {
           _currentStep = 2; // Move to final step
         });
       },
-      onCreateNew: _showCreateRepositoryDialog,
     );
   }
 
@@ -336,20 +348,6 @@ class _GitHubConnectWizardState extends ConsumerState<GitHubConnectWizard> {
     if (success && mounted) {
       setState(() {
         _currentStep = 1;
-      });
-    }
-  }
-
-  Future<void> _showCreateRepositoryDialog() async {
-    final repo = await showDialog<GitHubRepository>(
-      context: context,
-      builder: (context) => const CreateRepositoryDialog(),
-    );
-
-    if (repo != null && mounted) {
-      setState(() {
-        _selectedRepository = repo;
-        _currentStep = 2;
       });
     }
   }

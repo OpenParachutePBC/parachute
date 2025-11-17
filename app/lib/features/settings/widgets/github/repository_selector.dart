@@ -10,13 +10,11 @@ import 'package:app/core/providers/github_auth_provider.dart';
 class RepositorySelector extends ConsumerStatefulWidget {
   final GitHubRepository? selectedRepository;
   final Function(GitHubRepository) onRepositorySelected;
-  final VoidCallback onCreateNew;
 
   const RepositorySelector({
     super.key,
     this.selectedRepository,
     required this.onRepositorySelected,
-    required this.onCreateNew,
   });
 
   @override
@@ -122,19 +120,31 @@ class _RepositorySelectorState extends ConsumerState<RepositorySelector> {
         ),
         const SizedBox(height: 16),
 
-        // Create new repository button
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: widget.onCreateNew,
-            icon: const Icon(Icons.add),
-            label: const Text('Create New Repository'),
+        // Info message
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blue.withOpacity(0.3)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, size: 20, color: Colors.blue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Create your repository on GitHub first, then authorize it in the installation settings.',
+                  style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
 
         // Repository list (fixed height)
-        SizedBox(height: 400, child: _buildRepositoryList(theme)),
+        SizedBox(height: 350, child: _buildRepositoryList(theme)),
       ],
     );
   }

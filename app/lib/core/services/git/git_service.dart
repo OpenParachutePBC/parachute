@@ -38,15 +38,6 @@ class GitService {
   /// Initialize a new Git repository
   Future<Repository?> initRepository(String path) async {
     try {
-      // Check platform support
-      if (Platform.isAndroid || Platform.isIOS) {
-        throw UnsupportedError(
-          'Git sync is not yet supported on mobile platforms. '
-          'Git operations require libgit2 which is not available on Android/iOS. '
-          'Mobile sync support coming soon!',
-        );
-      }
-
       debugPrint('[GitService] Initializing Git repository at: $path');
 
       // Ensure directory exists
@@ -80,7 +71,17 @@ class GitService {
       debugPrint('[GitService] ✅ Repository opened successfully');
       return repo;
     } catch (e) {
-      debugPrint('[GitService] ❌ Error opening repository: $e');
+      // On Android, ownership errors are expected due to storage permissions
+      if (Platform.isAndroid &&
+          e.toString().contains('not owned by current user')) {
+        debugPrint('[GitService] ⚠️  Git ownership check failed on Android');
+        debugPrint(
+          '[GitService] This is a known limitation - libgit2 needs to be built with ownership checks disabled',
+        );
+        debugPrint('[GitService] Falling back to API sync...');
+      } else {
+        debugPrint('[GitService] ❌ Error opening repository: $e');
+      }
       return null;
     }
   }

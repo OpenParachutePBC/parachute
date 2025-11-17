@@ -36,8 +36,15 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.0.0
 
-  # Git Integration
-  git2dart: ^0.3.0
+  # Git Integration (GitHub with Android support)
+  git2dart:
+    git:
+      url: https://github.com/unforced/git2dart.git
+      ref: android-binaries-support
+  git2dart_binaries:
+    git:
+      url: https://github.com/unforced/git2dart_binaries.git
+      ref: android-openssl-support
 
   # GitHub OAuth & API
   oauth2: ^2.0.2
@@ -76,6 +83,12 @@ dependencies:
 
   # OTA Firmware Updates
   nordic_dfu: ^6.1.4
+
+dependency_overrides:
+  git2dart_binaries:
+    git:
+      url: https://github.com/unforced/git2dart_binaries.git
+      ref: android-openssl-support
 
 dev_dependencies:
   flutter_test:

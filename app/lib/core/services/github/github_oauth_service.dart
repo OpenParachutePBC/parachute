@@ -175,6 +175,8 @@ class GitHubOAuthService {
       final code = uri.queryParameters['code'];
       final state = uri.queryParameters['state'];
       final error = uri.queryParameters['error'];
+      final installationIdStr = uri.queryParameters['installation_id'];
+      final setupAction = uri.queryParameters['setup_action'];
 
       // Check for errors
       if (error != null) {
@@ -204,6 +206,17 @@ class GitHubOAuthService {
         if (token != null &&
             _authCompleter != null &&
             !_authCompleter!.isCompleted) {
+          // Include installation_id if provided in callback
+          if (installationIdStr != null) {
+            debugPrint(
+              '[GitHubOAuth] ✅ Installation ID from callback: $installationIdStr',
+            );
+            token['installation_id'] = installationIdStr;
+          }
+          if (setupAction != null) {
+            debugPrint('[GitHubOAuth] Setup action: $setupAction');
+            token['setup_action'] = setupAction;
+          }
           _authCompleter!.complete(token);
         } else if (_authCompleter != null && !_authCompleter!.isCompleted) {
           _authCompleter!.completeError(
