@@ -14,6 +14,9 @@ import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/screens/device_pairing_screen.dart';
 import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/settings/widgets/git_sync_settings_card.dart';
+import 'package:app/services/parakeet_service.dart' as parakeet;
+import 'package:app/services/sherpa_onnx_service.dart' as sherpa;
+import 'dart:io';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -38,6 +41,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _autoTranscribe = false;
   bool _autoPauseRecording = false;
   bool _audioDebugOverlay = false;
+  dynamic _parakeetModelInfo; // Can be parakeet.ModelInfo or sherpa.ModelInfo
 
   // Title Generation settings
   TitleModelMode _titleMode = TitleModelMode.api;
@@ -125,8 +129,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // Load audio debug overlay setting
     _audioDebugOverlay = await storageService.getAudioDebugOverlay();
 
+    // Load Parakeet model info
+    await _loadParakeetModelInfo();
+
     // Load Title Generation settings
     await _loadTitleGenerationSettings();
+  }
+
+  Future<void> _loadParakeetModelInfo() async {
+    try {
+      if (Platform.isIOS || Platform.isMacOS) {
+        final parakeetService = parakeet.ParakeetService();
+        _parakeetModelInfo = await parakeetService.getModelInfo();
+      } else if (Platform.isAndroid || Platform.isLinux || Platform.isWindows) {
+        final sherpaService = sherpa.SherpaOnnxService();
+        _parakeetModelInfo = await sherpaService.getModelInfo();
+      }
+    } catch (e) {
+      debugPrint('[Settings] Failed to load Parakeet model info: $e');
+      _parakeetModelInfo = null;
+    }
   }
 
   Future<void> _loadTitleGenerationSettings() async {
@@ -991,6 +1013,155 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Colors.red;
   }
 
+  Widget _buildParakeetModelCard() {
+    final isReady = _parakeetModelInfo?.isInitialized ?? false;
+    final version = _parakeetModelInfo?.version ?? 'v3';
+    final languageCount = _parakeetModelInfo?.languageCount ?? 600;
+    final modelPath = _parakeetModelInfo?.modelPath ?? 'Unknown';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isReady
+            ? Colors.green.withValues(alpha: 0.1)
+            : Colors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isReady ? Colors.green : Colors.orange,
+          width: 2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isReady ? Icons.check_circle : Icons.downloading,
+                color: isReady ? Colors.green[700] : Colors.orange[700],
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Parakeet $version',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: isReady ? Colors.green[900] : Colors.orange[900],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isReady
+                          ? 'Model ready • $languageCount languages'
+                          : 'Model downloading or not initialized',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: isReady
+                      ? Colors.green.withValues(alpha: 0.2)
+                      : Colors.orange.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  isReady ? 'READY' : 'PENDING',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: isReady ? Colors.green[900] : Colors.orange[900],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'NVIDIA NeMo Parakeet multilingual ASR',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (isReady && modelPath.isNotEmpty && modelPath != 'Unknown') ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.folder_outlined, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    modelPath,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                      color: Colors.grey[600],
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (!isReady) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.blue.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline,
+                    color: Colors.blue[700],
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Models are downloaded automatically on first use',
+                      style: TextStyle(fontSize: 11, color: Colors.blue[900]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Future<void> _checkFirmwareUpdate() async {
     final connectedDeviceAsync = ref.read(connectedOmiDeviceProvider);
     final connectedDevice = connectedDeviceAsync.value;
@@ -1667,6 +1838,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Powered by Parakeet v3 - NVIDIA NeMo 600M parameter multilingual ASR',
                     style: TextStyle(color: Colors.grey[600], fontSize: 14),
                   ),
+                  const SizedBox(height: 24),
+
+                  // Parakeet Model Status Card
+                  _buildParakeetModelCard(),
                   const SizedBox(height: 24),
 
                   // Auto-transcribe toggle
