@@ -42,6 +42,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _autoPauseRecording = false;
   bool _audioDebugOverlay = false;
   dynamic _parakeetModelInfo; // Can be parakeet.ModelInfo or sherpa.ModelInfo
+  bool _isDownloadingParakeet = false;
+  double _parakeetDownloadProgress = 0.0;
+  String _parakeetDownloadStatus = '';
 
   // Title Generation settings
   TitleModelMode _titleMode = TitleModelMode.api;
@@ -148,6 +151,77 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } catch (e) {
       debugPrint('[Settings] Failed to load Parakeet model info: $e');
       _parakeetModelInfo = null;
+    }
+  }
+
+  Future<void> _downloadParakeetModel() async {
+    if (_isDownloadingParakeet) return;
+
+    setState(() {
+      _isDownloadingParakeet = true;
+      _parakeetDownloadProgress = 0.0;
+      _parakeetDownloadStatus = 'Starting download...';
+    });
+
+    try {
+      if (Platform.isIOS || Platform.isMacOS) {
+        final parakeetService = parakeet.ParakeetService();
+        await parakeetService.initialize(version: 'v3');
+
+        // Reload model info
+        _parakeetModelInfo = await parakeetService.getModelInfo();
+      } else if (Platform.isAndroid || Platform.isLinux || Platform.isWindows) {
+        final sherpaService = sherpa.SherpaOnnxService();
+        await sherpaService.initialize(
+          onProgress: (progress) {
+            if (mounted) {
+              setState(() {
+                _parakeetDownloadProgress = progress;
+              });
+            }
+          },
+          onStatus: (status) {
+            if (mounted) {
+              setState(() {
+                _parakeetDownloadStatus = status;
+              });
+            }
+          },
+        );
+
+        // Reload model info
+        _parakeetModelInfo = await sherpaService.getModelInfo();
+      }
+
+      if (mounted) {
+        setState(() {
+          _isDownloadingParakeet = false;
+          _parakeetDownloadProgress = 1.0;
+          _parakeetDownloadStatus = 'Download complete!';
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Parakeet model downloaded successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isDownloadingParakeet = false;
+          _parakeetDownloadProgress = 0.0;
+          _parakeetDownloadStatus = 'Download failed';
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to download Parakeet model: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -1129,33 +1203,68 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
           if (!isReady) ...[
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Colors.blue.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
+            if (_isDownloadingParakeet) ...[
+              Column(
                 children: [
-                  Icon(
-                    Icons.lightbulb_outline,
-                    color: Colors.blue[700],
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Models are downloaded automatically on first use',
-                      style: TextStyle(fontSize: 11, color: Colors.blue[900]),
+                  LinearProgressIndicator(
+                    value: _parakeetDownloadProgress,
+                    backgroundColor: Colors.grey[300],
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Colors.blue,
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _parakeetDownloadStatus,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.blue[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Progress: ${(_parakeetDownloadProgress * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(fontSize: 11, color: Colors.blue[600]),
                   ),
                 ],
               ),
-            ),
+            ] else ...[
+              ElevatedButton.icon(
+                onPressed: _downloadParakeetModel,
+                icon: const Icon(Icons.download),
+                label: const Text('Download Model Now'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 44),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.blue.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue[700], size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Download now or models will be downloaded automatically on first use',
+                        style: TextStyle(fontSize: 11, color: Colors.blue[900]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ],
       ),
