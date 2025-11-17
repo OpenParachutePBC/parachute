@@ -247,6 +247,7 @@
 				87A9EAC1C111E5A5C729BC2B /* [CP] Embed Pods Frameworks */,
 				0DF2215D4830B96566A3AE30 /* Copy Opus Library */,
 				B4F60545CF13C62BB2A66225 /* Copy Git Libraries */,
+				9FD6C1B4C3AC18C52EEB5C85 /* Fix libssh2 OpenSSL Path */,
 			);
 			buildRules = (
 			);
@@ -426,6 +427,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		9FD6C1B4C3AC18C52EEB5C85 /* Fix libssh2 OpenSSL Path */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Fix libssh2 OpenSSL Path";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/bin/bash\n# Fix libssh2 OpenSSL path to use system OpenSSL instead of Homebrew\nLIBSSH2_PATH=\"${BUILT_PRODUCTS_DIR}/${EXECUTABLE_FOLDER_PATH}/libssh2.1.dylib\"\n\nif [ -f \"$LIBSSH2_PATH\" ]; then\n    echo \"Fixing libssh2 OpenSSL path: $LIBSSH2_PATH\"\n    install_name_tool -change /opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib /usr/lib/libcrypto.dylib \"$LIBSSH2_PATH\" 2>/dev/null || true\n    echo \"✅ libssh2 OpenSSL path fixed\"\nfi\n";
 			showEnvVarsInLog = 0;
 		};
 		B4F60545CF13C62BB2A66225 /* Copy Git Libraries */ = {

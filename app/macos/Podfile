@@ -48,6 +48,33 @@ post_install do |installer|
     end
   end
 
+  # Add build phase to fix libssh2 OpenSSL path
+  runner_project = installer.aggregate_targets[0].user_project
+  runner_target = runner_project.targets.find { |t| t.name == 'Runner' }
+
+  if runner_target
+    existing_phase = runner_target.shell_script_build_phases.find { |p| p.name == 'Fix libssh2 OpenSSL Path' }
+
+    unless existing_phase
+      puts "Adding 'Fix libssh2 OpenSSL Path' build phase to Runner target"
+      phase = runner_target.new_shell_script_build_phase('Fix libssh2 OpenSSL Path')
+      phase.shell_script = <<~SCRIPT
+#!/bin/bash
+# Fix libssh2 OpenSSL path to use system OpenSSL instead of Homebrew
+LIBSSH2_PATH="${BUILT_PRODUCTS_DIR}/${EXECUTABLE_FOLDER_PATH}/libssh2.1.dylib"
+
+if [ -f "$LIBSSH2_PATH" ]; then
+    echo "Fixing libssh2 OpenSSL path: $LIBSSH2_PATH"
+    install_name_tool -change /opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib /usr/lib/libcrypto.dylib "$LIBSSH2_PATH" 2>/dev/null || true
+    echo "✅ libssh2 OpenSSL path fixed"
+fi
+      SCRIPT
+      # Run after embedding frameworks
+      phase.show_env_vars_in_log = '0'
+      runner_project.save
+    end
+  end
+
   # Fix git2dart_binaries: Copy libssh2.1.dylib to Frameworks
   # The git2dart_binaries podspec is missing libssh2.1.dylib in vendored_libraries
   # The dylib is in pub-cache, not in Pods directory
@@ -85,7 +112,12 @@ if [ -f "$LIBSSH2_SOURCE" ]; then
     echo "Copying libssh2 to: $LIBSSH2_DEST"
     mkdir -p "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
     cp "$LIBSSH2_SOURCE" "$LIBSSH2_DEST"
-    echo "✅ libssh2 copied successfully"
+
+    # Fix OpenSSL path in libssh2 to use system OpenSSL instead of Homebrew
+    # This prevents sandbox errors when loading Homebrew paths
+    install_name_tool -change /opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib /usr/lib/libcrypto.dylib "$LIBSSH2_DEST" 2>/dev/null || true
+
+    echo "✅ libssh2 copied and patched successfully"
 else
     echo "⚠️  Warning: libssh2 not found at: $LIBSSH2_SOURCE"
 fi

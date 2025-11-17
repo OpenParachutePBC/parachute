@@ -15,96 +15,7 @@ class GitSyncSettingsCard extends ConsumerStatefulWidget {
 }
 
 class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
-  final TextEditingController _repoUrlController = TextEditingController();
-  final TextEditingController _githubTokenController = TextEditingController();
-  bool _obscureToken = true;
   bool _isSaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  @override
-  void dispose() {
-    _repoUrlController.dispose();
-    _githubTokenController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadSettings() async {
-    final storageService = ref.read(storageServiceProvider);
-
-    final repoUrl = await storageService.getGitHubRepositoryUrl();
-    if (repoUrl != null) {
-      _repoUrlController.text = repoUrl;
-    }
-
-    final token = await storageService.getGitHubToken();
-    if (token != null) {
-      _githubTokenController.text = token;
-    }
-  }
-
-  Future<void> _saveSettings() async {
-    if (_repoUrlController.text.isEmpty ||
-        _githubTokenController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter both repository URL and GitHub token'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isSaving = true);
-
-    try {
-      final storageService = ref.read(storageServiceProvider);
-
-      // Save settings
-      await storageService.saveGitHubRepositoryUrl(_repoUrlController.text);
-      await storageService.saveGitHubToken(_githubTokenController.text);
-      await storageService.setGitSyncEnabled(true);
-
-      // Setup Git sync
-      final gitSync = ref.read(gitSyncProvider.notifier);
-      final success = await gitSync.setupGitSync(
-        repositoryUrl: _repoUrlController.text,
-        githubToken: _githubTokenController.text,
-      );
-
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Git sync enabled successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to enable Git sync: ${ref.read(gitSyncProvider).lastError ?? "Unknown error"}',
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
-  }
 
   Future<void> _disableGitSync() async {
     setState(() => _isSaving = true);
@@ -118,8 +29,8 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
       await storageService.deleteGitHubToken();
       await storageService.deleteGitHubRepositoryUrl();
 
-      _repoUrlController.clear();
-      _githubTokenController.clear();
+      // Also sign out from GitHub OAuth
+      ref.read(gitHubAuthProvider.notifier).signOut();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -157,16 +68,13 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
   }
 
   Future<void> _showGitHubWizard() async {
-    final result = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => const GitHubConnectWizard(),
     );
 
-    // Reload settings if wizard was successful
-    if (result == true && mounted) {
-      await _loadSettings();
-    }
+    // Wizard handles all state updates via providers, no need to reload
   }
 
   @override
@@ -248,83 +156,16 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
               const SizedBox(height: 16),
             ],
 
-            // Repository URL
-            TextField(
-              controller: _repoUrlController,
-              decoration: InputDecoration(
-                labelText: 'GitHub Repository URL',
-                hintText: 'https://github.com/username/parachute-vault.git',
-                prefixIcon: const Icon(Icons.link),
-                border: const OutlineInputBorder(),
-                enabled: !gitSyncState.isEnabled,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // GitHub Token
-            TextField(
-              controller: _githubTokenController,
-              obscureText: _obscureToken,
-              decoration: InputDecoration(
-                labelText: 'GitHub Personal Access Token',
-                hintText: 'ghp_...',
-                prefixIcon: const Icon(Icons.key),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureToken ? Icons.visibility : Icons.visibility_off,
-                  ),
-                  onPressed: () =>
-                      setState(() => _obscureToken = !_obscureToken),
-                ),
-                border: const OutlineInputBorder(),
-                enabled: !gitSyncState.isEnabled,
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Help text
-            if (!gitSyncState.isEnabled)
-              Text(
-                'Create a GitHub Personal Access Token with "repo" permissions at: '
-                'github.com/settings/tokens',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            const SizedBox(height: 16),
-
             // Action buttons
             if (!gitSyncState.isEnabled) ...[
-              // Quick setup with OAuth (recommended)
+              // Connect with GitHub OAuth
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: _showGitHubWizard,
                   icon: const Icon(Icons.hub),
-                  label: const Text('Connect with GitHub (Recommended)'),
+                  label: const Text('Connect with GitHub'),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Manual setup (advanced)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _isSaving ? null : _saveSettings,
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.settings),
-                  label: Text(
-                    _isSaving ? 'Setting up...' : 'Manual Setup (Advanced)',
-                  ),
-                  style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
