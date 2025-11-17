@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:git2dart/git2dart.dart';
 
 import 'package:app/core/services/git/git_service.dart';
-import 'package:app/core/services/git/github_api_sync_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 
@@ -64,23 +62,12 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
 
   final Ref _ref;
   final GitService _gitService = GitService.instance;
-  final GitHubApiSyncService _apiSyncService = GitHubApiSyncService.instance;
   Repository? _repository;
   Timer? _periodicSyncTimer;
-
-  /// Check if we should use API sync (iOS only - Android uses Git)
-  bool get _shouldUseApiSync => Platform.isIOS;
 
   /// Initialize Git sync by checking if vault is a Git repository
   /// and restoring saved settings
   Future<void> initialize() async {
-    // On mobile platforms, skip Git operations and just restore settings
-    if (_shouldUseApiSync) {
-      await _restoreSettings();
-      return;
-    }
-
-    // Desktop platform: check for Git repository
     final fileSystemService = _ref.read(fileSystemServiceProvider);
     final vaultPath = await fileSystemService.getRootPath();
     final isGitRepo = await _gitService.isGitRepository(vaultPath);
@@ -109,15 +96,6 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       if (isEnabled && repoUrl != null && token != null) {
         debugPrint('[GitSync] Restoring Git sync settings from storage');
 
-        // On mobile platforms, just restore state (no Git operations)
-        if (_shouldUseApiSync) {
-          state = state.copyWith(isEnabled: true, repositoryUrl: repoUrl);
-          enablePeriodicSync();
-          debugPrint('[GitSync] ✅ API sync restored and enabled');
-          return;
-        }
-
-        // Desktop platform: set token and update status
         // Set the token
         _gitService.setGitHubToken(token);
 
@@ -143,36 +121,6 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
     try {
       state = state.copyWith(isSyncing: true, lastError: null);
 
-      // On mobile platforms, just save the configuration (no Git operations)
-      if (_shouldUseApiSync) {
-        debugPrint('[GitSync] Setting up API sync (mobile platform)');
-
-        // Parse repository URL to validate it
-        final repoInfo = _parseGitHubUrl(repositoryUrl);
-        if (repoInfo == null) {
-          state = state.copyWith(
-            isSyncing: false,
-            lastError: 'Invalid GitHub repository URL',
-          );
-          return false;
-        }
-
-        // Save the configuration
-        state = state.copyWith(
-          isEnabled: true,
-          repositoryUrl: repositoryUrl,
-          isSyncing: false,
-          lastSyncTime: null, // Will be set on first sync
-        );
-
-        // Enable periodic background sync
-        enablePeriodicSync();
-
-        debugPrint('[GitSync] ✅ API sync configured successfully');
-        return true;
-      }
-
-      // Desktop platform: use Git operations
       // Set GitHub token
       _gitService.setGitHubToken(githubToken);
 
@@ -345,11 +293,6 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
   Future<bool> sync() async {
     debugPrint('[GitSync] 🔄 sync() called');
 
-    // Use API sync on mobile platforms
-    if (_shouldUseApiSync) {
-      return await _syncViaApi();
-    }
-
     if (_repository == null) {
       debugPrint('[GitSync] ❌ No repository available');
       return false;
@@ -472,122 +415,6 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
     } catch (e) {
       state = state.copyWith(isSyncing: false, lastError: e.toString());
       return false;
-    }
-  }
-
-  /// Sync using GitHub API (for mobile platforms)
-  Future<bool> _syncViaApi() async {
-    debugPrint('[GitSync] Using GitHub API sync (mobile platform)');
-
-    try {
-      state = state.copyWith(isSyncing: true, lastError: null);
-
-      // Parse repository URL to get owner and repo
-      if (state.repositoryUrl == null) {
-        debugPrint('[GitSync] ❌ No repository URL configured');
-        state = state.copyWith(
-          isSyncing: false,
-          lastError: 'No repository URL',
-        );
-        return false;
-      }
-
-      final repoInfo = _parseGitHubUrl(state.repositoryUrl!);
-      if (repoInfo == null) {
-        debugPrint('[GitSync] ❌ Invalid repository URL format');
-        state = state.copyWith(
-          isSyncing: false,
-          lastError: 'Invalid repository URL',
-        );
-        return false;
-      }
-
-      // Get GitHub token
-      final storageService = _ref.read(storageServiceProvider);
-      final token = await storageService.getGitHubToken();
-      if (token == null) {
-        debugPrint('[GitSync] ❌ No GitHub token');
-        state = state.copyWith(isSyncing: false, lastError: 'No GitHub token');
-        return false;
-      }
-
-      // Configure API sync service
-      _apiSyncService.configure(
-        githubToken: token,
-        owner: repoInfo['owner']!,
-        repo: repoInfo['repo']!,
-      );
-
-      // Get vault path
-      final fileSystemService = _ref.read(fileSystemServiceProvider);
-      final vaultPath = await fileSystemService.getRootPath();
-
-      // Sync all files
-      debugPrint('[GitSync] Syncing vault: $vaultPath');
-      final result = await _apiSyncService.sync(
-        localPath: vaultPath,
-        remotePath: '', // Root of repo
-      );
-
-      if (result.isSuccess) {
-        debugPrint(
-          '[GitSync] ✅ API sync complete: ${result.uploaded} up, ${result.downloaded} down, ${result.deleted} deleted',
-        );
-        state = state.copyWith(
-          isSyncing: false,
-          lastSyncTime: DateTime.now(),
-          filesUploading: 0,
-          filesDownloading: 0,
-        );
-        return true;
-      } else {
-        debugPrint('[GitSync] ❌ API sync failed: ${result.error}');
-        state = state.copyWith(
-          isSyncing: false,
-          lastError: result.error ?? 'Sync failed',
-        );
-        return false;
-      }
-    } catch (e) {
-      debugPrint('[GitSync] ❌ API sync exception: $e');
-      state = state.copyWith(isSyncing: false, lastError: e.toString());
-      return false;
-    }
-  }
-
-  /// Parse GitHub repository URL to extract owner and repo name
-  /// Supports formats:
-  /// - https://github.com/owner/repo
-  /// - https://github.com/owner/repo.git
-  /// - git@github.com:owner/repo.git
-  Map<String, String>? _parseGitHubUrl(String url) {
-    try {
-      // HTTPS format
-      if (url.startsWith('https://github.com/')) {
-        final path = url
-            .replaceFirst('https://github.com/', '')
-            .replaceFirst('.git', '');
-        final parts = path.split('/');
-        if (parts.length >= 2) {
-          return {'owner': parts[0], 'repo': parts[1]};
-        }
-      }
-
-      // SSH format
-      if (url.startsWith('git@github.com:')) {
-        final path = url
-            .replaceFirst('git@github.com:', '')
-            .replaceFirst('.git', '');
-        final parts = path.split('/');
-        if (parts.length >= 2) {
-          return {'owner': parts[0], 'repo': parts[1]};
-        }
-      }
-
-      return null;
-    } catch (e) {
-      debugPrint('[GitSync] Error parsing GitHub URL: $e');
-      return null;
     }
   }
 

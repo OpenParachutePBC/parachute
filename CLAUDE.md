@@ -331,18 +331,21 @@ This space tracks development discussions, architecture decisions, and feature p
 - Immediate recording persistence (no data loss on exit)
 - Link captures to spaces integration
 
-**Git Sync Complete (Nov 6, 2025)**
+**Git Sync (Nov 6-17, 2025)**
 
-- Library research and selection (✅ git2dart chosen)
-- Proof-of-concept complete (✅ all tests passing)
-- Local Git operations (init, add, commit, status)
-- Remote Git operations (clone, push, pull)
-- GitHub PAT authentication
-- Settings screen for Git config
-- Auto-commit on recording save
-- Manual sync with UI indicators
-- Periodic background sync (every 5 minutes)
-- Settings persistence across restarts
+- ✅ Library research and selection (git2dart chosen)
+- ✅ Proof-of-concept complete (all tests passing)
+- ✅ Local Git operations (init, add, commit, status)
+- ✅ Remote Git operations (clone, push, pull)
+- ✅ GitHub OAuth with repository-scoped access
+- ✅ Settings screen for Git config
+- ✅ Auto-commit on recording save
+- ✅ Manual sync with UI indicators
+- ✅ Periodic background sync (every 5 minutes)
+- ✅ Settings persistence across restarts
+- ✅ Android SSL support with OpenSSL certificates
+- ✅ Native Git sync on Android (macOS/Linux already working)
+- 🚧 iOS support pending (native Git sync not yet enabled)
 
 **Auto-Pause Voice Recording (Nov 7-10, 2025)**
 
