@@ -49,11 +49,42 @@ class GitService {
       // Initialize repository (bare parameter instead of isBare)
       final repo = Repository.init(path: path, bare: false);
 
+      // Ensure .gitignore exists and excludes WAV files
+      await ensureGitignore(path);
+
       debugPrint('[GitService] ✅ Repository initialized successfully');
       return repo;
     } catch (e) {
       debugPrint('[GitService] ❌ Error initializing repository: $e');
       return null;
+    }
+  }
+
+  /// Ensure .gitignore exists and includes WAV files
+  Future<void> ensureGitignore(String repoPath) async {
+    try {
+      final gitignorePath = p.join(repoPath, '.gitignore');
+      final gitignoreFile = File(gitignorePath);
+
+      if (!await gitignoreFile.exists()) {
+        // Create new .gitignore with WAV exclusion
+        debugPrint('[GitService] Creating .gitignore with WAV exclusion');
+        await gitignoreFile.writeAsString('*.wav\n');
+      } else {
+        // Check if .gitignore already excludes WAV files
+        final content = await gitignoreFile.readAsString();
+        if (!content.contains('*.wav')) {
+          // Append WAV exclusion
+          debugPrint('[GitService] Adding *.wav to existing .gitignore');
+          await gitignoreFile.writeAsString(
+            content.endsWith('\n') ? '${content}*.wav\n' : '$content\n*.wav\n',
+          );
+        } else {
+          debugPrint('[GitService] .gitignore already excludes WAV files');
+        }
+      }
+    } catch (e) {
+      debugPrint('[GitService] ⚠️  Error managing .gitignore: $e');
     }
   }
 
@@ -68,6 +99,7 @@ class GitService {
       }
 
       final repo = Repository.open(path);
+
       debugPrint('[GitService] ✅ Repository opened successfully');
       return repo;
     } catch (e) {
@@ -424,6 +456,9 @@ class GitService {
         bare: false,
         callbacks: Callbacks(credentials: credentials),
       );
+
+      // Ensure .gitignore exists and excludes WAV files
+      await ensureGitignore(localPath);
 
       debugPrint('[GitService] ✅ Repository cloned successfully');
       return repo;

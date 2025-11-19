@@ -371,6 +371,9 @@ class _GitHubConnectWizardState extends ConsumerState<GitHubConnectWizard> {
       debugPrint(
         '[GitHubWizard] Setting up Git sync with repository-scoped token',
       );
+      debugPrint(
+        '[GitHubWizard] Clone URL from GitHub API: ${_selectedRepository!.cloneUrl}',
+      );
       final success = await gitSync.setupGitSync(
         repositoryUrl: _selectedRepository!.cloneUrl,
         githubToken: token,

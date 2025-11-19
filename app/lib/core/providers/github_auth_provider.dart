@@ -57,6 +57,30 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
     _loadSavedAuth();
   }
 
+  /// Verify if a token is still valid by making a test API call
+  /// Returns true if valid, false if invalid (401 error)
+  Future<bool> _verifyToken(String token) async {
+    try {
+      debugPrint('[GitHubAuth] Verifying token validity...');
+
+      // Make a simple API call to check if token works
+      final response = await _apiService.verifyToken(token);
+
+      if (response) {
+        debugPrint('[GitHubAuth] ✅ Token is valid');
+        return true;
+      } else {
+        debugPrint('[GitHubAuth] ❌ Token is invalid (401)');
+        return false;
+      }
+    } catch (e) {
+      // Network error or other issue - assume token might be valid
+      // (optimistic approach for offline scenarios)
+      debugPrint('[GitHubAuth] ⚠️  Could not verify token (network issue): $e');
+      return true; // Optimistic: assume valid if we can't verify
+    }
+  }
+
   /// Load saved authentication from storage
   Future<void> _loadSavedAuth() async {
     try {
@@ -69,53 +93,47 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
         _apiService.setAccessToken(token);
 
         // Try to fetch user info to verify token is still valid
-        // If this fails due to network issues, we'll still restore the token (optimistic auth)
-        try {
-          final user = await _apiService.getAuthenticatedUser();
+        final isTokenValid = await _verifyToken(token);
 
-          if (user != null) {
-            // Get installation ID (for GitHub Apps)
-            final installationId = await _oauthService.getUserInstallationId(
-              token,
-            );
+        if (isTokenValid) {
+          // Token is valid - load user info
+          try {
+            final user = await _apiService.getAuthenticatedUser();
 
-            state = state.copyWith(
-              isAuthenticated: true,
-              accessToken: token,
-              installationToken: token,
-              installationId: installationId,
-              user: user,
-            );
-            debugPrint('[GitHubAuth] ✅ Authenticated as ${user.login}');
-            if (installationId != null) {
-              debugPrint(
-                '[GitHubAuth] ✅ Installation ID restored: $installationId',
+            if (user != null) {
+              // Get installation ID (for GitHub Apps)
+              final installationId = await _oauthService.getUserInstallationId(
+                token,
               );
+
+              state = state.copyWith(
+                isAuthenticated: true,
+                accessToken: token,
+                installationToken: token,
+                installationId: installationId,
+                user: user,
+              );
+              debugPrint('[GitHubAuth] ✅ Authenticated as ${user.login}');
+              if (installationId != null) {
+                debugPrint(
+                  '[GitHubAuth] ✅ Installation ID restored: $installationId',
+                );
+              }
             }
-          } else {
-            // Token returned null - might be invalid, but could also be network issue
-            // Use optimistic auth - keep the token
-            debugPrint(
-              '[GitHubAuth] ⚠️  Could not verify token, using optimistic auth',
-            );
+          } catch (e) {
+            debugPrint('[GitHubAuth] ⚠️  Error loading user info: $e');
+            // Use optimistic auth if we can't load user info but token is valid
             state = state.copyWith(
               isAuthenticated: true,
               accessToken: token,
               installationToken: token,
             );
           }
-        } catch (e) {
-          // Network error or API issue - use optimistic authentication
-          debugPrint(
-            '[GitHubAuth] ⚠️  Error verifying token (network issue: $e), using optimistic auth',
-          );
-
-          // Still mark as authenticated so Git sync works
-          state = state.copyWith(
-            isAuthenticated: true,
-            accessToken: token,
-            installationToken: token,
-          );
+        } else {
+          // Token is invalid (401) - clear it
+          debugPrint('[GitHubAuth] ❌ Saved token is invalid, clearing...');
+          await _storageService.deleteGitHubToken();
+          _apiService.clearAccessToken();
         }
       }
     } catch (e) {

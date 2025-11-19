@@ -11,7 +11,7 @@ import 'package:app/core/providers/git_sync_provider.dart';
 /// Local-first storage service for recording management
 ///
 /// All recordings are stored in ~/Parachute/captures/ as:
-/// - Audio file (.wav)
+/// - Audio file (.opus for new recordings, .wav for legacy)
 /// - Markdown transcript file (.md)
 /// - JSON metadata file (.json)
 ///
@@ -106,7 +106,7 @@ class StorageService {
     final timestampStr = FileSystemService.formatTimestampForFilename(
       timestamp,
     );
-    return '$capturesPath/$timestampStr.wav';
+    return '$capturesPath/$timestampStr.opus';
   }
 
   /// Get the path for a recording's metadata markdown file (transcript)
@@ -171,24 +171,25 @@ class StorageService {
         }
       }
 
-      // If requested, also load orphaned WAV files
+      // If requested, also load orphaned audio files (WAV or Opus)
       if (includeOrphaned) {
         await for (final entity in capturesDir.list()) {
-          if (entity is File && entity.path.endsWith('.wav')) {
+          if (entity is File &&
+              (entity.path.endsWith('.wav') || entity.path.endsWith('.opus'))) {
             final filename = p.basename(entity.path);
-            final id = filename.replaceAll('.wav', '');
+            final id = filename.replaceAll('.wav', '').replaceAll('.opus', '');
 
             // Skip if we already have a markdown file for this recording
             if (processedIds.contains(id)) continue;
 
             try {
-              final orphanedRecording = await _loadOrphanedWavFile(entity);
+              final orphanedRecording = await _loadOrphanedAudioFile(entity);
               if (orphanedRecording != null) {
                 recordings.add(orphanedRecording);
               }
             } catch (e) {
               debugPrint(
-                '[StorageService] Error loading orphaned WAV from ${entity.path}: $e',
+                '[StorageService] Error loading orphaned audio from ${entity.path}: $e',
               );
             }
           }
@@ -208,10 +209,10 @@ class StorageService {
     }
   }
 
-  /// Load an orphaned WAV file (one without a corresponding markdown file)
-  Future<Recording?> _loadOrphanedWavFile(File wavFile) async {
+  /// Load an orphaned audio file (one without a corresponding markdown file)
+  Future<Recording?> _loadOrphanedAudioFile(File audioFile) async {
     try {
-      final filename = p.basename(wavFile.path);
+      final filename = p.basename(audioFile.path);
 
       // Extract timestamp from filename
       final timestamp = FileSystemService.parseTimestampFromFilename(filename);
@@ -223,14 +224,14 @@ class StorageService {
       }
 
       // Get file stats
-      final stat = await wavFile.stat();
+      final stat = await audioFile.stat();
       final fileSizeKB = stat.size / 1024;
 
       // Create a recording object with placeholder data
       return Recording(
-        id: filename.replaceAll('.wav', ''),
+        id: filename.replaceAll('.wav', '').replaceAll('.opus', ''),
         title: 'Untranscribed Recording',
-        filePath: wavFile.path,
+        filePath: audioFile.path,
         timestamp: timestamp,
         duration: Duration.zero, // Unknown duration
         tags: [],
@@ -242,7 +243,7 @@ class StorageService {
             .failed, // Mark as failed since no transcript exists
       );
     } catch (e) {
-      debugPrint('[StorageService] Error loading orphaned WAV file: $e');
+      debugPrint('[StorageService] Error loading orphaned audio file: $e');
       return null;
     }
   }
@@ -356,9 +357,21 @@ class StorageService {
         }
       }
 
-      // Check if corresponding audio file exists
-      final audioPath = mdFile.path.replaceAll('.md', '.wav');
-      final audioExists = await File(audioPath).exists();
+      // Check if corresponding audio file exists (try .opus first, then .wav)
+      String? audioPath;
+      bool audioExists = false;
+
+      final opusPath = mdFile.path.replaceAll('.md', '.opus');
+      if (await File(opusPath).exists()) {
+        audioPath = opusPath;
+        audioExists = true;
+      } else {
+        final wavPath = mdFile.path.replaceAll('.md', '.wav');
+        if (await File(wavPath).exists()) {
+          audioPath = wavPath;
+          audioExists = true;
+        }
+      }
 
       // Use title from frontmatter, or extract from transcript as fallback
       final recordingTitle = title ?? _extractTitleFromTranscript(transcript);
@@ -390,7 +403,7 @@ class StorageService {
       return Recording(
         id: filename.replaceAll('.md', ''), // Use timestamp as ID
         title: recordingTitle,
-        filePath: audioExists ? audioPath : mdFile.path,
+        filePath: audioExists ? audioPath! : mdFile.path,
         timestamp: timestamp,
         duration: duration,
         tags: [],
@@ -424,7 +437,7 @@ class StorageService {
   /// Save a recording - LOCAL-FIRST
   /// Returns the recording ID (timestamp-based for local files)
   ///
-  /// All recordings are saved to ~/Parachute/captures/ as .wav, .md, and .json files.
+  /// All recordings are saved to ~/Parachute/captures/ as .opus, .md, and .json files.
   /// Git sync handles multi-device synchronization.
   Future<String?> saveRecording(Recording recording) async {
     if (!_isInitialized && _initializationFuture == null) {
@@ -458,7 +471,9 @@ class StorageService {
       }
 
       // Copy audio file if not already in captures folder
-      final audioDestPath = p.join(capturesPath, '$timestamp.wav');
+      // Preserve the original extension (.opus or .wav)
+      final audioExtension = p.extension(recording.filePath);
+      final audioDestPath = p.join(capturesPath, '$timestamp$audioExtension');
       if (recording.filePath != audioDestPath &&
           !await File(audioDestPath).exists()) {
         await audioFile.copy(audioDestPath);
@@ -639,15 +654,24 @@ class StorageService {
       final capturesPath = await _fileSystem.getCapturesPath();
 
       // The recordingId is the timestamp (e.g., "2025-11-06_12-30-45")
-      // We need to delete both .wav and .md files
+      // We need to delete audio (.opus or .wav), .md, and .json files
       final basePath = p.join(capturesPath, recordingId);
+      final opusPath = '$basePath.opus';
       final wavPath = '$basePath.wav';
       final mdPath = '$basePath.md';
       final jsonPath = '$basePath.json';
 
       int deletedCount = 0;
 
-      // Delete .wav file if exists
+      // Delete .opus file if exists
+      final opusFile = File(opusPath);
+      if (await opusFile.exists()) {
+        await opusFile.delete();
+        debugPrint('[StorageService] ✅ Deleted audio file: $opusPath');
+        deletedCount++;
+      }
+
+      // Delete .wav file if exists (legacy)
       final wavFile = File(wavPath);
       if (await wavFile.exists()) {
         await wavFile.delete();

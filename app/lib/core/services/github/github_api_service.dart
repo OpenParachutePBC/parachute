@@ -109,6 +109,40 @@ class GitHubAPIService {
     };
   }
 
+  /// Verify if a token is valid
+  /// Returns true if token is valid, false if it returns 401 (invalid/expired)
+  Future<bool> verifyToken(String token) async {
+    try {
+      debugPrint('[GitHubAPI] Verifying token...');
+
+      final response = await http.get(
+        Uri.parse('$_apiBaseUrl/user'),
+        headers: {
+          'Accept': 'application/vnd.github+json',
+          'Authorization': 'Bearer $token',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint('[GitHubAPI] ✅ Token is valid');
+        return true;
+      } else if (response.statusCode == 401) {
+        debugPrint('[GitHubAPI] ❌ Token is invalid (401)');
+        debugPrint('[GitHubAPI] Response: ${response.body}');
+        return false;
+      } else {
+        debugPrint('[GitHubAPI] ⚠️  Unexpected status: ${response.statusCode}');
+        // For other errors, assume token might be valid (could be rate limit, etc.)
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[GitHubAPI] ❌ Error verifying token: $e');
+      // Network error - can't verify, so return true (optimistic)
+      throw e;
+    }
+  }
+
   /// Get authenticated user information
   Future<GitHubUser?> getAuthenticatedUser() async {
     if (_accessToken == null) {

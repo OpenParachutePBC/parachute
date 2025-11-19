@@ -9,6 +9,7 @@ import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/services/recording_post_processing_service.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/core/services/file_system_service.dart';
+import 'package:app/core/services/audio_compression_service.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:path/path.dart' as path;
@@ -164,7 +165,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         throw Exception('No audio path returned');
       }
 
-      // Copy audio file to captures folder immediately
+      // Copy audio file to captures folder immediately (keep as WAV for now)
       final timestamp = FileSystemService.formatTimestampForFilename(
         _startTime!,
       );
@@ -172,7 +173,8 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       final audioDestPath = path.join(capturesPath, '$timestamp.wav');
       await File(audioPath).copy(audioDestPath);
 
-      // Create recording with placeholder transcript
+      // Create recording with placeholder transcript (using WAV path)
+      // Will be compressed to Opus after transcription completes
       final recording = Recording(
         id: timestamp,
         title: 'Untitled Recording',
@@ -194,6 +196,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       ref.read(recordingsRefreshTriggerProvider.notifier).state++;
 
       // Start background transcription (non-blocking)
+      // Will compress to Opus after transcription completes
       _processInBackground(
         audioDestPath: audioDestPath,
         recording: recording,
@@ -684,11 +687,24 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         audioPath: audioDestPath,
       );
 
-      // Update recording with transcript
+      // Compress WAV to Opus after successful transcription
+      debugPrint(
+        '[SimpleRecording] Transcription complete, compressing to Opus...',
+      );
+      final compressionService = AudioCompressionService();
+      final opusPath = await compressionService.compressToOpus(
+        wavPath: audioDestPath,
+        deleteOriginal: true,
+      );
+      debugPrint('[SimpleRecording] Compression complete: $opusPath');
+
+      // Update recording with transcript and new Opus file path
       final updatedRecording = recording.copyWith(
         transcript: result.transcript,
         transcriptionStatus: ProcessingStatus.completed,
         liveTranscriptionStatus: 'completed',
+        filePath: opusPath,
+        fileSizeKB: await File(opusPath).length() / 1024,
       );
 
       // Save updated recording

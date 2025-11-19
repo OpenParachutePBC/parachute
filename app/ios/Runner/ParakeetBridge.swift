@@ -1,6 +1,7 @@
 import Flutter
 import Foundation
 import FluidAudio
+import AVFoundation
 
 /// Flutter bridge for FluidAudio Parakeet ASR
 /// Provides async transcription and speaker diarization via platform channels
@@ -177,15 +178,35 @@ class ParakeetBridge {
 
     // MARK: - Audio Loading
 
-    /// Load audio samples from WAV file
-    /// Expects 16kHz mono PCM16 WAV file
+    /// Load audio samples from audio file (WAV or Opus)
+    /// Automatically converts Opus to WAV if needed using AVFoundation
     private func loadAudioSamples(from path: String) async throws -> [Float] {
         let url = URL(fileURLWithPath: path)
 
+        // Convert Opus to WAV if needed
+        let wavURL: URL
+        var needsCleanup = false
+
+        if path.hasSuffix(".opus") {
+            print("[ParakeetBridge] Converting Opus to WAV: \(path)")
+            wavURL = try await convertOpusToWav(from: url)
+            needsCleanup = true
+        } else {
+            wavURL = url
+        }
+
+        defer {
+            // Clean up temporary WAV file if created
+            if needsCleanup {
+                try? FileManager.default.removeItem(at: wavURL)
+                print("[ParakeetBridge] Cleaned up temporary WAV: \(wavURL.path)")
+            }
+        }
+
         // Read file data
-        guard let data = try? Data(contentsOf: url) else {
+        guard let data = try? Data(contentsOf: wavURL) else {
             throw NSError(domain: "ParakeetBridge", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "Failed to read audio file at: \(path)"
+                NSLocalizedDescriptionKey: "Failed to read audio file at: \(wavURL.path)"
             ])
         }
 
@@ -214,5 +235,167 @@ class ParakeetBridge {
         }
 
         return samples
+    }
+
+    /// Convert Opus file to WAV using AVFoundation
+    /// Returns URL to temporary WAV file
+    private func convertOpusToWav(from opusURL: URL) async throws -> URL {
+        print("[ParakeetBridge] Converting Opus to WAV: \(opusURL.path)")
+
+        let asset = AVURLAsset(url: opusURL)
+
+        // Get audio track
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
+            throw NSError(domain: "ParakeetBridge", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "No audio track found in Opus file"
+            ])
+        }
+
+        // Create reader
+        let reader = try AVAssetReader(asset: asset)
+        let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVSampleRateKey: 16000,  // 16kHz
+            AVNumberOfChannelsKey: 1  // Mono
+        ])
+        reader.add(readerOutput)
+
+        // Create writer
+        let tempDir = FileManager.default.temporaryDirectory
+        let wavURL = tempDir.appendingPathComponent(UUID().uuidString + ".wav")
+
+        let writer = try AVAssetWriter(outputURL: wavURL, fileType: .wav)
+        let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+            AVSampleRateKey: 16000,
+            AVNumberOfChannelsKey: 1
+        ])
+        writer.add(writerInput)
+
+        // Start reading/writing
+        reader.startReading()
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            // Mark these as nonisolated(unsafe) since AVFoundation guarantees thread-safety internally
+            nonisolated(unsafe) let input = writerInput
+            nonisolated(unsafe) let output = readerOutput
+            nonisolated(unsafe) let assetWriter = writer
+
+            input.requestMediaDataWhenReady(on: DispatchQueue(label: "opus.conversion")) {
+                while input.isReadyForMoreMediaData {
+                    guard let sampleBuffer = output.copyNextSampleBuffer() else {
+                        input.markAsFinished()
+                        Task {
+                            await assetWriter.finishWriting()
+                            if assetWriter.status == .completed {
+                                print("[ParakeetBridge] ✓ Converted Opus to WAV: \(wavURL.path)")
+                                continuation.resume(returning: wavURL)
+                            } else {
+                                let error = assetWriter.error?.localizedDescription ?? "unknown error"
+                                continuation.resume(throwing: NSError(domain: "ParakeetBridge", code: 4, userInfo: [
+                                    NSLocalizedDescriptionKey: "Opus to WAV conversion failed: \(error)"
+                                ]))
+                            }
+                        }
+                        return
+                    }
+                    input.append(sampleBuffer)
+                }
+            }
+        }
+    }
+
+    /// Resample audio to target sample rate and channel count
+    private func resampleAudio(from url: URL, to sampleRate: Int, channels: Int) async throws -> URL {
+        let asset = AVURLAsset(url: url)
+
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
+            throw NSError(domain: "ParakeetBridge", code: 5, userInfo: [
+                NSLocalizedDescriptionKey: "No audio track found"
+            ])
+        }
+
+        // Check if resampling is needed
+        let formatDescriptions = try await track.load(.formatDescriptions)
+        guard let formatDescription = formatDescriptions.first else {
+            throw NSError(domain: "ParakeetBridge", code: 6, userInfo: [
+                NSLocalizedDescriptionKey: "No format description found"
+            ])
+        }
+
+        let audioStreamBasicDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
+        let currentSampleRate = audioStreamBasicDescription?.pointee.mSampleRate ?? 0
+        let currentChannels = audioStreamBasicDescription?.pointee.mChannelsPerFrame ?? 0
+
+        // If already correct format, return original URL
+        if Int(currentSampleRate) == sampleRate && Int(currentChannels) == channels {
+            return url
+        }
+
+        // Create reader
+        let reader = try AVAssetReader(asset: asset)
+        let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: channels
+        ])
+        reader.add(readerOutput)
+
+        // Create writer
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .wav)
+        let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: channels
+        ])
+        writer.add(writerInput)
+
+        // Start reading/writing
+        reader.startReading()
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            // Mark these as nonisolated(unsafe) since AVFoundation guarantees thread-safety internally
+            nonisolated(unsafe) let input = writerInput
+            nonisolated(unsafe) let output = readerOutput
+            nonisolated(unsafe) let assetWriter = writer
+
+            input.requestMediaDataWhenReady(on: DispatchQueue(label: "audio.resampling")) {
+                while input.isReadyForMoreMediaData {
+                    guard let sampleBuffer = output.copyNextSampleBuffer() else {
+                        input.markAsFinished()
+                        Task {
+                            await assetWriter.finishWriting()
+                            if assetWriter.status == .completed {
+                                continuation.resume(returning: outputURL)
+                            } else {
+                                continuation.resume(throwing: NSError(domain: "ParakeetBridge", code: 7, userInfo: [
+                                    NSLocalizedDescriptionKey: "Audio resampling failed: \(assetWriter.error?.localizedDescription ?? "unknown error")"
+                                ]))
+                            }
+                        }
+                        return
+                    }
+                    input.append(sampleBuffer)
+                }
+            }
+        }
     }
 }

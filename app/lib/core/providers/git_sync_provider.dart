@@ -141,12 +141,13 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
           return false;
         }
 
-        // Add remote
-        debugPrint('[GitSync] Adding remote: $repositoryUrl');
+        // Add remote (ensure HTTPS format for token authentication)
+        final httpsUrl = _ensureHttpsUrl(repositoryUrl);
+        debugPrint('[GitSync] Adding remote: $httpsUrl');
         final remoteAdded = await _gitService.addRemote(
           repo: _repository!,
           name: 'origin',
-          url: repositoryUrl,
+          url: httpsUrl,
         );
 
         if (!remoteAdded) {
@@ -445,6 +446,17 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
   void dispose() {
     _periodicSyncTimer?.cancel();
     super.dispose();
+  }
+
+  /// Convert SSH URLs to HTTPS format for token authentication
+  String _ensureHttpsUrl(String url) {
+    // Convert git@github.com:user/repo.git to https://github.com/user/repo.git
+    if (url.startsWith('git@github.com:')) {
+      final path = url.replaceFirst('git@github.com:', '');
+      return 'https://github.com/$path';
+    }
+    // Already HTTPS or other format
+    return url;
   }
 
   /// Update sync status from repository

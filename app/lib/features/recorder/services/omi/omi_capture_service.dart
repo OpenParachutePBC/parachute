@@ -7,6 +7,7 @@ import 'package:app/features/recorder/services/omi/omi_bluetooth_service.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/utils/audio/wav_bytes_util.dart';
+import 'package:app/core/services/audio_compression_service.dart';
 
 /// Service for capturing audio recordings from Omi device
 ///
@@ -331,7 +332,7 @@ class OmiCaptureService {
     await _stopRecordingWithTapCount(_currentButtonTapCount ?? 1);
   }
 
-  /// Save WAV file to storage
+  /// Save WAV file to storage (keep as WAV for transcription)
   Future<String?> _saveWavFile(Uint8List wavBytes, String recordingId) async {
     try {
       final syncFolder = await storageService.getSyncFolderPath();
@@ -339,14 +340,15 @@ class OmiCaptureService {
       final now = DateTime.now();
       final dateStr = _formatDate(now);
 
-      final fileName = '$dateStr-$recordingId.wav';
-      final filePath = '$syncFolder/$fileName';
+      // Save as WAV (will be compressed to Opus after transcription)
+      final wavFileName = '$dateStr-$recordingId.wav';
+      final wavFilePath = '$syncFolder/$wavFileName';
 
-      final file = File(filePath);
-      await file.writeAsBytes(wavBytes);
+      final wavFile = File(wavFilePath);
+      await wavFile.writeAsBytes(wavBytes);
 
-      debugPrint('[OmiCaptureService] Saved WAV file: $filePath');
-      return filePath;
+      debugPrint('[OmiCaptureService] Saved WAV file: $wavFilePath');
+      return wavFilePath;
     } catch (e) {
       debugPrint('[OmiCaptureService] Error saving WAV file: $e');
       return null;
@@ -392,16 +394,27 @@ class OmiCaptureService {
         },
       );
 
-      // Update recording with transcript
+      // Compress WAV to Opus after successful transcription
+      debugPrint(
+        '[OmiCaptureService] Transcription complete, compressing to Opus...',
+      );
+      final compressionService = AudioCompressionService();
+      final opusPath = await compressionService.compressToOpus(
+        wavPath: recording.filePath,
+        deleteOriginal: true,
+      );
+      debugPrint('[OmiCaptureService] Compression complete: $opusPath');
+
+      // Update recording with transcript and new Opus file path
       final updatedRecording = Recording(
         id: recording.id,
         title: recording.title,
-        filePath: recording.filePath,
+        filePath: opusPath,
         timestamp: recording.timestamp,
         duration: recording.duration,
         tags: recording.tags,
         transcript: transcriptResult.text,
-        fileSizeKB: recording.fileSizeKB,
+        fileSizeKB: await File(opusPath).length() / 1024,
         source: recording.source,
         deviceId: recording.deviceId,
         buttonTapCount: recording.buttonTapCount,

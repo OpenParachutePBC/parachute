@@ -57,7 +57,8 @@ class ParakeetService {
 
   /// Transcribe audio file
   ///
-  /// [audioPath] - Absolute path to WAV file (16kHz mono PCM16)
+  /// [audioPath] - Absolute path to audio file (WAV or Opus)
+  /// Opus files are automatically converted to WAV in the native layer
   ///
   /// Returns transcribed text and detected language.
   Future<TranscriptionResult> transcribeAudio(String audioPath) async {
@@ -81,6 +82,7 @@ class ParakeetService {
       debugPrint('[ParakeetService] Transcribing: $audioPath');
       final startTime = DateTime.now();
 
+      // Native layer handles Opus→WAV conversion automatically
       final result = await _channel.invokeMethod<Map>('transcribe', {
         'audioPath': audioPath,
       });
