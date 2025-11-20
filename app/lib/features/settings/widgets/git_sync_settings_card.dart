@@ -80,6 +80,7 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
   @override
   Widget build(BuildContext context) {
     final gitSyncState = ref.watch(gitSyncProvider);
+    final githubAuthState = ref.watch(gitHubAuthProvider);
     final theme = Theme.of(context);
 
     return Card(
@@ -111,6 +112,39 @@ class _GitSyncSettingsCardState extends ConsumerState<GitSyncSettingsCard> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Token revocation warning
+            if (githubAuthState.needsReauth &&
+                githubAuthState.error != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.orange,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        githubAuthState.error!,
+                        style: const TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Status indicator
             if (gitSyncState.isEnabled) ...[

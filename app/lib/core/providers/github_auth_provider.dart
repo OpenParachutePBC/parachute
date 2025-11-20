@@ -15,6 +15,7 @@ class GitHubAuthState {
   final int? installationId; // GitHub App installation ID
   final GitHubUser? user;
   final String? error;
+  final bool needsReauth; // Token was revoked/expired, user needs to reconnect
 
   GitHubAuthState({
     this.isAuthenticated = false,
@@ -24,6 +25,7 @@ class GitHubAuthState {
     this.installationId,
     this.user,
     this.error,
+    this.needsReauth = false,
   });
 
   GitHubAuthState copyWith({
@@ -34,6 +36,7 @@ class GitHubAuthState {
     int? installationId,
     GitHubUser? user,
     String? error,
+    bool? needsReauth,
   }) {
     return GitHubAuthState(
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
@@ -43,6 +46,7 @@ class GitHubAuthState {
       installationId: installationId ?? this.installationId,
       user: user ?? this.user,
       error: error,
+      needsReauth: needsReauth ?? this.needsReauth,
     );
   }
 }
@@ -57,10 +61,127 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
     _loadSavedAuth();
   }
 
+  /// Check if access token needs refreshing (within 5 minutes of expiry)
+  /// Returns true if token should be refreshed
+  Future<bool> _shouldRefreshToken() async {
+    final expiresAt = await _storageService.getGitHubTokenExpiresAt();
+    if (expiresAt == null) {
+      // No expiry time means token expiration is not enabled
+      return false;
+    }
+
+    final now = DateTime.now();
+    final timeUntilExpiry = expiresAt.difference(now);
+
+    // Refresh if token expires in less than 5 minutes
+    if (timeUntilExpiry.inMinutes < 5) {
+      debugPrint(
+        '[GitHubAuth] Token expires in ${timeUntilExpiry.inMinutes} minutes, needs refresh',
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Refresh the access token using the refresh token
+  /// Returns true if successful, false otherwise
+  Future<bool> _refreshAccessToken() async {
+    try {
+      final refreshToken = await _storageService.getGitHubRefreshToken();
+      if (refreshToken == null) {
+        debugPrint('[GitHubAuth] ❌ No refresh token available');
+        return false;
+      }
+
+      // Check if refresh token itself has expired (6 months)
+      final refreshTokenExpiresAt = await _storageService
+          .getGitHubRefreshTokenExpiresAt();
+      if (refreshTokenExpiresAt != null) {
+        final now = DateTime.now();
+        if (now.isAfter(refreshTokenExpiresAt)) {
+          debugPrint('[GitHubAuth] ❌ Refresh token has expired');
+          // Clear everything and require re-authentication
+          await _storageService.deleteGitHubToken();
+          state = state.copyWith(
+            isAuthenticated: false,
+            accessToken: null,
+            installationToken: null,
+            needsReauth: true,
+            error:
+                'Your GitHub session has expired. Please reconnect to continue syncing.',
+          );
+          return false;
+        }
+      }
+
+      debugPrint('[GitHubAuth] 🔄 Refreshing access token...');
+
+      // Call OAuth service to refresh the token
+      final result = await _oauthService.refreshAccessToken(refreshToken);
+
+      if (result == null) {
+        debugPrint('[GitHubAuth] ❌ Token refresh failed');
+        return false;
+      }
+
+      // Extract new tokens
+      final newAccessToken = result['access_token'] as String;
+      final newRefreshToken = result['refresh_token'] as String;
+      final expiresIn = result['expires_in'] as int;
+      final refreshTokenExpiresIn = result['refresh_token_expires_in'] as int;
+
+      // Save new tokens
+      await _storageService.saveGitHubToken(newAccessToken);
+      await _storageService.saveGitHubRefreshToken(newRefreshToken);
+
+      // Calculate and save new expiry times
+      final now = DateTime.now();
+      final accessTokenExpiry = now.add(Duration(seconds: expiresIn));
+      final newRefreshTokenExpiry = now.add(
+        Duration(seconds: refreshTokenExpiresIn),
+      );
+
+      await _storageService.saveGitHubTokenExpiresAt(accessTokenExpiry);
+      await _storageService.saveGitHubRefreshTokenExpiresAt(
+        newRefreshTokenExpiry,
+      );
+
+      // Update API service with new token
+      _apiService.setAccessToken(newAccessToken);
+
+      // Update state
+      state = state.copyWith(
+        accessToken: newAccessToken,
+        installationToken: newAccessToken,
+      );
+
+      debugPrint('[GitHubAuth] ✅ Access token refreshed successfully');
+      debugPrint(
+        '[GitHubAuth] New token expires at: ${accessTokenExpiry.toIso8601String()}',
+      );
+
+      return true;
+    } catch (e) {
+      debugPrint('[GitHubAuth] ❌ Error refreshing token: $e');
+      return false;
+    }
+  }
+
   /// Verify if a token is still valid by making a test API call
   /// Returns true if valid, false if invalid (401 error)
+  /// Also attempts to refresh the token if it's about to expire
   Future<bool> _verifyToken(String token) async {
     try {
+      // First check if token needs refreshing based on expiry time
+      if (await _shouldRefreshToken()) {
+        final refreshed = await _refreshAccessToken();
+        if (refreshed) {
+          return true; // Token was successfully refreshed
+        }
+        // If refresh failed, continue to verify the current token
+      }
+
       debugPrint('[GitHubAuth] Verifying token validity...');
 
       // Make a simple API call to check if token works
@@ -71,6 +192,12 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
         return true;
       } else {
         debugPrint('[GitHubAuth] ❌ Token is invalid (401)');
+        // Token is invalid - try to refresh it
+        final refreshed = await _refreshAccessToken();
+        if (refreshed) {
+          debugPrint('[GitHubAuth] ✅ Token refreshed after 401 error');
+          return true;
+        }
         return false;
       }
     } catch (e) {
@@ -112,6 +239,7 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
                 installationToken: token,
                 installationId: installationId,
                 user: user,
+                needsReauth: false,
               );
               debugPrint('[GitHubAuth] ✅ Authenticated as ${user.login}');
               if (installationId != null) {
@@ -127,13 +255,29 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
               isAuthenticated: true,
               accessToken: token,
               installationToken: token,
+              needsReauth: false,
             );
           }
         } else {
-          // Token is invalid (401) - clear it
-          debugPrint('[GitHubAuth] ❌ Saved token is invalid, clearing...');
+          // Token is invalid (401) - it was revoked or the app was uninstalled
+          debugPrint(
+            '[GitHubAuth] ❌ Token is invalid (revoked or app uninstalled)',
+          );
+          debugPrint('[GitHubAuth] Clearing stored token...');
           await _storageService.deleteGitHubToken();
           _apiService.clearAccessToken();
+
+          // Set needsReauth flag with helpful error message
+          state = state.copyWith(
+            isAuthenticated: false,
+            accessToken: null,
+            installationToken: null,
+            installationId: null,
+            user: null,
+            needsReauth: true,
+            error:
+                'Your GitHub access has been revoked. Please reconnect to continue syncing.',
+          );
         }
       }
     } catch (e) {
@@ -144,7 +288,11 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
   /// Start GitHub OAuth flow
   Future<bool> signIn() async {
     try {
-      state = state.copyWith(isAuthenticating: true, error: null);
+      state = state.copyWith(
+        isAuthenticating: true,
+        error: null,
+        needsReauth: false,
+      );
       debugPrint('[GitHubAuth] Starting sign-in flow...');
 
       // Start OAuth flow
@@ -230,6 +378,40 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
       // Save user access token to storage (works for both API and Git operations)
       await _storageService.saveGitHubToken(accessToken);
 
+      // Save refresh token and expiry times if provided (token expiration enabled)
+      final refreshToken = authResult['refresh_token'] as String?;
+      final expiresIn = authResult['expires_in'] as int?;
+      final refreshTokenExpiresIn =
+          authResult['refresh_token_expires_in'] as int?;
+
+      if (refreshToken != null && expiresIn != null) {
+        debugPrint('[GitHubAuth] ✅ Token expiration enabled');
+        debugPrint('[GitHubAuth] Access token expires in: $expiresIn seconds');
+
+        await _storageService.saveGitHubRefreshToken(refreshToken);
+
+        // Calculate expiry times
+        final now = DateTime.now();
+        final accessTokenExpiry = now.add(Duration(seconds: expiresIn));
+        final refreshTokenExpiry = refreshTokenExpiresIn != null
+            ? now.add(Duration(seconds: refreshTokenExpiresIn))
+            : now.add(const Duration(days: 180)); // Default 6 months
+
+        await _storageService.saveGitHubTokenExpiresAt(accessTokenExpiry);
+        await _storageService.saveGitHubRefreshTokenExpiresAt(
+          refreshTokenExpiry,
+        );
+
+        debugPrint(
+          '[GitHubAuth] Access token expires at: ${accessTokenExpiry.toIso8601String()}',
+        );
+        debugPrint(
+          '[GitHubAuth] Refresh token expires at: ${refreshTokenExpiry.toIso8601String()}',
+        );
+      } else {
+        debugPrint('[GitHubAuth] ℹ️  Token expiration not enabled');
+      }
+
       // Update state
       state = state.copyWith(
         isAuthenticated: true,
@@ -275,6 +457,21 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
     }
   }
 
+  /// Manually refresh the access token if needed
+  /// This can be called before making API calls to ensure token is valid
+  Future<bool> ensureValidToken() async {
+    if (!state.isAuthenticated || state.accessToken == null) {
+      return false;
+    }
+
+    // Check if token needs refresh
+    if (await _shouldRefreshToken()) {
+      return await _refreshAccessToken();
+    }
+
+    return true; // Token is still valid
+  }
+
   /// Refresh user information
   Future<void> refreshUser() async {
     try {
@@ -286,10 +483,32 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
       debugPrint('[GitHubAuth] Refreshing user info...');
 
       _apiService.setAccessToken(state.accessToken!);
+
+      // First verify token is still valid
+      final isValid = await _verifyToken(state.accessToken!);
+
+      if (!isValid) {
+        // Token is invalid (revoked)
+        debugPrint('[GitHubAuth] ❌ Token was revoked during refresh');
+        await _storageService.deleteGitHubToken();
+        _apiService.clearAccessToken();
+        state = state.copyWith(
+          isAuthenticated: false,
+          accessToken: null,
+          installationToken: null,
+          installationId: null,
+          user: null,
+          needsReauth: true,
+          error:
+              'Your GitHub access has been revoked. Please reconnect to continue syncing.',
+        );
+        return;
+      }
+
       final user = await _apiService.getAuthenticatedUser();
 
       if (user != null) {
-        state = state.copyWith(user: user);
+        state = state.copyWith(user: user, needsReauth: false);
         debugPrint('[GitHubAuth] ✅ User info refreshed');
       } else {
         debugPrint(
@@ -299,6 +518,26 @@ class GitHubAuthNotifier extends StateNotifier<GitHubAuthState> {
       }
     } catch (e) {
       debugPrint('[GitHubAuth] ❌ Error refreshing user: $e');
+    }
+  }
+
+  /// Handle API errors - detects token revocation and updates state accordingly
+  /// Call this from any code that gets a 401 error from GitHub API
+  Future<void> handleApiError(int statusCode) async {
+    if (statusCode == 401) {
+      debugPrint('[GitHubAuth] ❌ Detected 401 error - token was revoked');
+      await _storageService.deleteGitHubToken();
+      _apiService.clearAccessToken();
+      state = state.copyWith(
+        isAuthenticated: false,
+        accessToken: null,
+        installationToken: null,
+        installationId: null,
+        user: null,
+        needsReauth: true,
+        error:
+            'Your GitHub access has been revoked. Please reconnect to continue syncing.',
+      );
     }
   }
 

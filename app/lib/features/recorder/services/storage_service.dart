@@ -1125,7 +1125,7 @@ class StorageService {
 
   // GitHub Token Management
 
-  /// Get GitHub Personal Access Token for Git sync
+  /// Get GitHub Access Token (expires after 8 hours when expiration is enabled)
   // TODO: Use secure storage when code signing is enabled
   // For now using SharedPreferences due to keychain entitlement requiring code signing
   Future<String?> getGitHubToken() async {
@@ -1138,7 +1138,7 @@ class StorageService {
     }
   }
 
-  /// Save GitHub Personal Access Token
+  /// Save GitHub Access Token
   Future<bool> saveGitHubToken(String token) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1149,11 +1149,15 @@ class StorageService {
     }
   }
 
-  /// Delete GitHub Personal Access Token
+  /// Delete GitHub Access Token
   Future<bool> deleteGitHubToken() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return await prefs.remove('github_token');
+      await prefs.remove('github_token');
+      await prefs.remove('github_refresh_token');
+      await prefs.remove('github_token_expires_at');
+      await prefs.remove('github_refresh_token_expires_at');
+      return true;
     } catch (e) {
       debugPrint('Error deleting GitHub token: $e');
       return false;
@@ -1164,6 +1168,86 @@ class StorageService {
   Future<bool> hasGitHubToken() async {
     final token = await getGitHubToken();
     return token != null && token.isNotEmpty;
+  }
+
+  /// Get GitHub Refresh Token (used to obtain new access tokens)
+  Future<String?> getGitHubRefreshToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('github_refresh_token');
+    } catch (e) {
+      debugPrint('Error getting GitHub refresh token: $e');
+      return null;
+    }
+  }
+
+  /// Save GitHub Refresh Token
+  Future<bool> saveGitHubRefreshToken(String refreshToken) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setString('github_refresh_token', refreshToken);
+    } catch (e) {
+      debugPrint('Error saving GitHub refresh token: $e');
+      return false;
+    }
+  }
+
+  /// Get GitHub Access Token expiration time
+  Future<DateTime?> getGitHubTokenExpiresAt() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isoString = prefs.getString('github_token_expires_at');
+      if (isoString != null) {
+        return DateTime.parse(isoString);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting GitHub token expiration: $e');
+      return null;
+    }
+  }
+
+  /// Save GitHub Access Token expiration time
+  Future<bool> saveGitHubTokenExpiresAt(DateTime expiresAt) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setString(
+        'github_token_expires_at',
+        expiresAt.toIso8601String(),
+      );
+    } catch (e) {
+      debugPrint('Error saving GitHub token expiration: $e');
+      return false;
+    }
+  }
+
+  /// Get GitHub Refresh Token expiration time (6 months)
+  Future<DateTime?> getGitHubRefreshTokenExpiresAt() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isoString = prefs.getString('github_refresh_token_expires_at');
+      if (isoString != null) {
+        return DateTime.parse(isoString);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting GitHub refresh token expiration: $e');
+      return null;
+    }
+  }
+
+  /// Save GitHub Refresh Token expiration time
+  Future<bool> saveGitHubRefreshTokenExpiresAt(DateTime expiresAt) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setString(
+        'github_refresh_token_expires_at',
+        expiresAt.toIso8601String(),
+      );
+    } catch (e) {
+      debugPrint('Error saving GitHub refresh token expiration: $e');
+      return false;
+    }
   }
 
   // GitHub Repository URL Management

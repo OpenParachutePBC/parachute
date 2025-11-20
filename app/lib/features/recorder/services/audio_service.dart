@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
+import 'package:app/core/services/audio_compression_service_dart.dart';
 
 enum RecordingState { stopped, recording, paused }
 
@@ -321,16 +322,45 @@ class AudioService {
         return false;
       }
 
-      final file = File(filePath);
+      String playbackPath = filePath;
+
+      // If it's an Opus file, check if WAV exists or convert it
+      if (filePath.endsWith('.opus')) {
+        final wavPath = filePath.replaceAll('.opus', '.wav');
+        final wavFile = File(wavPath);
+
+        if (!await wavFile.exists()) {
+          debugPrint('WAV not found for Opus file, converting...');
+
+          // Convert Opus to WAV for playback
+          final service = AudioCompressionServiceDart();
+
+          try {
+            playbackPath = await service.decompressToWav(
+              opusPath: filePath,
+              outputPath: wavPath,
+            );
+            debugPrint('Converted Opus to WAV for playback: $playbackPath');
+          } catch (e) {
+            debugPrint('Failed to convert Opus to WAV: $e');
+            return false;
+          }
+        } else {
+          debugPrint('Using existing WAV file for playback');
+          playbackPath = wavPath;
+        }
+      }
+
+      final file = File(playbackPath);
       if (!await file.exists()) {
-        debugPrint('File not found: $filePath');
+        debugPrint('File not found: $playbackPath');
         return false;
       }
 
-      await _player.setFilePath(filePath);
+      await _player.setFilePath(playbackPath);
       await _player.play();
 
-      debugPrint('Playing recording: $filePath');
+      debugPrint('Playing recording: $playbackPath');
       return true;
     } catch (e, stackTrace) {
       debugPrint('Error playing recording: $e');
@@ -369,6 +399,22 @@ class AudioService {
       return false;
     }
   }
+
+  Future<bool> seekTo(Duration position) async {
+    try {
+      await _player.seek(position);
+      return true;
+    } catch (e) {
+      debugPrint('Error seeking playback: $e');
+      return false;
+    }
+  }
+
+  Stream<Duration> get positionStream => _player.positionStream;
+
+  Stream<Duration?> get durationStream => _player.durationStream;
+
+  Stream<bool> get playingStream => _player.playingStream;
 
   Future<Duration?> getRecordingDuration(String filePath) async {
     try {

@@ -595,11 +595,9 @@ packages:
   git2dart:
     dependency: "direct main"
     description:
-      path: "."
-      ref: android-binaries-support
-      resolved-ref: "8e2af76d64922ea286bef1cf9099d3907906cfca"
-      url: "https://github.com/unforced/git2dart.git"
-    source: git
+      path: "/Users/unforced/symbols/codes/git2dart"
+      relative: false
+    source: path
     version: "0.3.0"
   git2dart_binaries:
     dependency: "direct main"

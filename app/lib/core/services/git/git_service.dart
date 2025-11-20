@@ -221,8 +221,16 @@ class GitService {
   /// Get repository status
   Future<Map<String, dynamic>> getStatus(Repository repo) async {
     try {
+      debugPrint('[GitService] 🔍 Getting repository status...');
+
       // status is a getter property, not a method
       final statusMap = repo.status;
+
+      debugPrint('[GitService] Status map size: ${statusMap.length}');
+      debugPrint('[GitService] Status map entries:');
+      statusMap.forEach((path, statusSet) {
+        debugPrint('  - $path: $statusSet');
+      });
 
       final modified = <String>[];
       final added = <String>[];
@@ -243,6 +251,12 @@ class GitService {
           deleted.add(path);
         }
       });
+
+      debugPrint('[GitService] Parsed status:');
+      debugPrint('  - Modified: ${modified.length}');
+      debugPrint('  - Untracked: ${untracked.length}');
+      debugPrint('  - Added: ${added.length}');
+      debugPrint('  - Deleted: ${deleted.length}');
 
       return {
         'modified': modified,

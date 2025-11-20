@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:git2dart/git2dart.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:app/core/services/git/git_service.dart';
+import 'package:app/core/services/audio_compression_service_dart.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 
@@ -62,25 +65,39 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
 
   final Ref _ref;
   final GitService _gitService = GitService.instance;
+  final AudioCompressionServiceDart _audioCompression =
+      AudioCompressionServiceDart();
   Repository? _repository;
   Timer? _periodicSyncTimer;
 
   /// Initialize Git sync by checking if vault is a Git repository
   /// and restoring saved settings
   Future<void> initialize() async {
+    debugPrint('[GitSync] 🚀 Initializing Git sync...');
     final fileSystemService = _ref.read(fileSystemServiceProvider);
     final vaultPath = await fileSystemService.getRootPath();
+    debugPrint('[GitSync] Vault path: $vaultPath');
+
     final isGitRepo = await _gitService.isGitRepository(vaultPath);
+    debugPrint('[GitSync] Is Git repository: $isGitRepo');
 
     if (isGitRepo) {
       _repository = await _gitService.openRepository(vaultPath);
+      debugPrint('[GitSync] Repository opened: ${_repository != null}');
+
       if (_repository != null) {
         await _updateStatus();
 
         // Try to restore Git sync settings from storage
         await _restoreSettings();
+      } else {
+        debugPrint('[GitSync] ❌ Failed to open repository');
       }
+    } else {
+      debugPrint('[GitSync] ℹ️  Not a Git repository yet');
     }
+
+    debugPrint('[GitSync] 🚀 Initialization complete');
   }
 
   /// Restore Git sync settings from secure storage
@@ -90,10 +107,45 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       final storageService = _ref.read(storageServiceProvider);
 
       final isEnabled = await storageService.isGitSyncEnabled();
-      final repoUrl = await storageService.getGitHubRepositoryUrl();
+      var repoUrl = await storageService.getGitHubRepositoryUrl();
       final token = await storageService.getGitHubToken();
 
-      if (isEnabled && repoUrl != null && token != null) {
+      debugPrint('[GitSync] Restore check:');
+      debugPrint('  - isEnabled: $isEnabled');
+      debugPrint('  - repoUrl: $repoUrl');
+      debugPrint('  - hasToken: ${token != null}');
+
+      // Recovery: If we have a token and git repo with remote, but settings aren't saved
+      // This can happen if the app was interrupted during setup
+      if (token != null && _repository != null && !isEnabled) {
+        debugPrint(
+          '[GitSync] 🔧 Recovery mode: Found token and repo but sync not enabled',
+        );
+
+        // Try to get remote URL from git if not in storage
+        if (repoUrl == null) {
+          try {
+            final status = await _gitService.getSyncStatus(_repository!);
+            repoUrl = status['remoteUrl'] as String?;
+            if (repoUrl != null) {
+              debugPrint(
+                '[GitSync] 📡 Retrieved repo URL from git remote: $repoUrl',
+              );
+              await storageService.saveGitHubRepositoryUrl(repoUrl);
+            }
+          } catch (e) {
+            debugPrint('[GitSync] Could not get remote URL: $e');
+          }
+        }
+
+        // If we have everything now, enable sync
+        if (repoUrl != null) {
+          await storageService.setGitSyncEnabled(true);
+          debugPrint('[GitSync] ✅ Recovered and enabled Git sync');
+        }
+      }
+
+      if ((isEnabled || token != null) && repoUrl != null && token != null) {
         debugPrint('[GitSync] Restoring Git sync settings from storage');
 
         // Set the token
@@ -107,6 +159,10 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
         enablePeriodicSync();
 
         debugPrint('[GitSync] ✅ Git sync restored and enabled');
+      } else {
+        debugPrint(
+          '[GitSync] ℹ️  Git sync not fully configured, skipping restore',
+        );
       }
     } catch (e) {
       debugPrint('[GitSync] Error restoring settings: $e');
@@ -234,6 +290,14 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
         lastSyncTime: DateTime.now(),
       );
 
+      // Save settings to persistent storage so they survive app restart
+      final storageService = _ref.read(storageServiceProvider);
+      await storageService.setGitSyncEnabled(true);
+      await storageService.saveGitHubRepositoryUrl(repositoryUrl);
+      await storageService.saveGitHubToken(githubToken);
+
+      debugPrint('[GitSync] ✅ Saved Git sync settings to persistent storage');
+
       // Enable periodic background sync (every 5 minutes)
       enablePeriodicSync();
 
@@ -290,17 +354,108 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
     }
   }
 
+  /// Convert any WAV files to Opus before syncing
+  /// Returns the number of files converted
+  Future<int> _convertWavToOpus() async {
+    try {
+      final fileSystemService = _ref.read(fileSystemServiceProvider);
+      final capturesPath = await fileSystemService.getCapturesPath();
+      final capturesDir = Directory(capturesPath);
+
+      if (!await capturesDir.exists()) {
+        return 0;
+      }
+
+      int convertedCount = 0;
+      final wavFiles = <File>[];
+
+      // Find all WAV files
+      await for (final entity in capturesDir.list()) {
+        if (entity is File && entity.path.endsWith('.wav')) {
+          wavFiles.add(entity);
+        }
+      }
+
+      if (wavFiles.isEmpty) {
+        debugPrint('[GitSync] No WAV files to convert');
+        return 0;
+      }
+
+      debugPrint('[GitSync] Found ${wavFiles.length} WAV files to convert');
+
+      // Convert each WAV file to Opus
+      for (final wavFile in wavFiles) {
+        try {
+          final wavBasename = p.basename(wavFile.path);
+          debugPrint('[GitSync] Converting: $wavBasename');
+
+          final opusPath = await _audioCompression.compressToOpus(
+            wavPath: wavFile.path,
+            deleteOriginal:
+                true, // Delete WAV (recreated on-demand for playback)
+          );
+
+          // Update the corresponding markdown file to reference Opus instead of WAV
+          final timestamp = wavBasename.replaceAll('.wav', '');
+          final mdPath = p.join(capturesPath, '$timestamp.md');
+          final mdFile = File(mdPath);
+
+          if (await mdFile.exists()) {
+            try {
+              final content = await mdFile.readAsString();
+              // Note: The markdown files don't actually reference the audio file path
+              // They're just named with the same timestamp
+              // So no update needed to markdown content
+              debugPrint('[GitSync] Markdown file exists for $timestamp');
+            } catch (e) {
+              debugPrint('[GitSync] ⚠️  Error checking markdown file: $e');
+            }
+          }
+
+          convertedCount++;
+        } catch (e) {
+          debugPrint(
+            '[GitSync] ⚠️  Failed to convert ${p.basename(wavFile.path)}: $e',
+          );
+          // Continue with other files even if one fails
+        }
+      }
+
+      if (convertedCount > 0) {
+        debugPrint('[GitSync] ✅ Converted $convertedCount WAV files to Opus');
+      }
+
+      return convertedCount;
+    } catch (e) {
+      debugPrint('[GitSync] ❌ Error converting WAV files: $e');
+      return 0;
+    }
+  }
+
   /// Sync (pull then push)
   Future<bool> sync() async {
+    debugPrint('[GitSync] 🔄 ============================================');
     debugPrint('[GitSync] 🔄 sync() called');
+    debugPrint(
+      '[GitSync] 🔄 Repository: ${_repository != null ? "✅ Available" : "❌ NULL"}',
+    );
+    debugPrint(
+      '[GitSync] 🔄 State: isEnabled=${state.isEnabled}, repoUrl=${state.repositoryUrl}',
+    );
+    debugPrint('[GitSync] 🔄 ============================================');
 
     if (_repository == null) {
-      debugPrint('[GitSync] ❌ No repository available');
+      debugPrint('[GitSync] ❌ No repository available - aborting sync');
       return false;
     }
 
     try {
       state = state.copyWith(isSyncing: true, lastError: null);
+      debugPrint('[GitSync] State updated: isSyncing=true');
+
+      // Note: WAV to Opus conversion happens immediately after transcription
+      // (see AudioCompressionServiceDart in simple_recording_screen.dart)
+      // WAV files are gitignored, so only .opus and .md files are synced
 
       // Check if we have any commits locally
       final hasCommits = await _gitService.hasCommits(repo: _repository!);
@@ -328,10 +483,30 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
         }
       } else {
         // We have commits - check for new/modified files and commit them
+        debugPrint('[GitSync] Checking for local changes...');
+
+        // Reopen repository to ensure we see latest file system changes
+        final fileSystemService = _ref.read(fileSystemServiceProvider);
+        final vaultPath = await fileSystemService.getRootPath();
+        _repository = await _gitService.openRepository(vaultPath);
+
+        // Before checking status, convert any orphaned WAV files to Opus
+        final convertedCount = await _convertWavToOpus();
+        if (convertedCount > 0) {
+          debugPrint('[GitSync] ✅ Converted $convertedCount WAV files to Opus');
+        }
+
         final status = await _gitService.getStatus(_repository!);
-        final untrackedFiles = status['untracked'] as List;
-        final modifiedFiles = status['modified'] as List;
-        final deletedFiles = status['deleted'] as List;
+
+        final untrackedFiles = status['untracked'] as List? ?? [];
+        final modifiedFiles = status['modified'] as List? ?? [];
+        final deletedFiles = status['deleted'] as List? ?? [];
+
+        debugPrint('[GitSync] Status result:');
+        debugPrint('  - Untracked: ${untrackedFiles.length}');
+        debugPrint('  - Modified: ${modifiedFiles.length}');
+        debugPrint('  - Deleted: ${deletedFiles.length}');
+
         final hasChanges =
             untrackedFiles.isNotEmpty ||
             modifiedFiles.isNotEmpty ||
@@ -343,19 +518,28 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
               modifiedFiles.length +
               deletedFiles.length;
           debugPrint(
-            '[GitSync] Changes detected ($totalChanges files), committing...',
+            '[GitSync] ✅ Changes detected ($totalChanges files), committing...',
           );
 
           // Update state to show files being uploaded
           state = state.copyWith(filesUploading: totalChanges);
 
           // Add all files to staging
+          debugPrint('[GitSync] Staging all changes...');
           final addedAll = await _gitService.addAll(repo: _repository!);
           if (!addedAll) {
-            debugPrint('[GitSync] ⚠️  Warning: Failed to add files to index');
+            debugPrint('[GitSync] ❌ Failed to add files to index');
+            state = state.copyWith(
+              isSyncing: false,
+              lastError: 'Failed to stage files',
+              filesUploading: 0,
+            );
+            return false;
           }
+          debugPrint('[GitSync] ✅ Files staged successfully');
 
           // Commit changes
+          debugPrint('[GitSync] Creating commit...');
           final commitSha = await _gitService.commit(
             repo: _repository!,
             message: 'Auto-sync: ${DateTime.now().toIso8601String()}',
@@ -366,10 +550,16 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
           if (commitSha != null) {
             debugPrint('[GitSync] ✅ Changes committed: $commitSha');
           } else {
-            debugPrint('[GitSync] ⚠️  Warning: Failed to commit changes');
+            debugPrint('[GitSync] ❌ Failed to commit changes');
+            state = state.copyWith(
+              isSyncing: false,
+              lastError: 'Failed to commit changes',
+              filesUploading: 0,
+            );
+            return false;
           }
         } else {
-          debugPrint('[GitSync] No local changes to commit');
+          debugPrint('[GitSync] ℹ️  No local changes to commit');
         }
       }
 

@@ -66,7 +66,7 @@ class GitHubOAuthService {
 
   final AppLinks _appLinks = AppLinks();
   StreamSubscription? _linkSubscription;
-  Completer<Map<String, String>>? _authCompleter;
+  Completer<Map<String, dynamic>>? _authCompleter;
   String? _currentState;
 
   /// Get the app slug (for installation URL)
@@ -83,7 +83,10 @@ class GitHubOAuthService {
   /// - access_token: OAuth access token for API calls
   /// - token_type: "bearer"
   /// - scope: Granted scopes
-  Future<Map<String, String>?> authorize() async {
+  /// - refresh_token (optional): Refresh token if expiration is enabled
+  /// - expires_in (optional): Seconds until access token expires (8 hours)
+  /// - refresh_token_expires_in (optional): Seconds until refresh token expires (6 months)
+  Future<Map<String, dynamic>?> authorize() async {
     try {
       debugPrint('[GitHubOAuth] Starting authorization flow...');
 
@@ -109,7 +112,7 @@ class GitHubOAuthService {
       debugPrint('[GitHubOAuth] Authorization URL: $authUrl');
 
       // Set up deep link listener before opening browser
-      _authCompleter = Completer<Map<String, String>>();
+      _authCompleter = Completer<Map<String, dynamic>>();
       _setupDeepLinkListener();
 
       // Open browser for authorization
@@ -240,7 +243,7 @@ class GitHubOAuthService {
   }
 
   /// Exchange authorization code for access token
-  Future<Map<String, String>?> _exchangeCodeForToken(String code) async {
+  Future<Map<String, dynamic>?> _exchangeCodeForToken(String code) async {
     try {
       final response = await http.post(
         Uri.parse(_tokenEndpoint),
@@ -263,10 +266,30 @@ class GitHubOAuthService {
         debugPrint('[GitHubOAuth] Token type: ${data['token_type']}');
         debugPrint('[GitHubOAuth] Scope: ${data['scope']}');
 
+        // Check if refresh token is provided (only when expiration is enabled)
+        final hasRefreshToken = data.containsKey('refresh_token');
+        final hasExpiresIn = data.containsKey('expires_in');
+
+        if (hasRefreshToken && hasExpiresIn) {
+          debugPrint('[GitHubOAuth] ✅ Token expiration enabled');
+          debugPrint(
+            '[GitHubOAuth] Access token expires in: ${data['expires_in']} seconds (8 hours)',
+          );
+          debugPrint(
+            '[GitHubOAuth] Refresh token expires in: ${data['refresh_token_expires_in']} seconds (6 months)',
+          );
+        } else {
+          debugPrint('[GitHubOAuth] ℹ️  Token expiration not enabled');
+        }
+
         return {
           'access_token': data['access_token'] as String,
           'token_type': data['token_type'] as String,
           'scope': data['scope'] as String? ?? '',
+          if (hasRefreshToken) 'refresh_token': data['refresh_token'] as String,
+          if (hasExpiresIn) 'expires_in': data['expires_in'] as int,
+          if (data.containsKey('refresh_token_expires_in'))
+            'refresh_token_expires_in': data['refresh_token_expires_in'] as int,
         };
       } else {
         debugPrint(
@@ -277,6 +300,63 @@ class GitHubOAuthService {
       }
     } catch (e) {
       debugPrint('[GitHubOAuth] ❌ Error exchanging code for token: $e');
+      return null;
+    }
+  }
+
+  /// Refresh an expired access token using a refresh token
+  ///
+  /// Returns a map containing:
+  /// - access_token: New access token (expires in 8 hours)
+  /// - refresh_token: New refresh token (expires in 6 months)
+  /// - expires_in: Seconds until access token expires (28800 = 8 hours)
+  /// - refresh_token_expires_in: Seconds until refresh token expires (15897600 = 6 months)
+  Future<Map<String, dynamic>?> refreshAccessToken(String refreshToken) async {
+    try {
+      debugPrint('[GitHubOAuth] 🔄 Refreshing access token...');
+
+      final response = await http.post(
+        Uri.parse(_tokenEndpoint),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'client_id': _clientId,
+          'client_secret': _clientSecret,
+          'grant_type': 'refresh_token',
+          'refresh_token': refreshToken,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+        debugPrint('[GitHubOAuth] ✅ Token refresh successful');
+        debugPrint(
+          '[GitHubOAuth] New access token expires in: ${data['expires_in']} seconds',
+        );
+        debugPrint(
+          '[GitHubOAuth] New refresh token expires in: ${data['refresh_token_expires_in']} seconds',
+        );
+
+        return {
+          'access_token': data['access_token'] as String,
+          'refresh_token': data['refresh_token'] as String,
+          'token_type': data['token_type'] as String,
+          'expires_in': data['expires_in'] as int,
+          'refresh_token_expires_in': data['refresh_token_expires_in'] as int,
+          'scope': data['scope'] as String? ?? '',
+        };
+      } else {
+        debugPrint(
+          '[GitHubOAuth] ❌ Token refresh failed: ${response.statusCode}',
+        );
+        debugPrint('[GitHubOAuth] Response: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('[GitHubOAuth] ❌ Error refreshing token: $e');
       return null;
     }
   }

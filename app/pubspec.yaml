@@ -37,10 +37,9 @@ dependencies:
   shared_preferences: ^2.0.0
 
   # Git Integration (GitHub with Android support)
+  # Using local git2dart for testing status fix
   git2dart:
-    git:
-      url: https://github.com/unforced/git2dart.git
-      ref: android-binaries-support
+    path: /Users/unforced/symbols/codes/git2dart
   git2dart_binaries:
     git:
       url: https://github.com/unforced/git2dart_binaries.git

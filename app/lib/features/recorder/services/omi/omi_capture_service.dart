@@ -7,7 +7,7 @@ import 'package:app/features/recorder/services/omi/omi_bluetooth_service.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/utils/audio/wav_bytes_util.dart';
-import 'package:app/core/services/audio_compression_service.dart';
+import 'package:app/core/services/audio_compression_service_dart.dart';
 
 /// Service for capturing audio recordings from Omi device
 ///
@@ -398,10 +398,10 @@ class OmiCaptureService {
       debugPrint(
         '[OmiCaptureService] Transcription complete, compressing to Opus...',
       );
-      final compressionService = AudioCompressionService();
+      final compressionService = AudioCompressionServiceDart();
       final opusPath = await compressionService.compressToOpus(
         wavPath: recording.filePath,
-        deleteOriginal: true,
+        deleteOriginal: true, // Delete WAV (recreated on-demand for playback)
       );
       debugPrint('[OmiCaptureService] Compression complete: $opusPath');
 

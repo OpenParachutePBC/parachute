@@ -11,8 +11,10 @@ import 'package:app/features/recorder/providers/model_download_provider.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/services/background_transcription_service.dart';
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
+import 'package:app/features/recorder/widgets/playback_controls.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
 import 'package:app/core/services/file_system_service.dart';
+import 'package:app/core/services/audio_compression_service_dart.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/space_notes/screens/link_capture_to_space_screen.dart';
@@ -75,7 +77,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   bool _isContextEditing = false;
 
   // Processing states
-  bool _isPlaying = false;
+
   bool _isTranscribing = false;
   bool _isGeneratingTitle = false;
   double _transcriptionProgress = 0.0;
@@ -527,31 +529,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     }
   }
 
-  Future<void> _togglePlayback() async {
-    // Use audioPath for transcribing mode, filePath for saved recording
-    final audioPath = widget.audioPath ?? _recording?.filePath;
-    final duration = widget.duration ?? _recording?.duration ?? Duration.zero;
-
-    if (audioPath == null) return;
-
-    if (_isPlaying) {
-      await ref.read(audioServiceProvider).stopPlayback();
-      setState(() => _isPlaying = false);
-    } else {
-      final success = await ref
-          .read(audioServiceProvider)
-          .playRecording(audioPath);
-      if (success) {
-        setState(() => _isPlaying = true);
-        Future.delayed(duration, () {
-          if (mounted && _isPlaying) {
-            setState(() => _isPlaying = false);
-          }
-        });
-      }
-    }
-  }
-
   /// Reset a stuck transcription and retry
   Future<void> _resetAndRetryTranscription() async {
     if (_recording == null) return;
@@ -704,6 +681,149 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Successfully linked to spaces')),
       );
+    }
+  }
+
+  /// Re-transcribe the recording
+  Future<void> _retranscribe() async {
+    if (_recording == null) return;
+
+    // Parakeet requires WAV files for transcription
+    // Check if WAV file exists, if not check for Opus
+    final wavPath = _recording!.filePath.replaceAll('.opus', '.wav');
+    final wavFile = File(wavPath);
+    final opusFile = File(_recording!.filePath);
+
+    String audioPathToTranscribe;
+
+    if (await wavFile.exists()) {
+      // Use existing WAV file
+      audioPathToTranscribe = wavPath;
+      debugPrint('[RecordingDetail] Using WAV file for re-transcription');
+    } else if (await opusFile.exists() &&
+        _recording!.filePath.endsWith('.opus')) {
+      // Opus file exists but no WAV - decode Opus to temporary WAV
+      debugPrint(
+        '[RecordingDetail] WAV not found, decoding Opus to temporary WAV',
+      );
+
+      try {
+        audioPathToTranscribe = await _decodeOpusToWav(_recording!.filePath);
+        debugPrint(
+          '[RecordingDetail] Created temporary WAV at: $audioPathToTranscribe',
+        );
+      } catch (e) {
+        debugPrint('[RecordingDetail] Failed to decode Opus to WAV: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to decode Opus file: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+    } else {
+      // Neither file exists
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Audio file not found. Cannot re-transcribe.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Start transcription
+    setState(() {
+      _isTranscribing = true;
+      _transcriptionStatus = 'Re-transcribing...';
+      _transcriptionProgress = 0.0;
+    });
+
+    try {
+      final transcriptionService = ref.read(
+        transcriptionServiceAdapterProvider,
+      );
+      final result = await transcriptionService.transcribeAudio(
+        audioPathToTranscribe,
+      );
+
+      if (mounted && result.text.isNotEmpty) {
+        setState(() {
+          _recording = _recording!.copyWith(
+            transcript: result.text,
+            transcriptionStatus: ProcessingStatus.completed,
+          );
+          _transcriptController.text = result.text;
+          _isTranscribing = false;
+          _transcriptionStatus = 'Re-transcription complete';
+        });
+
+        // Save updated recording
+        await _saveChanges();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Re-transcription complete!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Transcription returned empty text');
+      }
+    } catch (e) {
+      debugPrint('[RecordingDetail] Re-transcription error: $e');
+      if (mounted) {
+        setState(() {
+          _isTranscribing = false;
+          _transcriptionStatus = 'Re-transcription failed';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Re-transcription failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      // Clean up temporary WAV file if it was created from Opus
+      if (audioPathToTranscribe.endsWith('.temp.wav')) {
+        try {
+          final tempFile = File(audioPathToTranscribe);
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+            debugPrint('[RecordingDetail] Deleted temporary WAV file');
+          }
+        } catch (e) {
+          debugPrint('[RecordingDetail] Failed to delete temporary WAV: $e');
+        }
+      }
+    }
+  }
+
+  /// Decode Opus file to temporary WAV file for transcription
+  Future<String> _decodeOpusToWav(String opusPath) async {
+    debugPrint('[RecordingDetail] Decoding Opus to WAV: $opusPath');
+
+    try {
+      // Use AudioCompressionServiceDart to decode Opus to WAV
+      final compressionService = AudioCompressionServiceDart();
+      final wavPath = await compressionService.decompressToWav(
+        opusPath: opusPath,
+      );
+
+      debugPrint('[RecordingDetail] Created temporary WAV: $wavPath');
+      return wavPath;
+    } catch (e, stackTrace) {
+      debugPrint('[RecordingDetail] Opus decode error: $e');
+      debugPrint('[RecordingDetail] Stack trace: $stackTrace');
+      rethrow;
     }
   }
 
@@ -903,6 +1023,16 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           PopupMenuButton(
             itemBuilder: (context) => [
               const PopupMenuItem(
+                value: 're-transcribe',
+                child: Row(
+                  children: [
+                    Icon(Icons.refresh),
+                    SizedBox(width: 8),
+                    Text('Re-transcribe'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
                 value: 'delete',
                 child: Row(
                   children: [
@@ -914,6 +1044,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               ),
             ],
             onSelected: (value) {
+              if (value == 're-transcribe') _retranscribe();
               if (value == 'delete') _confirmDelete();
             },
           ),
@@ -957,51 +1088,17 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   }
 
   Widget _buildPlaybackSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: _togglePlayback,
-            icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
-            iconSize: 32,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _recording?.durationString ??
-                      _formatDuration(widget.duration ?? Duration.zero),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                Text(
-                  _recording?.formattedSize ?? 'Processing...',
-                  style: TextStyle(
-                    color: Colors.grey.withValues(alpha: 0.7),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_isPlaying)
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-        ],
-      ),
+    final audioPath = widget.audioPath ?? _recording?.filePath;
+    final duration = widget.duration ?? _recording?.duration ?? Duration.zero;
+
+    if (audioPath == null || audioPath.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return PlaybackControls(
+      key: ValueKey(audioPath), // Each recording gets its own playback state
+      filePath: audioPath,
+      duration: duration,
     );
   }
 

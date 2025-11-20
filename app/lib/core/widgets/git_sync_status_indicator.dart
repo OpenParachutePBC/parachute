@@ -119,16 +119,24 @@ class GitSyncStatusIndicator extends ConsumerWidget {
   }
 
   void _onTap(BuildContext context, WidgetRef ref) async {
+    debugPrint('[GitSyncIndicator] 🔵 Sync button tapped');
     final gitSync = ref.read(gitSyncProvider.notifier);
     final state = ref.read(gitSyncProvider);
 
+    debugPrint(
+      '[GitSyncIndicator] Current state: isSyncing=${state.isSyncing}, isEnabled=${state.isEnabled}',
+    );
+
     // Don't allow manual sync if already syncing
     if (state.isSyncing) {
+      debugPrint('[GitSyncIndicator] ⚠️  Already syncing, ignoring tap');
       return;
     }
 
     // Trigger manual sync
+    debugPrint('[GitSyncIndicator] 📞 Calling gitSync.sync()...');
     final success = await gitSync.sync();
+    debugPrint('[GitSyncIndicator] 📞 gitSync.sync() returned: $success');
 
     if (context.mounted) {
       final message = success
