@@ -12,6 +12,8 @@ import 'package:app/features/recorder/providers/service_providers.dart';
 
 /// Git sync state
 class GitSyncState {
+  final bool isInitializing; // True while initialize() is running
+  final bool isInitialized; // True after initialize() completes
   final bool isEnabled;
   final String? repositoryUrl;
   final String? currentBranch;
@@ -23,6 +25,8 @@ class GitSyncState {
   final int filesDownloading; // Number of files being pulled
 
   const GitSyncState({
+    this.isInitializing = false,
+    this.isInitialized = false,
     this.isEnabled = false,
     this.repositoryUrl,
     this.currentBranch,
@@ -35,6 +39,8 @@ class GitSyncState {
   });
 
   GitSyncState copyWith({
+    bool? isInitializing,
+    bool? isInitialized,
     bool? isEnabled,
     String? repositoryUrl,
     String? currentBranch,
@@ -46,6 +52,8 @@ class GitSyncState {
     int? filesDownloading,
   }) {
     return GitSyncState(
+      isInitializing: isInitializing ?? this.isInitializing,
+      isInitialized: isInitialized ?? this.isInitialized,
       isEnabled: isEnabled ?? this.isEnabled,
       repositoryUrl: repositoryUrl ?? this.repositoryUrl,
       currentBranch: currentBranch ?? this.currentBranch,
@@ -69,35 +77,73 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       AudioCompressionServiceDart();
   Repository? _repository;
   Timer? _periodicSyncTimer;
+  Completer<void>? _initCompleter;
+
+  /// Wait for initialization to complete
+  /// Useful for code that needs to ensure Git is initialized before operating
+  Future<void> ensureInitialized() async {
+    if (state.isInitialized) return;
+    // If already initializing, wait for it
+    if (_initCompleter != null) {
+      await _initCompleter!.future;
+      return;
+    }
+    // Otherwise trigger initialization
+    await initialize();
+  }
 
   /// Initialize Git sync by checking if vault is a Git repository
   /// and restoring saved settings
   Future<void> initialize() async {
-    debugPrint('[GitSync] 🚀 Initializing Git sync...');
-    final fileSystemService = _ref.read(fileSystemServiceProvider);
-    final vaultPath = await fileSystemService.getRootPath();
-    debugPrint('[GitSync] Vault path: $vaultPath');
-
-    final isGitRepo = await _gitService.isGitRepository(vaultPath);
-    debugPrint('[GitSync] Is Git repository: $isGitRepo');
-
-    if (isGitRepo) {
-      _repository = await _gitService.openRepository(vaultPath);
-      debugPrint('[GitSync] Repository opened: ${_repository != null}');
-
-      if (_repository != null) {
-        await _updateStatus();
-
-        // Try to restore Git sync settings from storage
-        await _restoreSettings();
-      } else {
-        debugPrint('[GitSync] ❌ Failed to open repository');
-      }
-    } else {
-      debugPrint('[GitSync] ℹ️  Not a Git repository yet');
+    // Prevent multiple concurrent initializations
+    if (state.isInitialized) {
+      debugPrint('[GitSync] Already initialized, skipping');
+      return;
     }
 
-    debugPrint('[GitSync] 🚀 Initialization complete');
+    // If already initializing, wait for that to complete
+    if (_initCompleter != null) {
+      debugPrint('[GitSync] Already initializing, waiting...');
+      await _initCompleter!.future;
+      return;
+    }
+
+    _initCompleter = Completer<void>();
+    state = state.copyWith(isInitializing: true);
+    debugPrint('[GitSync] 🚀 Initializing Git sync...');
+
+    try {
+      final fileSystemService = _ref.read(fileSystemServiceProvider);
+      final vaultPath = await fileSystemService.getRootPath();
+      debugPrint('[GitSync] Vault path: $vaultPath');
+
+      final isGitRepo = await _gitService.isGitRepository(vaultPath);
+      debugPrint('[GitSync] Is Git repository: $isGitRepo');
+
+      if (isGitRepo) {
+        _repository = await _gitService.openRepository(vaultPath);
+        debugPrint('[GitSync] Repository opened: ${_repository != null}');
+
+        if (_repository != null) {
+          await _updateStatus();
+
+          // Try to restore Git sync settings from storage
+          await _restoreSettings();
+        } else {
+          debugPrint('[GitSync] ❌ Failed to open repository');
+        }
+      } else {
+        debugPrint('[GitSync] ℹ️  Not a Git repository yet');
+      }
+
+      debugPrint('[GitSync] 🚀 Initialization complete');
+      state = state.copyWith(isInitializing: false, isInitialized: true);
+      _initCompleter!.complete();
+    } catch (e) {
+      debugPrint('[GitSync] ❌ Initialization failed: $e');
+      state = state.copyWith(isInitializing: false, isInitialized: true, lastError: e.toString());
+      _initCompleter!.completeError(e);
+    }
   }
 
   /// Restore Git sync settings from secure storage
