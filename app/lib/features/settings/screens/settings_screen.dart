@@ -152,13 +152,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _parakeetModelInfo = await parakeetService.getModelInfo();
 
           // If not initialized but models exist, show as ready
-          if (_parakeetModelInfo == null) {
-            _parakeetModelInfo = parakeet.ModelInfo(
-              version: 'v3',
-              languageCount: 25,
-              isInitialized: true, // Models are ready, just not initialized yet
-            );
-          }
+          _parakeetModelInfo ??= parakeet.ModelInfo(
+            version: 'v3',
+            languageCount: 25,
+            isInitialized: true, // Models are ready, just not initialized yet
+          );
         } else {
           // Models not downloaded yet
           _parakeetModelInfo = null;

@@ -139,7 +139,7 @@ class GitHubAPIService {
     } catch (e) {
       debugPrint('[GitHubAPI] ❌ Error verifying token: $e');
       // Network error - can't verify, so return true (optimistic)
-      throw e;
+      rethrow;
     }
   }
 

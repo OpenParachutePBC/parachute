@@ -21,8 +21,8 @@ class SpaceDetailScreen extends ConsumerStatefulWidget {
 
 class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
   String _searchQuery = '';
-  List<String> _selectedTags = [];
-  String _sortBy = 'recent'; // 'recent', 'referenced', 'alphabetical'
+  final List<String> _selectedTags = [];
+  final String _sortBy = 'recent'; // 'recent', 'referenced', 'alphabetical'
 
   @override
   Widget build(BuildContext context) {

@@ -332,15 +332,17 @@ class _PostRecordingScreenState extends ConsumerState<PostRecordingScreen> {
           navigator.popUntil((route) => route.isFirst);
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to save recording')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to save recording')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Error saving recording')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error saving recording')),
+        );
       }
     } finally {
       if (mounted) {
