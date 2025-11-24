@@ -90,6 +90,7 @@ class AutoPauseTranscriptionService {
   DateTime? _lastAudioChunkTime;
   int _audioChunkCount = 0;
   Timer? _streamHealthCheckTimer;
+  StreamSubscription<Uint8List>? _audioStreamSubscription;
 
   // Noise filtering & VAD
   SimpleNoiseFilter? _noiseFilter;
@@ -226,9 +227,9 @@ class AutoPauseTranscriptionService {
       _lastAudioChunkTime = DateTime.now();
       _audioChunkCount = 0;
 
-      // Process audio stream through VAD chunker
+      // Process audio stream through VAD chunker (store subscription for cleanup)
       debugPrint('[AutoPauseTranscription] 🎧 Setting up stream listener...');
-      stream.listen(
+      _audioStreamSubscription = stream.listen(
         _processAudioChunk,
         onError: (error, stackTrace) {
           debugPrint('[AutoPauseTranscription] ❌ STREAM ERROR: $error');
@@ -459,6 +460,10 @@ class AutoPauseTranscriptionService {
       // Stop health check
       _stopStreamHealthCheck();
 
+      // Cancel audio stream subscription before stopping recorder
+      await _audioStreamSubscription?.cancel();
+      _audioStreamSubscription = null;
+
       // Stop recorder
       await _recorder.stop();
       _isRecording = false;
@@ -521,6 +526,10 @@ class AutoPauseTranscriptionService {
 
       // Stop health check
       _stopStreamHealthCheck();
+
+      // Cancel audio stream subscription before stopping recorder
+      await _audioStreamSubscription?.cancel();
+      _audioStreamSubscription = null;
 
       // Stop recorder
       await _recorder.stop();
@@ -827,6 +836,10 @@ class AutoPauseTranscriptionService {
 
     // Stop health check
     _stopStreamHealthCheck();
+
+    // Cancel audio stream subscription first
+    await _audioStreamSubscription?.cancel();
+    _audioStreamSubscription = null;
 
     // Ensure recording is stopped before disposing (prevents CoreAudio leaks)
     if (_isRecording) {

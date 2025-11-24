@@ -80,6 +80,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void dispose() {
     _geminiApiKeyController.dispose();
     _aiServerUrlController.dispose();
+    _capturesFolderNameController.dispose();
+    _spacesFolderNameController.dispose();
     super.dispose();
   }
 

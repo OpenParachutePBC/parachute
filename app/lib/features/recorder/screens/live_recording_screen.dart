@@ -34,6 +34,11 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _textFocusNode = FocusNode();
 
+  // Stream subscriptions - must be cancelled in dispose
+  StreamSubscription<v3.TranscriptionSegment>? _segmentSubscription;
+  StreamSubscription<bool>? _processingSubscription;
+  StreamSubscription<bool>? _healthSubscription;
+
   // State
   bool _isInitializing = true;
   bool _isRecording = false;
@@ -60,6 +65,10 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
   @override
   void dispose() {
     _durationTimer?.cancel();
+    // Cancel stream subscriptions to prevent memory leaks
+    _segmentSubscription?.cancel();
+    _processingSubscription?.cancel();
+    _healthSubscription?.cancel();
     // Don't dispose service here - it's managed by the provider now
     _textController.dispose();
     _scrollController.dispose();
@@ -85,11 +94,13 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
 
       await _transcriptionService!.initialize();
 
-      // Listen to segment updates
-      _transcriptionService!.segmentStream.listen(_handleSegmentUpdate);
+      // Listen to segment updates (store subscription for cleanup)
+      _segmentSubscription =
+          _transcriptionService!.segmentStream.listen(_handleSegmentUpdate);
 
-      // Listen to processing state
-      _transcriptionService!.isProcessingStream.listen((isProcessing) {
+      // Listen to processing state (store subscription for cleanup)
+      _processingSubscription =
+          _transcriptionService!.isProcessingStream.listen((isProcessing) {
         if (mounted) {
           setState(() {
             _isProcessing = isProcessing;
@@ -97,8 +108,9 @@ class _LiveRecordingScreenState extends ConsumerState<LiveRecordingScreen> {
         }
       });
 
-      // Listen to stream health
-      _transcriptionService!.streamHealthStream.listen((isHealthy) {
+      // Listen to stream health (store subscription for cleanup)
+      _healthSubscription =
+          _transcriptionService!.streamHealthStream.listen((isHealthy) {
         if (mounted) {
           setState(() {
             _streamHealthy = isHealthy;

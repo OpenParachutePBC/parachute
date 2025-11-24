@@ -91,8 +91,8 @@ class WebSocketClient {
     _currentSessionId = null;
   }
 
-  void dispose() {
-    disconnect();
-    _messageController.close();
+  Future<void> dispose() async {
+    await disconnect();
+    await _messageController.close();
   }
 }
