@@ -3,7 +3,6 @@ import 'package:app/features/recorder/repositories/recording_repository.dart';
 import 'package:app/features/recorder/services/audio_service.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/transcription_service_adapter.dart';
-import 'package:app/features/recorder/services/live_transcription_service_v2.dart';
 import 'package:app/features/recorder/services/live_transcription_service_v3.dart';
 import 'package:app/features/recorder/services/background_transcription_service.dart';
 import 'package:app/features/recorder/services/recording_post_processing_service.dart';
@@ -84,24 +83,6 @@ final recordingPostProcessingProvider =
 /// Increment this counter to trigger a refresh of the recordings list.
 /// Used by Omi capture service to notify UI when new recordings are saved.
 final recordingsRefreshTriggerProvider = StateProvider<int>((ref) => 0);
-
-/// Provider for SimpleTranscriptionService
-///
-/// This manages manual pause-based transcription with one continuous audio file.
-/// Creates a new instance each time it's requested (not kept alive).
-final simpleTranscriptionServiceProvider =
-    Provider.autoDispose<SimpleTranscriptionService>((ref) {
-      final transcriptionService = ref.watch(
-        transcriptionServiceAdapterProvider,
-      );
-      final service = SimpleTranscriptionService(transcriptionService);
-
-      ref.onDispose(() {
-        service.dispose();
-      });
-
-      return service;
-    });
 
 /// State notifier for managing active recording session
 ///

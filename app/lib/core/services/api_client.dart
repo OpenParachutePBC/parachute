@@ -27,7 +27,7 @@ class ApiClient {
       wsClient = WebSocketClient() {
     // Connect WebSocket on initialization
     wsClient.connect().catchError((error) {
-      print('Failed to connect WebSocket: $error');
+      // WebSocketClient logs errors internally via logger
     });
   }
 

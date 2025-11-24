@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../constants/api_constants.dart';
+import './logging_service.dart';
 
 class WebSocketClient {
   WebSocketChannel? _channel;
@@ -29,21 +31,21 @@ class WebSocketClient {
             final message = jsonDecode(data as String) as Map<String, dynamic>;
             _messageController.add(message);
           } catch (e) {
-            print('Error parsing WebSocket message: $e');
+            logger.error('WebSocket', 'Error parsing message', error: e);
           }
         },
         onError: (error) {
-          print('WebSocket error: $error');
+          logger.error('WebSocket', 'Connection error', error: error);
           _isConnected = false;
         },
         onDone: () {
-          print('WebSocket connection closed');
+          debugPrint('[WebSocket] Connection closed');
           _isConnected = false;
         },
         cancelOnError: false,
       );
     } catch (e) {
-      print('Error connecting to WebSocket: $e');
+      logger.error('WebSocket', 'Failed to connect', error: e);
       _isConnected = false;
       rethrow;
     }
