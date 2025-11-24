@@ -77,7 +77,7 @@ class GitService {
           // Append WAV exclusion
           debugPrint('[GitService] Adding *.wav to existing .gitignore');
           await gitignoreFile.writeAsString(
-            content.endsWith('\n') ? '${content}*.wav\n' : '$content\n*.wav\n',
+            '$content${content.endsWith('\n') ? '' : '\n'}*.wav\n',
           );
         } else {
           debugPrint('[GitService] .gitignore already excludes WAV files');

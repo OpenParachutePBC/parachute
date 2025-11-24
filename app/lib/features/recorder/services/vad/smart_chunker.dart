@@ -48,9 +48,8 @@ class SmartChunker {
   DateTime _lastChunk = DateTime.now();
   Duration _totalSpeech = Duration.zero;
 
-  SmartChunker({required SmartChunkerConfig config})
-    : config = config,
-      _vad = SimpleVAD(
+  SmartChunker({required this.config})
+    : _vad = SimpleVAD(
         config: VADConfig(
           sampleRate: config.sampleRate,
           frameDurationMs: 10, // 10ms frames (160 samples at 16kHz)
@@ -232,7 +231,7 @@ class ChunkerStats {
   @override
   String toString() {
     return 'ChunkerStats('
-        'buffer: ${bufferDuration.inSeconds}s (${bufferSamples} samples), '
+        'buffer: ${bufferDuration.inSeconds}s ($bufferSamples samples), '
         'totalSpeech: ${totalSpeech.inSeconds}s, '
         'timeSinceChunk: ${timeSinceChunk.inSeconds}s, '
         'vad: $vadStats)';

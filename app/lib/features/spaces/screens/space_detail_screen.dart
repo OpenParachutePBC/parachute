@@ -119,7 +119,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
             );
           },
           loading: () => const LinearProgressIndicator(),
-          error: (_, __) => const SizedBox.shrink(),
+          error: (_, _) => const SizedBox.shrink(),
         );
       },
     );

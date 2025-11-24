@@ -45,7 +45,7 @@ class AudioCompressionService {
         '-c:a',
         'libopus',
         '-b:a',
-        '${_bitrate}',
+        '$_bitrate',
         '-vbr',
         'on',
         '-compression_level',

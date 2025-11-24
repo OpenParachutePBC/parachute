@@ -335,8 +335,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       setState(() {
         _recording = updated;
         if (!_isTitleEditing) _titleController.text = _recording!.title;
-        if (!_isTranscriptEditing)
+        if (!_isTranscriptEditing) {
           _transcriptController.text = _recording!.transcript;
+        }
         if (!_isContextEditing) _contextController.text = _recording!.context;
         if (!_isSummaryEditing) _summaryController.text = _recording!.summary;
       });
@@ -1466,7 +1467,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         );
       },
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 

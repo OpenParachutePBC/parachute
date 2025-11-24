@@ -353,8 +353,9 @@ class StorageService {
               if (key == 'duration') durationStr = value;
               if (key == 'source') source = value;
               if (key == 'title') title = value;
-              if (key == 'transcription_status')
+              if (key == 'transcription_status') {
                 liveTranscriptionStatusStr = value;
+              }
               if (key == 'context') {
                 // Unescape the context value (remove quotes and unescape)
                 String unescapedContext = value;

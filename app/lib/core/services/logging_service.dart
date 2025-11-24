@@ -335,7 +335,7 @@ class LoggingService {
       final entries = List<LogEntry>.from(_pendingFileWrites);
       _pendingFileWrites.clear();
 
-      final content = entries.map((e) => e.formatted).join('\n') + '\n';
+      final content = '${entries.map((e) => e.formatted).join('\n')}\n';
       await _logFile!.writeAsString(content, mode: FileMode.append);
     } catch (e) {
       debugPrint('[LoggingService] Failed to flush logs to file: $e');
