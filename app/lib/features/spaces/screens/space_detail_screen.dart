@@ -4,7 +4,7 @@ import 'package:path/path.dart' as p;
 import '../../../core/models/space.dart';
 import '../providers/space_knowledge_provider.dart';
 import '../services/space_knowledge_service.dart';
-import '../../../core/services/file_system_service.dart';
+import '../../../features/files/providers/local_file_browser_provider.dart';
 import '../../recorder/screens/recording_detail_screen.dart';
 import '../../recorder/services/storage_service.dart';
 import '../../recorder/models/recording.dart';
@@ -411,7 +411,7 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
   }
 
   Future<String> _getSpacePath() async {
-    final fileSystemService = FileSystemService();
+    final fileSystemService = ref.read(fileSystemServiceProvider);
     final spacesPath = await fileSystemService.getSpacesPath();
     return p.join(spacesPath, widget.space.path);
   }

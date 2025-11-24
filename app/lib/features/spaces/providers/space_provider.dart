@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/space.dart';
 import './space_storage_provider.dart';
 import '../../../core/services/git/git_service.dart';
-import '../../../core/services/file_system_service.dart';
+import '../../../features/files/providers/local_file_browser_provider.dart';
 
 // Space List Provider - Now uses local storage
 final spaceListProvider = FutureProvider<List<Space>>((ref) async {
@@ -95,7 +96,7 @@ class SpaceActions {
   Future<void> _commitSpaceChange(String message) async {
     try {
       final gitService = GitService.instance;
-      final fileSystemService = FileSystemService();
+      final fileSystemService = ref.read(fileSystemServiceProvider);
       final vaultPath = await fileSystemService.getRootPath();
 
       // Check if Git is initialized
@@ -118,7 +119,7 @@ class SpaceActions {
       );
     } catch (e) {
       // Don't fail the operation if Git commit fails
-      print('[SpaceActions] Git commit failed: $e');
+      debugPrint('[SpaceActions] Git commit failed: $e');
     }
   }
 }

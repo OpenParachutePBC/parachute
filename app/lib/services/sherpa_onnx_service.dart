@@ -275,15 +275,15 @@ class SherpaOnnxService {
     final modelDir = params['modelDir']!;
 
     // Read archive file
-    print('[SherpaOnnxService] Reading archive...');
+    debugPrint('[SherpaOnnxService] Reading archive...');
     final archiveBytes = await File(archivePath).readAsBytes();
 
     // Decompress bz2 (this takes most of the time)
-    print('[SherpaOnnxService] Decompressing BZip2...');
+    debugPrint('[SherpaOnnxService] Decompressing BZip2...');
     final decompressed = BZip2Decoder().decodeBytes(archiveBytes);
 
     // Extract tar
-    print('[SherpaOnnxService] Extracting TAR archive...');
+    debugPrint('[SherpaOnnxService] Extracting TAR archive...');
     final archive = TarDecoder().decodeBytes(decompressed);
 
     int extractedCount = 0;
@@ -308,14 +308,14 @@ class SherpaOnnxService {
             1,
           );
           extractedCount++;
-          print(
+          debugPrint(
             '[SherpaOnnxService] ✅ Extracted $basename ($sizeMB MB) [$extractedCount/${targetFiles.length}]',
           );
         }
       }
     }
 
-    print('[SherpaOnnxService] ✅ Extraction complete: $extractedCount files');
+    debugPrint('[SherpaOnnxService] ✅ Extraction complete: $extractedCount files');
   }
 
   /// Transcribe audio file

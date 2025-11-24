@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/message.dart';
 import '../../../core/providers/api_provider.dart';
@@ -81,25 +82,25 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
   void _listenToWebSocket() {
     final wsClient = ref.read(webSocketClientProvider);
     _wsSubscription = wsClient.messages.listen((message) {
-      print('📩 WebSocket message received: ${message['type']}');
+      debugPrint('📩 WebSocket message received: ${message['type']}');
 
       final type = message['type'] as String?;
       final payload = message['payload'] as Map<String, dynamic>?;
       final conversationId = payload?['conversation_id'] as String?;
 
-      print(
+      debugPrint(
         '   Conversation ID: $conversationId, Current: $_currentConversationId',
       );
 
       // Only process messages for the current conversation
       if (conversationId != _currentConversationId) {
-        print('   ⏭️  Skipping message for different conversation');
+        debugPrint('   ⏭️  Skipping message for different conversation');
         return;
       }
 
       if (type == 'message_chunk') {
         final chunk = payload?['chunk'] as String?;
-        print(
+        debugPrint(
           '   💬 Message chunk: ${chunk?.substring(0, chunk.length > 50 ? 50 : chunk.length)}...',
         );
         if (chunk != null) {
@@ -111,7 +112,7 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
         final kind = payload?['kind'] as String?;
         final status = payload?['status'] as String?;
 
-        print('   🔧 Tool call: $title ($kind) - $status');
+        debugPrint('   🔧 Tool call: $title ($kind) - $status');
 
         if (toolCallId != null &&
             title != null &&
@@ -123,7 +124,7 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
         final toolCallId = payload?['tool_call_id'] as String?;
         final status = payload?['status'] as String?;
 
-        print('   ✅ Tool call update: $toolCallId -> $status');
+        debugPrint('   ✅ Tool call update: $toolCallId -> $status');
 
         if (toolCallId != null && status != null) {
           updateToolCall(toolCallId, status);
@@ -145,7 +146,7 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
 
     // If changing conversations, immediately clear streaming state
     if (isChangingConversation) {
-      print('🔄 Switching conversations, clearing streaming state');
+      debugPrint('🔄 Switching conversations, clearing streaming state');
       state = AsyncValue.data(
         MessageState(
           messages: [],
@@ -159,7 +160,7 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
     // Subscribe to WebSocket updates for this conversation
     final wsClient = ref.read(webSocketClientProvider);
     if (wsClient.isConnected) {
-      print('🔌 Subscribing to conversation: $conversationId');
+      debugPrint('🔌 Subscribing to conversation: $conversationId');
       wsClient.subscribe(conversationId);
     }
 
@@ -256,13 +257,13 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
   }
 
   void addToolCall(String id, String title, String kind, String status) {
-    print('➕ Adding tool call: $title ($kind) - $status');
+    debugPrint('➕ Adding tool call: $title ($kind) - $status');
     state.whenData((currentState) {
       final toolCalls = List<ToolCallState>.from(currentState.activeToolCalls);
       toolCalls.add(
         ToolCallState(id: id, title: title, kind: kind, status: status),
       );
-      print('   Active tool calls count: ${toolCalls.length}');
+      debugPrint('   Active tool calls count: ${toolCalls.length}');
       state = AsyncValue.data(
         currentState.copyWith(
           activeToolCalls: toolCalls,
@@ -273,7 +274,7 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
   }
 
   void updateToolCall(String id, String status) {
-    print('🔄 Updating tool call: $id -> $status');
+    debugPrint('🔄 Updating tool call: $id -> $status');
     state.whenData((currentState) {
       final toolCalls = currentState.activeToolCalls.map((tc) {
         if (tc.id == id) {
@@ -282,7 +283,7 @@ class MessageNotifier extends StateNotifier<AsyncValue<MessageState>> {
         return tc;
       }).toList();
 
-      print(
+      debugPrint(
         '   Updated tool calls. Completed: ${toolCalls.where((tc) => tc.status == 'completed').length}/${toolCalls.length}',
       );
 

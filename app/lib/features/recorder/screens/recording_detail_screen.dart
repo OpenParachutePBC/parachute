@@ -13,7 +13,6 @@ import 'package:app/features/recorder/services/background_transcription_service.
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:app/features/recorder/widgets/playback_controls.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
-import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/audio_compression_service_dart.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
@@ -1475,7 +1474,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     if (_recording == null) return [];
 
     try {
-      final fileSystemService = FileSystemService();
+      final fileSystemService = ref.read(fileSystemServiceProvider);
       final spacesPath = await fileSystemService.getSpacesPath();
       final knowledgeService = ref.read(spaceKnowledgeServiceProvider);
 

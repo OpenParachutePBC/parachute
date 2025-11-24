@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:app/core/services/file_system_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:app/features/files/providers/local_file_browser_provider.dart';
 
-class WelcomeStep extends StatefulWidget {
+class WelcomeStep extends ConsumerStatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onSkip;
 
   const WelcomeStep({super.key, required this.onNext, required this.onSkip});
 
   @override
-  State<WelcomeStep> createState() => _WelcomeStepState();
+  ConsumerState<WelcomeStep> createState() => _WelcomeStepState();
 }
 
-class _WelcomeStepState extends State<WelcomeStep> {
+class _WelcomeStepState extends ConsumerState<WelcomeStep> {
   String _folderLocation = 'Loading...';
 
   @override
@@ -21,7 +22,7 @@ class _WelcomeStepState extends State<WelcomeStep> {
   }
 
   Future<void> _loadFolderLocation() async {
-    final fileSystemService = FileSystemService();
+    final fileSystemService = ref.read(fileSystemServiceProvider);
     final location = await fileSystemService.getRootPathDisplay();
     if (mounted) {
       setState(() => _folderLocation = location);

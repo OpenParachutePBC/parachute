@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/models/space.dart';
 import 'package:app/features/spaces/providers/space_provider.dart';
 import 'package:app/features/spaces/providers/space_knowledge_provider.dart';
-import 'package:app/core/services/file_system_service.dart';
+import 'package:app/features/files/providers/local_file_browser_provider.dart';
 
 class LinkCaptureToSpaceScreen extends ConsumerStatefulWidget {
   final String captureId;
@@ -74,7 +74,7 @@ class _LinkCaptureToSpaceScreenState
 
     try {
       final knowledgeService = ref.read(spaceKnowledgeServiceProvider);
-      final fileSystemService = FileSystemService();
+      final fileSystemService = ref.read(fileSystemServiceProvider);
       final spacesPath = await fileSystemService.getSpacesPath();
 
       // Get all spaces to find paths

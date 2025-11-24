@@ -9,8 +9,8 @@ import 'package:app/core/providers/title_generation_provider.dart';
 import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/core/providers/backend_health_provider.dart';
 import 'package:app/core/widgets/gemma_model_download_card.dart';
-import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/logging_service.dart';
+import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/recorder/providers/omi_providers.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/screens/device_pairing_screen.dart';
@@ -96,7 +96,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     // Load Parachute folder path and subfolder names
-    final fileSystemService = FileSystemService();
+    final fileSystemService = ref.read(fileSystemServiceProvider);
     await fileSystemService.initialize(); // Ensure it's initialized
     _syncFolderPath = await fileSystemService.getRootPathDisplay();
     _capturesFolderName = fileSystemService.getCapturesFolderName();
@@ -384,7 +384,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _openParachuteFolder() async {
     try {
-      final fileSystemService = FileSystemService();
+      final fileSystemService = ref.read(fileSystemServiceProvider);
       final folderPath = await fileSystemService.getRootPath();
 
       // Use url_launcher to open the folder in the system's file manager
@@ -449,7 +449,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     try {
-      final fileSystemService = FileSystemService();
+      final fileSystemService = ref.read(fileSystemServiceProvider);
       final success = await fileSystemService.setSubfolderNames(
         capturesFolderName: newCapturesName,
         spacesFolderName: newSpacesName,
@@ -537,7 +537,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
       }
 
-      final fileSystemService = FileSystemService();
+      final fileSystemService = ref.read(fileSystemServiceProvider);
       final oldPath = await fileSystemService.getRootPathDisplay();
       final success = await fileSystemService.setRootPath(selectedDirectory);
 
