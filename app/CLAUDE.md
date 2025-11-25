@@ -1,13 +1,14 @@
 # Frontend Context
 
-**Flutter frontend for Parachute - Claude AI second brain.**
+**Flutter frontend for Parachute - local-first, voice-first capture tool.**
 
 ---
 
 ## Quick Commands
 
 ```bash
-cd app && flutter run -d macos   # Run app
+cd app && flutter run -d macos   # Run on macOS
+cd app && flutter run -d android # Run on Android
 cd app && flutter test           # Run tests
 cd app && flutter clean          # Clean build
 ```
@@ -17,12 +18,13 @@ cd app && flutter clean          # Clean build
 ## Core Architecture
 
 ```
-Screens (UI) → Providers (Riverpod) → Services (API/WebSocket) → Models
+Screens (UI) → Providers (Riverpod) → Services → Local File System
+                                   → Git Sync (optional)
 ```
 
 **Stack:** Dart 3.5+ / Flutter 3.24+ / Riverpod state management
 
-**Platforms:** iOS, Android, Web, macOS (primary), Windows, Linux
+**Primary Platforms:** macOS, Android (iOS coming soon)
 
 ---
 
@@ -50,89 +52,149 @@ testWidgets('Test', (tester) async {
 
 **Missing ProviderScope = crash!**
 
-### ⚠️ WebSocket Event Handling
+### ⚠️ File Paths
 
-**Must call `subscribe(conversationId)` after connecting:**
+**Always use `FileSystemService` - NEVER hardcode paths:**
 ```dart
-await ws.connect();
-ws.subscribe(conversationId);  // Required to receive events!
+✅ final captures = fileSystemService.capturesPath;
+❌ final captures = '~/Parachute/captures/';  // WRONG!
 ```
 
-### ⚠️ API Response Format
+**Why:** Vault location and subfolder names are configurable.
 
-**All collection endpoints return wrapped objects:**
+### ⚠️ Git Sync Race Conditions
+
+**Don't assume GitSync is ready immediately:**
+```dart
+✅ if (gitSyncState.isInitialized) {
+     await gitSync.commitAndPush();
+   }
+
+❌ await gitSync.commitAndPush();  // May fail if not initialized!
+```
+
+### ⚠️ API Response Format (Backend Only)
+
+**If using backend, collection endpoints return wrapped objects:**
 ```dart
 ✅ final Map<String, dynamic> data = response.data;
-   final List<dynamic> spaces = data['spaces'];
+   final List<dynamic> spheres = data['spheres'];
 
-❌ final List<dynamic> spaces = response.data;  // CRASHES!
+❌ final List<dynamic> spheres = response.data;  // CRASHES!
 ```
 
-**Why:** Backend returns `{"spaces": [...]}`, not `[...]`
+---
+
+## Key Services
+
+### FileSystemService (`lib/core/services/file_system_service.dart`)
+
+Central service for all file path management:
+
+- `capturesPath` - Path to captures folder
+- `spheresPath` - Path to spheres folder
+- `vaultPath` - Root vault location
+- Platform-specific defaults
+- Configurable via Settings
+
+### GitService (`lib/core/services/git/git_service.dart`)
+
+Local Git operations using git2dart (libgit2):
+
+- Repository init, status, add, commit
+- GitHub push/pull with PAT authentication
+- Auto-commit on recording save
+
+### StorageService (`lib/features/recorder/services/storage_service.dart`)
+
+Recording persistence:
+
+- Save recordings to captures folder
+- Load recordings from filesystem
+- 30-second cache for performance
+- Triggers Git sync on save
+
+### Transcription Services (`lib/features/recorder/services/`)
+
+Platform-adaptive transcription:
+
+- `parakeet_service.dart` - iOS/macOS (Apple Neural Engine)
+- `sherpa_onnx_service.dart` - Android (ONNX Runtime)
+- `transcription_service_adapter.dart` - Platform detection
+
+### VAD Services (`lib/features/recorder/services/vad/`)
+
+Auto-pause voice recording:
+
+- `simple_vad.dart` - RMS energy-based voice activity detection
+- `smart_chunker.dart` - Silence detection → auto-segment
+- `simple_noise_filter.dart` - High-pass filter (80Hz)
 
 ---
 
-## Key Components
+## App Structure
 
-**API Client** (`lib/core/services/api_client.dart`)
-- Dio HTTP client for REST API
-- Endpoints: spaces, conversations, messages
-- Returns wrapped responses: `{"spaces": [...]}`
+Three main tabs in bottom navigation:
 
-**WebSocket Service** (`lib/core/services/websocket_service.dart`)
-- Real-time connection to `/ws`
-- Events: `message_chunk`, `tool_call`, `tool_call_update`
-- Must subscribe to conversation to receive events
-
-**Message Provider** (`lib/features/chat/providers/message_provider.dart`)
-- Manages chat state (messages, streaming, tool calls)
-- Handles WebSocket events
-- Updates UI via Riverpod
-
-**Chat Screen** (`lib/features/chat/screens/chat_screen.dart`)
-- Main chat interface
-- Message list with auto-scroll
-- Streaming indicators and tool call displays
+1. **Spheres** - Organize themed knowledge containers
+2. **Recorder** - Voice capture with real-time transcription
+3. **Files** - Browse vault directory
 
 ---
 
-## WebSocket Protocol
+## Data Flow: Recording
 
-**Events (Backend → Flutter):**
-- `subscribed` - Subscription confirmed
-- `message_chunk` - Streaming text
-- `tool_call` - Tool execution started
-- `tool_call_update` - Tool status changed
-- `message_complete` - Response finished
+```
+1. User starts recording
+   └─→ AudioService captures audio
+   └─→ VAD monitors for silence
 
-**Commands (Flutter → Backend):**
-- `subscribe` - Subscribe to conversation updates
-- `send_message` - Send user message
+2. On silence (1s)
+   └─→ SmartChunker triggers chunk
+   └─→ TranscriptionServiceAdapter transcribes
+   └─→ UI displays in real-time
+
+3. User stops recording
+   └─→ Final segment transcribed
+   └─→ StorageService saves files
+   └─→ GitService commits (if enabled)
+
+4. Recording appears in list
+   └─→ Loaded from local filesystem
+```
 
 ---
 
-## Code Generation
+## Terminology
 
-Riverpod uses code generation for providers:
+- **Spheres** (not "Spaces") - Themed knowledge containers
+- **Captures** - Voice recordings and notes
+- **Vault** - The `~/Parachute/` folder containing all data
+
+---
+
+## Testing
 
 ```bash
-# Watch for changes (during development)
-flutter pub run build_runner watch --delete-conflicting-outputs
+# Run all tests
+flutter test
 
-# One-time generation
-flutter pub run build_runner build --delete-conflicting-outputs
+# Run specific test file
+flutter test test/features/recorder/services/vad/simple_vad_test.dart
+
+# 116 tests for audio pipeline
+flutter test test/features/recorder/
 ```
-
----
-
-## Reference Code
-
-**Current Rust/React version:** `~/Symbols/Codes/para-claude-v2/`
-- Study `src/components/ChatArea.tsx` for message display patterns
-- Study `src/services/agentService.ts` for WebSocket event handling
 
 ---
 
 ## Documentation
 
-See root `ARCHITECTURE.md` and `docs/` for detailed design docs.
+- Root `CLAUDE.md` - Overall project guidance
+- Root `ARCHITECTURE.md` - System design
+- `app/lib/features/recorder/CLAUDE.md` - Recorder-specific docs
+- `docs/recorder/` - Omi integration guides
+
+---
+
+**Last Updated:** November 24, 2025

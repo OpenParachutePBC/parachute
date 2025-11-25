@@ -2,64 +2,171 @@
 
 > "The mind is like a parachute, it doesn't work if it's not open" — Frank Zappa
 
-**Your open, interoperable second brain powered by Claude AI**
-
-[![Backend CI](https://github.com/ParachuteLabs/parachute/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/ParachuteLabs/parachute/actions/workflows/backend-ci.yml)
-[![Frontend CI](https://github.com/ParachuteLabs/parachute/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/ParachuteLabs/parachute/actions/workflows/frontend-ci.yml)
-[![codecov](https://codecov.io/gh/ParachuteLabs/parachute/branch/main/graph/badge.svg)](https://codecov.io/gh/ParachuteLabs/parachute)
+**Open & interoperable extended mind technology — a connected tool for connected thinking**
 
 ---
 
 ## What is Parachute?
 
-Parachute is a cross-platform application that makes the Agent Client Protocol (ACP) as accessible as Claude Desktop, but with the power of local file access, MCP servers, and true multi-platform availability. It also includes integrated voice recording capabilities with AI transcription.
+Parachute is a local-first, voice-first capture tool that gives people agency over their digital minds. We build AI tooling that supports natural human cognition, not forces you into unnatural patterns.
 
-### Core Features
+**We don't compete with your note system; we feed it.**
 
-**AI Chat with Spaces**
-Each **Space** is a cognitive context - a room in your digital memory palace:
+### Why Parachute?
 
-- Has its own `CLAUDE.md` file (persistent AI memory)
-- Contains relevant files and resources
-- Independent conversation history
-- Optional MCP server configurations
-- Works across all your devices
+The biggest uncaptured market in tech is becoming the tool people trust as their primary interface with all their information. Big tech is trying to be that tool—but they all share one fatal flaw: **they're trying to keep you trapped in their ecosystem**.
 
-**Voice Recorder**
-Capture thoughts and conversations effortlessly:
+Parachute is different:
 
-- Local microphone recording
-- Omi device integration (Bluetooth pendant)
-- AI transcription (local Whisper models)
-- Gemma models for intelligent title generation (3n, 3 1B, or 2B)
-- Recording management and playback
-- Transcript viewing and editing
+- **Open source** isn't just about flexibility—it's about deserving trust
+- **Local-first** means your data stays on your devices; you control what goes to the cloud
+- **Voice-first** because that's how humans actually think—naturally, away from the desk
 
-**Vault-Based File System**
-Your data, your way:
-
-- Configurable vault location (default: `~/Parachute/`)
-- Works with Obsidian, Logseq, and other markdown vaults
-- Customizable subfolder names (`captures/`, `spaces/`)
-- Platform-specific storage (macOS, Android, iOS)
-- All data local and portable
-- No lock-in, standard formats
-
-### Built on Openness
-
-1. **Open Protocols** - Built on ACP & MCP (not proprietary)
-2. **Open Data** - Your files, your control, standard formats
-3. **Open Platforms** - iOS, Android, Web, Desktop
-4. **Open Integration** - Connect to anything via MCP servers
+**Key insight:** "The AI that knows you best wins. But people won't share their real context with tools they don't trust."
 
 ---
 
-## Technology Stack
+## Core Features
 
-- **Backend:** Go 1.25+ (Fiber web framework, SQLite database)
-- **Frontend:** Flutter 3.24+ (iOS, Android, Web, Desktop)
-- **AI Integration:** Agent Client Protocol (ACP) via claude-code-acp
-- **Extensibility:** Model Context Protocol (MCP)
+### Voice-First Capture
+
+Capture thoughts wherever you have them—on a walk, at lunch, or at your desk:
+
+- Auto-pause recording with silence detection (hands-free journaling)
+- On-device transcription (Whisper models, no cloud required)
+- AI-powered title generation (Gemma models)
+- Omi pendant integration (Bluetooth capture device)
+
+### Spheres
+
+Organize your captures into themed knowledge containers:
+
+- Each sphere has a `CLAUDE.md` system prompt for AI conversations
+- Link captures to multiple spheres with different context
+- Cross-pollination of ideas between spheres
+
+### Git-Based Sync
+
+Multi-device synchronization that respects your privacy:
+
+- Auto-commit after save
+- Periodic background sync to GitHub
+- Works with private repositories
+- Standard Git—no proprietary sync service
+
+### Vault Compatibility
+
+Works with your existing tools:
+
+- Configurable vault location (default: `~/Parachute/`)
+- Obsidian and Logseq compatible
+- Standard markdown files
+- No lock-in, portable data
+
+---
+
+## Technology
+
+- **Frontend:** Flutter (macOS, Android primary; iOS coming soon)
+- **Backend:** Go (optional, for AI chat features)
+- **Transcription:** Whisper (on-device)
+- **Title Generation:** Gemma (on-device)
+- **Sync:** Git via git2dart (native libgit2)
+
+---
+
+## Quick Start
+
+```bash
+# Run the Flutter app
+cd app
+flutter run -d macos  # or android, chrome
+
+# Backend (optional - for AI chat features)
+cd backend
+go run cmd/server/main.go
+```
+
+The app includes three main tabs:
+
+- **Recorder** - Voice capture with real-time transcription
+- **Spheres** - Organize and browse knowledge spheres
+- **Files** - Browse your entire vault
+
+---
+
+## Current Status
+
+**Active Development** - Stability Focus (Nov 24, 2025)
+
+**Primary Platforms:** macOS and Android
+
+### Recently Completed
+
+- Auto-pause voice recording with VAD-based silence detection
+- Git sync on macOS and Android
+- Memory leak fixes and reliability improvements
+- 116 unit tests for audio pipeline
+
+### Coming Soon
+
+- Sphere management with JSONL metadata
+- Export integrations (to ChatGPT, Claude, etc.)
+- iOS Git support
+
+See [ROADMAP.md](ROADMAP.md) for detailed progress.
+
+---
+
+## Why Not [Competitor]?
+
+### vs. Voice-First Hardware (Friend, Omi)
+
+They're focused on always-on recording → **privacy nightmare**
+
+Parachute: Local-first = you control what's captured and where it goes. **Prosocial, not surveillance.**
+
+### vs. Note-Taking Tools (Obsidian, Notion)
+
+Desktop-first → **not where thinking actually happens**
+
+Parachute: Voice-first capture that exports to wherever you work. We don't compete; we feed your existing tools.
+
+### vs. AI Assistants (ChatGPT, Claude)
+
+Cloud-dependent → **no privacy, no offline use**
+
+Parachute: Local-first with your actual context. Open source = you can leave anytime but won't want to.
+
+---
+
+## Competitive Comparison
+
+| Feature               | Parachute | Claude Desktop | Voice Memos | Obsidian |
+| --------------------- | --------- | -------------- | ----------- | -------- |
+| Voice-First           | ✅        | ❌             | ✅          | ❌       |
+| Local-First           | ✅        | ❌             | ✅          | ✅       |
+| AI Transcription      | ✅        | ❌             | ❌          | ❌       |
+| Git Sync              | ✅        | ❌             | ❌          | Plugin   |
+| Obsidian Compatible   | ✅        | ❌             | ❌          | ✅       |
+| Cross-Platform        | ✅        | Partial        | Apple only  | ✅       |
+| Open Source           | ✅        | ❌             | ❌          | ❌       |
+
+**Our position:** Free voice capture tool that exports to wherever you work. Build trust first; personalized AI later.
+
+---
+
+## Documentation
+
+- **[Architecture](ARCHITECTURE.md)** - System design and technical decisions
+- **[Roadmap](ROADMAP.md)** - Implementation progress and future plans
+- **[Developer Guide](CLAUDE.md)** - Working with the codebase
+
+### Component Docs
+
+- **Backend:** `backend/CLAUDE.md`
+- **Frontend:** `app/CLAUDE.md`
+- **Recorder:** `docs/recorder/`
 
 ---
 
@@ -67,191 +174,47 @@ Your data, your way:
 
 ```
 parachute/
-├── backend/          # Go backend service (REST API + WebSocket)
-├── app/             # Flutter frontend (cross-platform UI)
-├── docs/            # Shared documentation
-├── scripts/         # Development and deployment scripts
-└── README.md        # This file
+├── app/              # Flutter frontend (primary)
+├── backend/          # Go backend (optional, for AI chat)
+├── docs/             # Documentation
+├── firmware/         # Omi device firmware
+└── README.md         # This file
 ```
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Go 1.25+
-- Flutter 3.24+
-- Node.js 18+ (for claude-code-acp)
-
-### Backend
-
-```bash
-cd backend
-go run cmd/server/main.go
-```
-
-Backend runs on http://localhost:8080
-
-### Frontend (Flutter App)
-
-```bash
-cd app
-flutter run -d macos  # or ios, chrome, etc.
-```
-
-The app includes three main features accessible via bottom navigation:
-
-- **Recorder** - Voice recording with AI transcription and title generation (default screen)
-- **Spaces** - AI conversations with Claude in organized spaces
-- **Files** - Browse and preview files in your vault
-
----
-
-## Documentation
-
-- **[Architecture](ARCHITECTURE.md)** - System design and technical decisions
-- **[API Documentation](http://localhost:8080/api/docs)** - Interactive REST API documentation (Swagger UI)
-- **[Branding](docs/project/branding.md)** - Brand identity and philosophy
-- **[Setup Guide](docs/setup/QUICKSTART.md)** - Environment setup instructions
-- **[Development Workflow](docs/development/workflow.md)** - Day-to-day development
-- **[Roadmap](ROADMAP.md)** - Implementation phases and progress
-
-### Component Documentation
-
-- **Backend:** See `backend/CLAUDE.md`
-- **Frontend:** See `app/CLAUDE.md`
-- **Recorder:** See `docs/recorder/` for Omi integration and testing guides
-
----
-
-## Current Status
-
-🚀 **Active Development** - Local-First Alpha with Complete Recorder
-
-Core functionality is working with full local-first architecture. All recorder features complete!
-
-**Recently Completed (Nov 13, 2025):**
-
-**Recording Features:**
-
-- [x] **Auto-pause voice recording** - VAD-based silence detection (hands-free journaling)
-- [x] **Noise suppression** - OS-level suppression + high-pass filter
-- [x] **Context field with voice input** - Record → transcribe → insert
-- [x] **Background transcription** - Continues even when app backgrounded
-- [x] **Incomplete transcription recovery** - Detect and resume interrupted transcriptions
-- [x] **Immediate persistence** - No data loss on exit
-- [x] **Custom app icon** - Yellow parachute design on all platforms
-- [x] **Android stability** - Permissions and ProGuard fixes
-
-**Sync & Infrastructure:**
-
-- [x] **Git-based sync** - Multi-device synchronization via GitHub
-- [x] **Auto-sync** - Automatic commits after save/update/delete
-- [x] **Manual sync** - UI indicator with file counts
-- [x] **Periodic sync** - Background sync every 5 minutes
-- [x] **Settings persistence** - Git configuration saved across restarts
-- [x] **Local-first architecture** - Complete removal of backend dependencies for recordings
-
-**Core Features Complete:**
-
-- [x] Voice recorder with Omi device support
-- [x] Local AI transcription (Whisper models)
-- [x] Gemma 2B title generation with HuggingFace integration
-- [x] Vault-based architecture with configurable location
-- [x] Obsidian/Logseq compatibility
-- [x] File browser with markdown preview
-- [x] 4-step onboarding flow
-- [x] ACP integration with Claude AI
-- [x] WebSocket streaming conversations
-
-**Next Steps:**
-
-- [ ] Space SQLite Knowledge System - Link captures to spaces with structured metadata
-
-See [ROADMAP.md](ROADMAP.md) for detailed progress and future plans.
-
----
-
-## Target Users
-
-**Primary:**
-
-- Knowledge workers organizing information
-- Researchers managing sources and notes
-- Writers working on multiple projects
-- Consultants managing client contexts
-
-**Future:**
-
-- Developers (complementary to IDE)
-- Teams and organizations
-
----
-
-## Why Parachute?
-
-| Feature                 | Parachute    | Claude Desktop | Claude Code | Zed |
-| ----------------------- | ------------ | -------------- | ----------- | --- |
-| **Mobile Access**       | ✅           | ❌             | ❌          | ❌  |
-| **File Access**         | ✅           | ❌             | ✅          | ✅  |
-| **MCP Servers**         | ✅           | ❌             | ✅          | ✅  |
-| **Spaces/Context**      | ✅           | ❌             | ⚠️          | ⚠️  |
-| **Open Protocol**       | ✅           | ❌             | ✅          | ✅  |
-| **Vault Integration**   | ✅           | ❌             | ❌          | ❌  |
-| **Voice Recording**     | ✅           | ❌             | ❌          | ❌  |
-| **Obsidian Compatible** | ✅           | ❌             | ❌          | ❌  |
-| **Git Sync**            | ✅           | ❌             | ❌          | ❌  |
-| **Use Case**            | Second brain | Chat           | Coding      | IDE |
-
-**Our Niche:** The only open, cross-platform second brain for Claude AI that works with your existing knowledge vault
 
 ---
 
 ## Contributing
 
-This is currently a personal project in early development. Once we reach MVP, we'll open up for contributions.
+This is currently in early development. Once we reach stable MVP, we'll open up for contributions.
+
+The vision: Small core team, rich community contribution ecosystem (Obsidian model).
+
+---
+
+## Company
+
+**Parachute** is a Colorado Public Benefit Corporation—legally bound to mission, not just profit maximization.
+
+Built by engineers who spent a decade frustrated with note-taking tools that never quite work. The combination of engineering rigor + deep study of how humans actually think is exactly what's needed to build tools that serve human cognition rather than extracting from it.
 
 ---
 
 ## License
 
-TBD - Will be decided before public release
+AGPL - Ensures the tool remains by and for the community.
 
 ---
 
 ## Attribution
 
-Parachute uses the following open models and technologies:
-
 ### Google Gemma
 
-Gemma models for on-device AI title generation are used under the [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
-
-- **Models Available:** Gemma 3n E4M3 (recommended, ~550MB), Gemma 3 1B IT, Gemma 2B IT
-- **Provider:** Google DeepMind
-- **License:** [Gemma Terms of Use](https://ai.google.dev/gemma/terms) (allows commercial use and redistribution)
-- **Recommended:** Gemma 3n - optimized for mobile devices with excellent performance/size ratio
-- **Hosting:** Hosted on Parachute CDN for easy download (no account required)
-
-**Citation:**
-
-> Gemma Team, Google DeepMind. "Gemma: Open Models Based on Gemini Research and Technology." 2024. https://ai.google.dev/gemma
+Gemma models for on-device title generation under [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
 
 ### OpenAI Whisper
 
-Whisper models for speech-to-text transcription are used under the MIT License.
-
-- **Provider:** OpenAI
-- **License:** MIT
-- **Source:** https://github.com/openai/whisper
+Whisper models for transcription under MIT License.
 
 ---
 
-## Contact
-
-Questions? Ideas? Reach out: [contact info TBD]
-
----
-
-**Status:** Active Development (Alpha) - Last Updated: November 20, 2025
+**Status:** Active Development - Last Updated: November 24, 2025

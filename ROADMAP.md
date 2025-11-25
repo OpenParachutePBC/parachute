@@ -1,77 +1,72 @@
 # Parachute Development Roadmap
 
-**Last Updated**: November 13, 2025
+**Last Updated**: November 24, 2025
 
 ---
 
-## Current Focus: Space SQLite Knowledge System
+## Vision
 
-**Status**: 🔜 Next Up
-**Priority**: P0
+**Parachute** is open & interoperable extended mind technology—a connected tool for connected thinking.
 
-All recorder features are complete! Next up: resuming the Space SQLite Knowledge System that was deferred when we pivoted to local-first recording.
+We build local-first, voice-first AI tooling that gives people agency over their digital minds.
 
-**See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
+**Go-to-Market Wedge:**
+1. Free capture tool (current focus) - Best-in-class voice capture
+2. Build trust - Become the tool people trust with their thoughts
+3. Add integrations - Connect to more tools via MCP and open protocols
+4. Personalized AI - Offer local LLM with deep personal context
+5. Subscription conversion - $20/month for personalized AI
 
-### Recent Major Achievement: Auto-Pause Voice Recording ✅
+---
+
+## Current Focus: Stability & Sphere Management
+
+**Status**: Stability focus (Nov 24, 2025)
+**Primary Platforms**: macOS and Android (iOS coming soon)
+
+### Recent Reliability Work (Nov 20-24, 2025)
+
+- Critical memory leak fixes and dead code removal
+- Stylistic lint fixes
+- Async bug fixes and race condition prevention
+- GitSync initialization race condition fix
+- Standardized FileSystemService usage
+
+### Recent Major Achievement: Auto-Pause Voice Recording
 
 **Completed**: November 10, 2025
 
-Automatic silence detection with intelligent noise suppression is now **fully functional**:
+Automatic silence detection with intelligent noise suppression:
 
-- ✅ VAD (Voice Activity Detection) - RMS energy-based speech detection
-- ✅ SmartChunker - Auto-segment on 1s silence
-- ✅ OS-level noise suppression (echoCancel, autoGain, noiseSuppress)
-- ✅ High-pass filter (80Hz cutoff) - Removes low-frequency rumble
-- ✅ Visual debug overlay with real-time audio graphs
-- ✅ Settings toggle for auto-pause and debug mode
-- ✅ 116 comprehensive tests covering all components
+- VAD (Voice Activity Detection) - RMS energy-based speech detection
+- SmartChunker - Auto-segment on 1s silence
+- OS-level noise suppression (echoCancel, autoGain, noiseSuppress)
+- High-pass filter (80Hz cutoff) - Removes low-frequency rumble
+- 116 comprehensive tests covering all components
 
 **Audio Pipeline**: `Mic → OS Suppression → High-Pass Filter → VAD → SmartChunker → Whisper`
 
-**Implementation Docs**:
+### Recent Major Achievement: Git-Based Sync
 
-- [docs/implementation/noise-filtering-phase1.md](docs/implementation/noise-filtering-phase1.md) - Current implementation
-- [docs/implementation/auto-pause-branch-audit.md](docs/implementation/auto-pause-branch-audit.md) - Complete audit
-- [docs/implementation/auto-pause-vad-implementation.md](docs/implementation/auto-pause-vad-implementation.md) - Research
+**Completed**: November 17, 2025
 
-**Result**: Hands-free journaling with natural pauses. No manual pause button needed!
+Multi-device synchronization using Git:
 
-### Recent Major Achievement: Git-Based Sync ✅
-
-**Completed**: November 6, 2025
-
-Multi-device synchronization using Git is now **fully functional**. All data in `~/Parachute/` syncs via GitHub with:
-
-- ✅ Auto-sync after save/update/delete operations
-- ✅ Manual sync with UI indicator showing file counts
-- ✅ Periodic background sync (every 5 minutes)
-- ✅ Settings persistence across app restarts
-- ✅ Complete local-first architecture (no backend required for recordings)
-
-**See**: [docs/implementation/github-sync-implementation.md](docs/implementation/github-sync-implementation.md)
-
-### Strategic Architecture
-
-The **local-first architecture** means:
-
-- Git handles sync (not custom backend)
-- Backend only for agentic AI tasks (future)
-- Standard Git workflows (familiar to developers)
-- E2E encrypted repos for privacy
-- Works with any Git hosting (GitHub, GitLab, self-hosted)
-
-**Next Feature** (Space SQLite) is **deferred** until UI polish is complete.
+- Auto-sync after save/update/delete operations
+- Manual sync with UI indicator
+- Periodic background sync (every 5 minutes)
+- Native Git on macOS and Android
+- iOS support pending
 
 ---
 
 ## Development Phases
 
-### ✅ Completed
+### Completed
 
 #### Foundation Phase (Sep-Oct 2025)
 
-- [x] Backend architecture (Go + Fiber + SQLite)
+- [x] Backend architecture (Go + Fiber + SQLite) - now optional
 - [x] Frontend architecture (Flutter + Riverpod)
 - [x] ACP integration with Claude
 - [x] WebSocket streaming for conversations
@@ -79,251 +74,172 @@ The **local-first architecture** means:
 
 #### Recorder Integration (Oct 2025)
 
-- [x] **Phase 1**: Basic merge of recorder into main app
-- [x] **Phase 2**: Visual unification
-- [x] **Phase 3a**: Local file system foundation (`~/Parachute/`)
-- [x] **Phase 3b**: File browser with markdown preview
-- [x] Omi device integration with firmware updates
 - [x] Local Whisper transcription (on-device models)
-- [x] Gemma 2B title generation with HuggingFace integration
+- [x] Gemma 2B title generation
+- [x] Omi device integration with firmware updates
 - [x] Transcript display and editing
 
 #### Vault System (Nov 2025)
 
 - [x] Configurable vault location (platform-specific defaults)
-- [x] Configurable subfolder names (captures/, spaces/)
+- [x] Configurable subfolder names
 - [x] Obsidian/Logseq compatibility
-- [x] FileSystemService architecture for path management
 - [x] 4-step onboarding flow
-- [x] Model download management (Whisper + Gemma)
-- [x] HuggingFace token integration
-- [x] Background downloads with progress persistence
-- [x] Storage calculation and display
+- [x] Model download management
 
 #### Local-First Recording (Nov 5, 2025)
 
 - [x] Live transcription UI with journal-style interface
-- [x] Manual pause-based chunking for intentional thought capture
-- [x] Instant screen navigation (non-blocking initialization)
-- [x] Complete final segment transcription before save
+- [x] Auto-pause VAD-based chunking
 - [x] Recordings load from local filesystem (no backend)
-- [x] Markdown + WAV files saved to `~/Parachute/captures/`
-- [x] Immediate discard without unnecessary processing
-- [x] Eliminated backend dependency for recording flow
+- [x] Markdown + audio files saved to `~/Parachute/captures/`
 
-#### Recording UI Enhancements (Nov 6, 2025)
+#### Git-Based Sync (Nov 6-17, 2025)
 
-- [x] Added **context field** to recordings (space-specific interpretation)
-- [x] Inline editing for title, transcript, and context
-- [x] Unified RecordingDetailScreen with clean, focused design
-- [x] Periodic refresh for processing status updates
-- [x] Link captures to spaces UI integration
-
-#### Auto-Pause Voice Recording ✅ (COMPLETED - Nov 7-10, 2025)
-
-- [x] **Week 1**: VAD, Resampler, SmartChunker (ports from RichardTate)
-- [x] AutoPauseTranscriptionService with VAD-based chunking
-- [x] Settings toggle for auto-pause mode
-- [x] UI integration with adaptive controls
-- [x] OS-level noise suppression (echoCancel, autoGain, noiseSuppress)
-- [x] High-pass filter (80Hz cutoff) for low-frequency noise removal
-- [x] Visual debug overlay with real-time audio graphs
-- [x] 116 comprehensive unit tests (all passing)
-- [x] Complete documentation and implementation audit
-
-**Audio Pipeline**: Mic → OS Suppression → High-Pass Filter → VAD → SmartChunker → Whisper
-
-**Implementation Docs**:
-
-- [docs/implementation/noise-filtering-phase1.md](docs/implementation/noise-filtering-phase1.md)
-- [docs/implementation/auto-pause-branch-audit.md](docs/implementation/auto-pause-branch-audit.md)
-
-**Note**: RNNoise FFI (Week 2 from original plan) deferred - OS suppression + high-pass filter proved sufficient for typical environments.
-
-#### Git-Based Sync Foundation ✅ (COMPLETED - Nov 6, 2025)
-
-- [x] **Phase 1**: Library selection and POC with git2dart
-- [x] **Phase 2**: GitHub integration with PAT authentication
-- [x] **Phase 3**: Core sync operations (init, commit, push, pull)
-- [x] **Phase 4**: Auto-sync triggers after save/update/delete
-- [x] GitService implementation with git2dart
-- [x] Settings screen for GitHub configuration
-- [x] Secure token storage via flutter_secure_storage
-- [x] Manual sync with UI indicator showing file counts
+- [x] git2dart integration for native Git operations
+- [x] GitHub OAuth with repository-scoped access
 - [x] Auto-commit after recording save
-- [x] Periodic background sync (every 5 minutes)
-- [x] Settings persistence across app restarts
-- [x] Push and pull operations with GitHub PAT
-- [x] Complete local-first architecture
+- [x] Periodic background sync
+- [x] Android SSL support with OpenSSL certificates
 
-**Status**: ✅ Git sync MVP complete and fully functional
+#### Recording UI Polish (Nov 6-13, 2025)
 
-**See**: [docs/implementation/github-sync-implementation.md](docs/implementation/github-sync-implementation.md)
-
-#### Recording UI Polish ✅ (COMPLETED - Nov 6-13, 2025)
-
-- [x] Context field with voice input (record → transcribe → insert)
-- [x] Background transcription service (continues when app backgrounded)
-- [x] Incomplete transcription detection and resume
-- [x] Immediate recording persistence (no data loss on exit)
-- [x] Android permissions and ProGuard fixes
-- [x] App branding ("Parachute" on all platforms)
-- [x] Custom app icon (yellow parachute design)
+- [x] Context field with voice input
+- [x] Background transcription service
+- [x] Immediate recording persistence
 - [x] Google Keep-inspired notes grid/list view
+- [x] Custom app icon (yellow parachute design)
 
-**Status**: ✅ Recording UI polish complete
+#### Reliability Improvements (Nov 20-24, 2025)
 
----
+- [x] Memory leak fixes
+- [x] Race condition prevention
+- [x] Code cleanup and standardization
+- [x] FileSystemService usage standardization
 
 ---
 
 ## Active Development
 
-### 🎯 Current Status (Nov 13, 2025)
+### Current Status (Nov 24, 2025)
 
-**All recorder features complete!** Ready to resume Space SQLite Knowledge System.
+**Focus**: Stability and reliability before new features.
+
+**Next**: Sphere management with JSONL metadata (not SQLite).
 
 ---
 
 ## Near-Term Roadmap (Q4 2025 - Q1 2026)
 
-### 🔜 Backend Git Integration
+### Sphere Management
 
 **Priority**: P1
-**Status**: Deferred until frontend Git sync is stable
+**Status**: Next up
 **Timeline**: December 2025
 
-- Backend uses `go-git` library for Go
-- Pull before running agentic AI tasks
-- Commit AI-generated content
-- Push results back to repo
-- Verify frontend/backend on compatible commits
+Organize captures into themed spheres with JSONL metadata:
 
-**Why**: Enable backend to work on same Git-synced data
+- Create/edit/delete spheres
+- Link captures to spheres with context
+- Sphere-specific CLAUDE.md system prompts
+- sphere.jsonl for git-friendly metadata storage
 
-### 🔜 Space SQLite Knowledge System
+**Why JSONL over SQLite:**
+- Human-readable and git-friendly
+- No binary merge conflicts
+- Simple append-only operations
+- Easy to parse and debug
 
-**Priority**: P1
-**Status**: Deferred until Git sync is complete
-**Timeline**: January 2026
-
-Link captures to spaces with space-specific context while keeping notes canonical.
-
-- Backend database service for note linking
-- Frontend UI for linking recordings to spaces
-- Space note browser
-- Chat integration (reference notes in conversations)
-- CLAUDE.md template variables
-
-**See**: [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md)
-
-**Why**: Make recordings more useful by connecting them to AI conversation contexts
-
-### 🔜 Smart Note Management
+### Export Integrations
 
 **Priority**: P1
 **Status**: Backlog
+**Timeline**: January 2026
 
-- Auto-suggest spaces when saving recordings
+Export captures to external AI tools:
+
+- Copy transcript for ChatGPT/Claude
+- Export with context for AI conversations
+- Markdown export for Obsidian/Logseq
+
+**Why**: Free capture tool that exports to wherever you work.
+
+### iOS Git Support
+
+**Priority**: P1
+**Status**: Pending (waiting for team capacity)
+**Timeline**: Q1 2026
+
+- Enable native Git sync on iOS
+- Build ios-compatible git2dart binaries
+
+### Smart Capture Organization
+
+**Priority**: P2
+**Status**: Backlog
+
+- Auto-suggest spheres when saving recordings
 - Tag suggestions based on content
-- Automatic context generation using Claude
-- "Similar notes" recommendations
-
-**Why**: Reduce manual work, improve knowledge organization
+- "Similar captures" recommendations
 
 ---
 
-## Medium-Term Roadmap (Q1 2026)
+## Medium-Term Roadmap (Q1-Q2 2026)
+
+### MCP Integrations
+
+**Priority**: P2
+**Status**: Concept
+
+Connect Parachute to other tools via Model Context Protocol:
+
+- Read captures in Claude Desktop
+- Surface relevant context automatically
+- Integration with other MCP-compatible tools
+
+**Why**: Open protocols for interoperability.
+
+### Local LLM with Personal Context
+
+**Priority**: P2
+**Status**: Vision
+
+- On-device LLM (Llama, Gemma) with your actual context
+- Privacy-preserving AI assistance
+- No cloud dependency for AI features
+
+**Key insight**: "Once Parachute knows your context, why use a generic ChatGPT?"
 
 ### Knowledge Graph Visualization
 
 **Priority**: P2
 **Status**: Concept
 
-- Visual map of notes, spaces, and relationships
-- "What connects these two spaces?"
+- Visual map of captures, spheres, and relationships
 - Timeline view of knowledge evolution
-- Cluster detection (similar notes)
-
-**Why**: Enable visual discovery and pattern recognition
-
-### Custom Space Templates
-
-**Priority**: P2
-**Status**: Concept
-
-Create templates for common space types:
-
-- Project spaces (tasks, milestones, issues)
-- Research spaces (papers, citations, hypotheses)
-- Personal spaces (habits, reflections, goals)
-- Creative spaces (ideas, drafts, inspirations)
-
-**Why**: Jumpstart space setup, encourage best practices
-
-### Advanced Search & Query
-
-**Priority**: P2
-**Status**: Concept
-
-- Natural language queries ("farming notes from last month")
-- Semantic search using embeddings
-- Cross-space queries
-- Export query results
-
-**Why**: Find information faster, discover connections
+- Pattern recognition across spheres
 
 ---
 
 ## Long-Term Vision (2026+)
 
-### Collaborative Spaces
+### Plugin Ecosystem (Obsidian Model)
 
-**Priority**: P3
-**Status**: Vision
-
-- Share spaces with team members
-- Permissions per space
-- Sync while maintaining privacy for personal notes
-- Comments and discussions
-
-**Why**: Enable team knowledge management
-
-### Mobile-First Recorder
-
-**Priority**: P2
-**Status**: Vision
-
-- Native mobile app with better recording
-- Background recording with Omi
-- Offline-first sync
-- Widget for quick capture
-
-**Why**: Most voice notes are captured on mobile
-
-### Plugin System
-
-**Priority**: P3
-**Status**: Vision
-
+- Rich community contribution ecosystem
 - Space plugins for custom functionality
-- Custom visualizations
-- Integration with external tools (Obsidian, Notion, etc.)
-- API for third-party apps
+- Small core team, massive extensibility
 
-**Why**: Extensibility without bloat
+### Collaborative Spheres
+
+- Share spheres with team members
+- Permissions per sphere
+- Sync while maintaining privacy for personal content
 
 ### AI-Powered Insights
 
-**Priority**: P3
-**Status**: Vision
-
-- Weekly/monthly summaries of notes
-- Pattern detection across spaces
-- Proactive suggestions ("You haven't reviewed farming notes in 2 weeks")
-- Automated tagging and categorization
-
-**Why**: Surface insights user might miss
+- Weekly summaries of captures
+- Pattern detection across spheres
+- Proactive suggestions for organization
 
 ---
 
@@ -332,31 +248,21 @@ Create templates for common space types:
 ### Small Enhancements
 
 - [ ] Export conversation as markdown
-- [ ] Duplicate space (with or without content)
-- [ ] Archive old conversations
 - [ ] Bulk operations (move, delete, tag)
-- [ ] Keyboard shortcuts
 - [ ] Dark mode refinements
-- [ ] Custom color schemes per space
 - [ ] Note version history
 
 ### Recorder Improvements
 
 - [ ] Audio bookmarks during recording
-- [ ] Real-time transcription preview
 - [ ] Speaker diarization (multiple speakers)
-- [ ] Export formats (MP3, FLAC)
-- [ ] Noise reduction preprocessing
 - [ ] Variable playback speed
 
 ### Integration Requests
 
-- [ ] Import from Apple Notes
-- [ ] Import from Voice Memos
-- [ ] Export to Obsidian
-- [ ] Zapier/IFTTT webhooks
+- [ ] Import from Apple Voice Memos
+- [ ] Export to Obsidian format
 - [ ] Calendar integration
-- [ ] Email-to-Parachute
 
 ---
 
@@ -365,45 +271,14 @@ Create templates for common space types:
 ### High Priority
 
 - [ ] Improve error handling and user feedback
-- [ ] Add comprehensive logging
-- [ ] Performance optimization (large conversations)
+- [ ] Performance optimization (large capture lists)
 - [ ] Memory usage profiling
-- [ ] Implement rate limiting
-- [ ] Add request validation middleware
 
 ### Medium Priority
 
 - [ ] Increase test coverage (target: 80%)
 - [ ] E2E testing framework
 - [ ] CI/CD pipeline
-- [ ] Automated backup system
-- [ ] Database migration tooling
-- [ ] API versioning strategy
-
-### Low Priority
-
-- [ ] Code documentation (GoDoc)
-- [ ] API documentation (OpenAPI/Swagger)
-- [ ] Contributing guidelines
-- [ ] Architectural decision records (ADRs)
-
----
-
-## Research & Exploration
-
-### Active Research
-
-- [ ] Optimal embedding models for semantic search
-- [ ] Local LLM integration (Llama, Mistral)
-- [ ] Graph database alternatives (SQLite vs Neo4j)
-- [ ] Differential sync algorithms
-
-### Future Exploration
-
-- [ ] Real-time collaboration (CRDT)
-- [ ] Homomorphic encryption for cloud sync
-- [ ] Federated learning for privacy-preserving insights
-- [ ] Progressive web app (PWA) version
 
 ---
 
@@ -411,12 +286,12 @@ Create templates for common space types:
 
 Things we've explicitly decided **not** to pursue:
 
-- ❌ Social features (likes, followers, feeds)
-- ❌ Ads or attention-harvesting mechanics
-- ❌ Required cloud sync (always local-first)
-- ❌ Lock-in formats (use markdown, standard SQLite)
-- ❌ Cryptocurrency/blockchain integration
-- ❌ AI training on user data without explicit consent
+- Social features (likes, followers, feeds)
+- Ads or attention-harvesting mechanics
+- Required cloud sync (always local-first)
+- Lock-in formats (use markdown, JSONL)
+- AI training on user data without explicit consent
+- Always-on recording (prosocial, not surveillance)
 
 ---
 
@@ -424,79 +299,79 @@ Things we've explicitly decided **not** to pursue:
 
 ### November 2025
 
-**Strategic Pivot to Git-Based Sync (Nov 5)**
+**Spaces renamed to Spheres (Nov 24)**
 
-- ✅ **Major architectural decision**: Use Git for multi-device sync instead of custom backend sync
-- ✅ Git replaces backend sync infrastructure (backend now only for agentic AI)
-- ✅ Chose `git2dart` over pure Dart implementation for performance
-- ✅ GitHub Personal Access Tokens for initial auth (SSH keys later)
-- ✅ Auto-commit strategy: one commit per recording
-- ✅ Frontend and backend sync to same Git repository
+- "Sphere" speaks to holistic, interconnected nature of knowledge
+- Ideas don't live in flat boxes but in overlapping domains of thought
+- A capture can exist in multiple spheres simultaneously
 
-**Local-First Recording (Nov 5)**
+**JSONL over SQLite for Sphere Metadata (Nov 24)**
 
-- ✅ Live transcription UI with manual pause-based chunking
-- ✅ Eliminated backend dependency for recording/storage
-- ✅ All recordings save to `~/Parachute/captures/` (markdown + audio)
-- ✅ Non-blocking UI initialization for instant screen navigation
-- ✅ Complete final segment transcription before save
+- Git-friendly (no binary merge conflicts)
+- Human-readable (can edit with any text editor)
+- Simple append-only operations
+- SQLite may return for specific use cases, but JSONL is the default
 
-**Vault System (Nov 1)**
+**Reliability Focus (Nov 20-24)**
 
-- ✅ Vault-based architecture with configurable location (supports Obsidian/Logseq)
-- ✅ Configurable subfolder names for flexibility
-- ✅ Platform-specific storage defaults (macOS, Android, iOS)
-- ✅ HuggingFace token integration for gated models
-- ✅ Background download support with progress persistence
+- Memory leak fixes prioritized over new features
+- Race condition prevention in GitSync
+- Code cleanup and standardization
+
+**Git Sync Complete (Nov 17)**
+
+- Native Git on macOS and Android
+- iOS pending (waiting for team capacity)
+- Auto-commit on save, periodic background sync
+
+**Auto-Pause Recording Complete (Nov 10)**
+
+- VAD-based silence detection
+- OS-level noise suppression sufficient (RNNoise deferred)
+- 116 unit tests for audio pipeline
 
 ### October 2025
 
-- ✅ Decided on space.sqlite approach over centralized knowledge graph
-- ✅ Chose to keep notes canonical in captures/ (not duplicate)
-- ✅ Adopted vault folder as single root for all data
-- ✅ Prioritized local-first over cloud-first architecture
+- Vault-based architecture (Obsidian/Logseq compatible)
+- Local-first over cloud-first
+- Notes canonical in captures/ (not duplicated)
 
 ### September 2025
 
-- ✅ Selected Go + Fiber for backend (over Node.js/Python)
-- ✅ Selected Flutter for frontend (over React Native/Swift)
-- ✅ Chose ACP protocol for Claude integration
-- ✅ Decided on SQLite for MVP (PostgreSQL for later)
-
----
-
-## How to Contribute Ideas
-
-Have an idea for Parachute? Here's how to propose it:
-
-1. **Check existing docs** - Review this roadmap and feature docs
-2. **Open an issue** - Describe the problem and proposed solution
-3. **Discuss trade-offs** - What's gained? What's the cost?
-4. **Prototype if possible** - Code speaks louder than words
-5. **Iterate** - Feedback shapes the best features
+- Go + Fiber for backend (optional now)
+- Flutter + Riverpod for frontend
+- SQLite for backend metadata
 
 ---
 
 ## Roadmap Principles
 
 1. **Local-First**: User owns their data, always
-2. **Privacy by Default**: No tracking, no ads, no surveillance
-3. **Open & Interoperable**: Use standard formats, enable export
-4. **Thoughtful AI**: Enhance thinking, don't replace it
-5. **Sustainable Pace**: Quality over speed, avoid burnout
-6. **User-Driven**: Build what users need, not what's trendy
+2. **Voice-First**: Natural capture where thinking actually happens
+3. **Open & Interoperable**: Standard formats, no lock-in
+4. **Privacy by Default**: No tracking, no ads, prosocial
+5. **Trust Through Openness**: Open source deserves trust
+6. **Sustainable Pace**: Quality over speed
+
+---
+
+## Key Milestones
+
+- **December 5, 2025**: Pitch event (investor meeting)
+- **January 2026**: Target first close ($50-75K)
+- **April 2026**: CU New Venture Challenge
+- **Spring 2026**: Possible Techstars Boulder application
 
 ---
 
 ## Related Documents
 
-- [docs/features/space-sqlite-knowledge-system.md](docs/features/space-sqlite-knowledge-system.md) - Current feature in development
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System design and technical decisions
-- [CLAUDE.md](CLAUDE.md) - Developer guidance for working with this codebase
-- [docs/archive/merger-plan.md](docs/archive/merger-plan.md) - Historical: How we merged recorder into main app
+- [CLAUDE.md](CLAUDE.md) - Developer guidance
+- [docs/implementation/](docs/implementation/) - Implementation details
 
 ---
 
-**Next Update**: After completing Space SQLite Knowledge System Phase 1
+**Next Update**: After Sphere management implementation
 
 **Feedback**: Open an issue or discussion on GitHub

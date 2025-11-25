@@ -1,21 +1,31 @@
 # Parachute - System Architecture
 
-**Version:** 2.2
-**Date:** November 6, 2025
-**Status:** Active Development - Local-First with Git Sync
+**Version:** 3.0
+**Date:** November 24, 2025
+**Status:** Active Development - Local-First, Voice-First
+
+---
+
+## Vision
+
+**Parachute** is open & interoperable extended mind technology—a connected tool for connected thinking.
+
+We build local-first, voice-first AI tooling that gives people agency over their digital minds. Technology should support natural human cognition, not force us into unnatural patterns.
+
+**Key Insight:** "The AI that knows you best wins. But people won't share their real context with tools they don't trust. Local-first + voice-first = more honest, richer context = better AI = stronger lock-in through value, not coercion."
 
 ---
 
 ## Overview
 
-Parachute is a **local-first** cross-platform second brain application that provides a beautiful interface for interacting with Claude AI via the Agent Client Protocol (ACP). All data lives in a configurable vault on your device, with optional Git-based synchronization for multi-device access. The Flutter frontend is the primary interface, with the Go backend serving as an optional component for long-running agentic AI tasks.
+Parachute is a **local-first, voice-first** cross-platform capture tool that exports to wherever you work. We don't compete with your note system; we feed it.
 
 **Core Philosophy**: "One folder, one file system that organizes your data to enable it to be open and interoperable"
 
 All user data lives in a **configurable vault** (default: `~/Parachute/`):
 
-- **Captures** (`{vault}/{captures}/`) - Canonical voice recordings and notes (subfolder name configurable)
-- **Spaces** (`{vault}/{spaces}/`) - AI contexts with system prompts and knowledge databases (subfolder name configurable)
+- **Captures** (`{vault}/{captures}/`) - Voice recordings and notes (subfolder name configurable)
+- **Spheres** (`{vault}/{spheres}/`) - Themed knowledge containers with system prompts (subfolder name configurable)
 
 **Platform-Specific Defaults:**
 
@@ -23,9 +33,11 @@ All user data lives in a **configurable vault** (default: `~/Parachute/`):
 - **Android:** `/storage/emulated/0/Android/data/.../files/Parachute`
 - **iOS:** App Documents directory
 
+**Primary Platforms:** macOS and Android (iOS coming soon)
+
 **Vault Compatibility:** Works with existing Obsidian, Logseq, and other markdown-based note-taking vaults. Users can point Parachute at their existing vault and configure subfolder names to match their organization.
 
-This architecture enables notes to "cross-pollinate" between spaces while remaining canonical and portable.
+This architecture enables notes to "cross-pollinate" between spheres while remaining canonical and portable.
 
 ---
 
@@ -36,11 +48,11 @@ This architecture enables notes to "cross-pollinate" between spaces while remain
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Flutter Frontend                        │
-│           (iOS, Android, macOS, Windows, Linux)             │
-│                        PRIMARY INTERFACE                     │
+│                  (macOS, Android primary)                   │
+│                    PRIMARY INTERFACE                        │
 │                                                             │
 │  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────┐  │
-│  │  Spaces  │  │ Recorder │  │   Files   │  │ Settings │  │
+│  │ Spheres  │  │ Recorder │  │   Files   │  │ Settings │  │
 │  │  Screen  │  │  Screen  │  │  Browser  │  │  Screen  │  │
 │  └──────────┘  └──────────┘  └───────────┘  └──────────┘  │
 │       │              │              │              │        │
@@ -64,7 +76,7 @@ This architecture enables notes to "cross-pollinate" between spaces while remain
           │             ▼
           │    ┌─────────────────┐
           │    │  Git Repository │
-          │    │  (GitHub/GitLab)│
+          │    │  (GitHub)       │
           │    └─────────────────┘
           │
           ▼
@@ -73,12 +85,12 @@ This architecture enables notes to "cross-pollinate" between spaces while remain
 │                          │
 │  ~/Parachute/            │
 │  ├── captures/           │
-│  │   ├── *.wav          │
+│  │   ├── *.opus         │
 │  │   ├── *.md           │
 │  │   └── *.json         │
-│  └── spaces/             │
+│  └── spheres/            │
 │      ├── CLAUDE.md       │
-│      └── space.sqlite    │
+│      └── sphere.jsonl    │
 └──────────────────────────┘
 
 ┌────────────────────────────────────────────────────────────┐
@@ -88,34 +100,38 @@ This architecture enables notes to "cross-pollinate" between spaces while remain
 │  • Pulls from same Git repo                               │
 │  • Runs long-running AI workflows                         │
 │  • Commits results back to Git                            │
-│  • No longer required for recording/storage               │
+│  • Not required for recording/storage                     │
 └────────────────────────────────────────────────────────────┘
 ```
 
-### Key Differences from Previous Architecture
+### Key Architectural Principles
 
 1. **Flutter is Primary**: Backend is optional, not required
-2. **Git for Sync**: Replaces custom HTTP sync endpoints
+2. **Git for Sync**: Standard Git operations to GitHub
 3. **Local Services**: Whisper, storage, Git all run in Flutter
-4. **File-First**: All data in `~/Parachute/`, no database required
+4. **File-First**: All data in `~/Parachute/`, human-readable formats
 5. **Backend Role**: Future agentic AI only, not daily use
+6. **JSONL for Metadata**: Git-friendly, human-readable, no binary databases
 
 ---
 
-## Data Flow: Recording a Voice Note (Local-First)
+## Data Flow: Recording a Voice Note
 
 ```
 1. User records audio in RecordingScreen
    └─→ Flutter AudioRecorder captures audio
+   └─→ VAD monitors for silence (auto-pause mode)
 
-2. User stops recording
-   └─→ Saves WAV file to ~/Parachute/captures/
-   └─→ Metadata saved to JSON file
+2. On silence (1s) or manual pause
+   └─→ SmartChunker triggers transcription of chunk
+   └─→ Local Whisper transcribes segment
+   └─→ Display in real-time
 
-3. Transcription (Local Whisper)
-   └─→ WhisperService loads local model
-   └─→ Transcribes audio on-device
-   └─→ Saves markdown transcript to captures/
+3. User stops recording
+   └─→ Final segment transcribed
+   └─→ Saves Opus audio to ~/Parachute/captures/
+   └─→ Saves markdown transcript
+   └─→ Saves JSON metadata
 
 4. Title Generation (Optional - Gemma 2B)
    └─→ TitleGenerationService generates smart title
@@ -137,135 +153,55 @@ This architecture enables notes to "cross-pollinate" between spaces while remain
 - Git sync is optional and asynchronous
 - Backend not involved in recording flow
 - Works completely offline
-
----
-
-## Communication Flow: Sending a Message (With Backend)
-
-```
-1. User types message in Flutter app
-   └─→ Flutter UI captures input
-
-2. Flutter calls REST API
-   └─→ POST /api/messages
-       {
-         "conversation_id": "uuid",
-         "content": "Tell me about X"
-       }
-
-3. Go backend receives request
-   └─→ Stores user message in database
-   └─→ Retrieves conversation history
-   └─→ Loads Space's CLAUDE.md file
-   └─→ Builds ACP prompt with context
-
-4. Backend calls ACP via claude-code-acp subprocess
-   └─→ JSON-RPC request: session/prompt
-   └─→ Includes: message + history + CLAUDE.md context
-
-5. ACP streams response via session/update notifications
-   └─→ Backend receives: text chunks, tool calls, permissions
-
-6. Backend emits WebSocket events to Flutter
-   └─→ Events: message_chunk, tool_call, permission_request
-
-7. Flutter receives events and updates UI in real-time
-   └─→ Displays streaming text
-   └─→ Shows tool execution
-   └─→ Prompts for permissions if needed
-
-8. On completion, backend stores assistant message
-   └─→ Database updated with full conversation
-```
+- Audio pipeline: `Mic → OS Suppression → High-Pass Filter → VAD → SmartChunker → Whisper`
 
 ---
 
 ## Technology Choices
 
-### Backend: Go
-
-**Why Go?**
-
-- Single binary deployment (~10-50MB memory footprint)
-- Excellent concurrency (goroutines) for WebSocket handling
-- AI-friendly (works great with AI coding assistants)
-- Fast compilation, simple syntax, reliable
-- Great for web APIs
-
-**Framework:** Fiber
-
-- Express-like API (familiar to many developers)
-- Built-in WebSocket support
-- Fast and lightweight
-- Great documentation
-
-**Database:** SQLite
-
-- Embedded (no separate server needed)
-- Perfect for single-user/small deployments
-- Works everywhere (mobile, desktop, server)
-- Easy to back up (single file)
-- Migration path to PostgreSQL when needed
-
-### Frontend: Flutter
+### Frontend: Flutter (PRIMARY)
 
 **Why Flutter?**
 
-- One codebase → iOS, Android, Web, Desktop
+- One codebase → iOS, Android, macOS, Windows, Linux
 - Beautiful UI with 60/120fps animations
 - Hot reload for fast development
-- Material Design 3 + Cupertino widgets
-- Massive ecosystem, Google-backed
+- Primary development platform
 
 **State Management:** Riverpod
 
 - Type-safe, compile-time checking
 - Modern, well-documented
-- Better than Provider (older) and Bloc (verbose)
 - Great for async operations
 
-**HTTP Client:** Dio
+**Local Services:**
 
-- Interceptors for JWT tokens
-- Request/response logging
-- Error handling and retries
-- Well-tested and maintained
+- `record` package for audio capture
+- `sherpa_onnx` for Android transcription
+- Platform-specific Parakeet for iOS/macOS (Apple Neural Engine)
+- `git2dart` for native Git operations
+- `flutter_gemma` for on-device title generation
 
-**WebSocket:** web_socket_channel
+### Backend: Go (OPTIONAL)
 
-- Official Dart package
-- Cross-platform
-- Simple, reliable
+**Why Go?**
 
-### ACP Integration: Hybrid Approach
+- Single binary deployment
+- Excellent concurrency for future agentic AI tasks
+- Only needed for long-running AI workflows
 
-**Why Hybrid (not pure Go SDK)?**
+**Framework:** Fiber
+**Database:** SQLite (for backend metadata only)
 
-- `claude-code-acp` is battle-tested by Zed
-- Official, maintained by Zed/Anthropic
-- Automatic updates
-- Lower risk than early-stage Go SDK
+### Data Storage: File System + JSONL
 
-**How it works:**
+**Why JSONL over SQLite for sphere metadata?**
 
-```go
-// Spawn subprocess
-cmd := exec.Command("npx", "@zed-industries/claude-code-acp")
-cmd.Env = append(os.Environ(), "ANTHROPIC_API_KEY="+apiKey)
-stdin, _ := cmd.StdinPipe()
-stdout, _ := cmd.StdoutPipe()
-cmd.Start()
-
-// Communicate via JSON-RPC 2.0
-// Write requests to stdin
-// Read responses/notifications from stdout
-```
-
-**Alternative:** `github.com/joshgarnett/agent-client-protocol-go`
-
-- Pure Go implementation
-- Early stage but viable
-- Consider for future if Node.js dependency becomes problematic
+- Human-readable and git-friendly
+- No binary files to merge
+- Simple append-only operations
+- Easy to parse and debug
+- Standard format, works with any tools
 
 ---
 
@@ -274,437 +210,246 @@ cmd.Start()
 ### Core Entities
 
 ```
-User (future multi-user support)
-  └─ has many Spaces
-      ├─ CLAUDE.md file (persistent system prompt)
-      ├─ space.sqlite (🆕 space-specific knowledge database)
-      ├─ files/ directory (space-specific files)
-      ├─ Links to Captures via space.sqlite
-      └─ has many Conversations
-          └─ has many Messages
-              ├─ role: "user" | "assistant"
-              ├─ content: text
-              └─ metadata: tool calls, etc.
-
 Captures (voice recordings, canonical notes)
   ├─ Stored in ~/Parachute/captures/
   ├─ .md file (transcript)
-  ├─ .wav file (audio)
+  ├─ .opus file (compressed audio)
   ├─ .json file (metadata)
-  └─ Can be linked to multiple Spaces
+  └─ Can be linked to multiple Spheres
 
-Session (ACP session tracking)
-  └─ belongs to Conversation
-  └─ tracks ACP session_id
-  └─ lifecycle: active → inactive on app restart
+Spheres (themed knowledge containers)
+  ├─ Stored in ~/Parachute/spheres/<name>/
+  ├─ CLAUDE.md (system prompt for AI)
+  ├─ sphere.jsonl (linked captures & metadata)
+  └─ files/ (sphere-specific files)
 ```
 
 ### File System Architecture
 
-**Note:** Vault location and subfolder names are configurable. Default structure shown below.
+**Note:** Vault location and subfolder names are configurable.
 
 ```
-{vault}/                                # Configurable location (default: ~/Parachute/)
-├── {captures}/                         # Configurable name (default: captures/)
-│   ├── 2025-10-26_00-00-17.md        # Transcript
-│   ├── 2025-10-26_00-00-17.wav       # Audio
-│   └── 2025-10-26_00-00-17.json      # Recording metadata
+{vault}/                                # Configurable (default: ~/Parachute/)
+├── {captures}/                         # Configurable (default: captures/)
+│   ├── 2025-11-24_10-30-00.md        # Transcript
+│   ├── 2025-11-24_10-30-00.opus      # Audio (compressed)
+│   └── 2025-11-24_10-30-00.json      # Recording metadata
 │
-└── {spaces}/                           # Configurable name (default: spaces/)
-    ├── regen-hub/
+└── {spheres}/                          # Configurable (default: spheres/)
+    ├── work/
     │   ├── CLAUDE.md                   # System prompt
-    │   ├── space.sqlite                # 🆕 Knowledge database
-    │   └── files/                      # Space-specific files
+    │   ├── sphere.jsonl                # Linked captures & metadata
+    │   └── files/                      # Sphere-specific files
     │
     └── personal/
         ├── CLAUDE.md
-        ├── space.sqlite                # 🆕 Different context
+        ├── sphere.jsonl
         └── files/
 ```
 
-**Vault Management:**
+### sphere.jsonl Format
 
-- Location configured via `FileSystemService` (Flutter)
-- Stored in `SharedPreferences` for persistence
-- Can be changed via Settings → Parachute Folder → Change Location
-- Subfolder names (`captures/` and `spaces/`) also configurable
-- Enables integration with existing Obsidian/Logseq vaults
+Metadata stored as JSON Lines (one JSON object per line):
 
-### Backend Database Schema (SQLite)
-
-The backend maintains a central SQLite database for app metadata:
-
-```sql
--- Spaces
-CREATE TABLE spaces (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,              -- Future: FK to users
-    name TEXT NOT NULL,
-    path TEXT NOT NULL UNIQUE,          -- Absolute path to ~/Parachute/spaces/<name>
-    icon TEXT,                          -- Emoji icon
-    color TEXT,                         -- Hex color code
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
--- Conversations
-CREATE TABLE conversations (
-    id TEXT PRIMARY KEY,
-    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,                -- Auto-generated from first message
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
--- Messages
-CREATE TABLE messages (
-    id TEXT PRIMARY KEY,
-    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
-    content TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    metadata TEXT                       -- JSON: tool calls, permissions, etc.
-);
-
--- Sessions (ACP session tracking)
-CREATE TABLE sessions (
-    id TEXT PRIMARY KEY,                -- ACP session_id
-    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    created_at INTEGER NOT NULL,
-    last_used_at INTEGER NOT NULL,
-    is_active INTEGER DEFAULT 1,        -- Boolean: 1=active, 0=inactive
-    UNIQUE(conversation_id)             -- One active session per conversation
-);
+```jsonl
+{"type":"link","capture":"2025-11-24_10-30-00","linkedAt":"2025-11-24T10:35:00Z","context":"Meeting notes from standup"}
+{"type":"tag","name":"project-alpha","addedAt":"2025-11-24T10:36:00Z"}
+{"type":"note","content":"Key insight about architecture","createdAt":"2025-11-24T10:40:00Z"}
 ```
 
-### Space-Specific Database Schema (space.sqlite)
+**Entry Types:**
 
-**NEW**: Each space has its own `space.sqlite` file for knowledge management:
+- `link` - Links a capture to this sphere with optional context
+- `tag` - Adds a tag for organization
+- `note` - Sphere-specific notes (not in captures/)
 
-```sql
--- Metadata about the space database
-CREATE TABLE space_metadata (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
+**Why "Spheres"?**
 
--- Core table: Links captures with space-specific context
-CREATE TABLE relevant_notes (
-    id TEXT PRIMARY KEY,                      -- UUID for this link
-    capture_id TEXT NOT NULL,                 -- Links to capture's JSON id
-    note_path TEXT NOT NULL,                  -- Relative: captures/YYYY-MM-DD_HH-MM-SS.md
-    linked_at INTEGER NOT NULL,               -- Unix timestamp
-    context TEXT,                             -- Space-specific interpretation
-    tags TEXT,                                -- JSON array: ["tag1", "tag2"]
-    last_referenced INTEGER,                  -- Track when used in conversation
-    metadata TEXT,                            -- JSON: extensible per-space
-    UNIQUE(capture_id)                        -- One entry per capture per space
-);
+The term speaks to the holistic, interconnected nature of knowledge—ideas don't live in flat boxes but in overlapping domains of thought. A capture can exist in multiple spheres simultaneously with different context in each.
 
--- Indexes for performance
-CREATE INDEX idx_relevant_notes_tags ON relevant_notes(tags);
-CREATE INDEX idx_relevant_notes_last_ref ON relevant_notes(last_referenced);
-CREATE INDEX idx_relevant_notes_linked_at ON relevant_notes(linked_at DESC);
+### Recording Metadata (JSON)
 
--- Optional: Custom tables for specific space types (future)
--- Spaces can extend their schema with domain-specific tables
+```json
+{
+  "id": "2025-11-24_10-30-00",
+  "title": "Morning thoughts on architecture",
+  "createdAt": "2025-11-24T10:30:00Z",
+  "duration": 180,
+  "hasAudio": true,
+  "hasTranscript": true,
+  "transcriptionStatus": "complete",
+  "spheres": ["work", "personal"]
+}
 ```
-
-**Key Design Points**:
-
-- Notes stay canonical in `~/Parachute/captures/` (never duplicated)
-- `space.sqlite` stores _relationships_ and _context_, not content
-- Same capture can be linked to multiple spaces with different context
-- Enables "cross-pollination" of ideas between spaces
 
 ---
 
 ## Key Architectural Decisions
 
-### Decision 1: Monorepo Structure
+### Decision 1: Local-First Architecture
 
-**Choice:** Single repo with `backend/` and `app/` directories
-
-**Rationale:**
-
-- Easier to coordinate changes
-- Shared documentation in one place
-- Single issue tracker
-- Can split later if needed
-
-**Trade-offs:**
-
-- Larger repo size
-- Different build processes in one repo
-
-### Decision 2: Hybrid ACP Approach
-
-**Choice:** Spawn `claude-code-acp` Node.js subprocess (not pure Go SDK)
+**Choice:** All data local by default in `~/Parachute/`, cloud sync optional
 
 **Rationale:**
 
-- Battle-tested by Zed
-- Official, maintained by Zed/Anthropic
-- Gets updates automatically
-- Lower risk for MVP
-
-**Trade-offs:**
-
-- Node.js dependency
-- Slightly more complex process management
-
-**Alternative Considered:** Pure Go SDK (`github.com/joshgarnett/agent-client-protocol-go`)
-
-- May revisit in future if Node.js becomes problematic
-
-### Decision 3: SQLite for MVP
-
-**Choice:** SQLite (not PostgreSQL)
-
-**Rationale:**
-
-- Embedded, no separate server
-- Works everywhere (mobile, desktop, server)
-- Perfect for single-user application
-- Easy backups (single file)
-
-**Migration Path:** Move to PostgreSQL when adding:
-
-- Multi-user support
-- Team features
-- Cloud sync with conflict resolution
-
-### Decision 4: JWT Authentication
-
-**Choice:** JWT tokens (not session cookies)
-
-**Rationale:**
-
-- Stateless
-- Mobile-friendly
-- Standard approach for API authentication
-- Works across domains (future web app)
-
-**Implementation:**
-
-- Store in Flutter secure storage (iOS Keychain, Android Keystore)
-- Include in Authorization header
-- Short-lived access tokens (future: refresh tokens)
-
-### Decision 5: Local-First Architecture
-
-**Choice:** All data local by default in `~/Parachute/`, cloud sync optional (future)
-
-**Rationale:**
-
-- Privacy by default
+- Privacy by default - you control what leaves your device
 - Works offline
 - Fast performance
 - User owns their data
-- Aligns with brand philosophy (openness, control)
+- Aligns with brand philosophy (trust through openness)
 - Data is portable and interoperable
 
-**Future Cloud Features:**
+### Decision 2: Voice-First Interface
 
-- Optional sync for multi-device
-- Optional team Spaces
-- User chooses what to sync
-
-### Decision 6: Space SQLite Knowledge System (NEW - Oct 2025)
-
-**Choice:** Each space has its own `space.sqlite` database for knowledge management
+**Choice:** Voice capture as primary input method
 
 **Rationale:**
 
-- Notes stay canonical in `~/Parachute/captures/` (never duplicated)
-- Enables space-specific context and tags for same note
-- Allows cross-pollination between spaces
-- Structured querying via SQL
-- Extensible per-space (custom tables)
-- Local-first, portable
+- More natural than typing for most people
+- Low compute requirements - runs locally on modest hardware
+- Context-rich by default - people share more authentically via voice
+- Gets out of the way - technology that meets people where they are
+- Opens path to pendants, watches, ambient devices
+
+### Decision 3: JSONL for Sphere Metadata
+
+**Choice:** JSONL files instead of SQLite for sphere data
+
+**Rationale:**
+
+- Git-friendly (no binary merge conflicts)
+- Human-readable (can edit with any text editor)
+- Simple append-only operations
+- Easy to parse and debug
+- Works with existing tools (grep, jq, etc.)
 
 **Trade-offs:**
 
-- Multiple SQLite databases to manage
-- Need to coordinate between backend DB and space DBs
-- More complex backup strategy
+- No SQL queries (need to parse file)
+- Less efficient for large datasets
+- No ACID transactions
 
-**Alternative Considered:**
+**Migration path:** If spheres grow very large, could add indexing or move specific spheres to SQLite while keeping JSONL as source of truth.
 
-- Central knowledge graph database
-- Tags in backend DB only
-- Rejected because they would either duplicate notes or trap them in single spaces
+### Decision 4: Git for Sync
 
-### Decision 7: Vault-Style Architecture with Configurable Paths (NEW - Nov 2025)
+**Choice:** Standard Git operations instead of custom sync infrastructure
 
-**Choice:** Configurable vault location and subfolder names, Obsidian/Logseq compatible
+**Rationale:**
+
+- Standard workflows - familiar to developers
+- No custom infrastructure - use existing Git hosting
+- Version history - built-in with Git
+- Flexibility - works with any Git provider
+- E2E encryption possible - encrypted Git repos
+
+**Implementation:**
+
+- Frontend: `git2dart` (libgit2 bindings via FFI)
+- Auth: GitHub Personal Access Tokens
+- Trigger: Auto-commit after each recording save
+- Background: Periodic sync (every 5 minutes)
+
+### Decision 5: Platform-Adaptive Transcription
+
+**Choice:** Different transcription engines per platform
+
+**Rationale:**
+
+- iOS/macOS: Parakeet v3 (Apple Neural Engine, CoreML)
+- Android: Sherpa-ONNX (ONNX Runtime)
+- Best performance on each platform
+- All local, no cloud dependency
+
+### Decision 6: Vault-Style Architecture
+
+**Choice:** Configurable vault location and subfolder names
 
 **Rationale:**
 
 - **Interoperability:** Users can use Parachute alongside Obsidian, Logseq, etc.
 - **Flexibility:** Support different organizational preferences
 - **Platform-specific:** Android needs external storage, iOS needs app sandbox
-- **User control:** Vault location visible and changeable in Settings
-- **Portability:** Can move vault to different locations (cloud folder, etc.)
+- **Portability:** Can move vault to different locations
 
 **Implementation:**
 
 - `FileSystemService` manages all path logic in Flutter
-- Platform-specific defaults (macOS: `~/Parachute/`, Android: external storage)
-- Subfolder names stored in `SharedPreferences` (keys: `parachute_captures_folder_name`, `parachute_spaces_folder_name`)
-- Backend remains path-agnostic (receives absolute paths from frontend)
-
-**Trade-offs:**
-
-- More complex path management (can't hardcode `~/Parachute/captures/`)
-- Need to handle path validation and migration
-- Users could break things by pointing at invalid locations
-
-**Alternative Considered:**
-
-- Hardcoded `~/Parachute/` location
-- Rejected because it limits interoperability and platform compatibility
+- Platform-specific defaults
+- Subfolder names stored in `SharedPreferences`
 
 ---
 
-## Git-Based Synchronization (Nov 2025 - Strategic Pivot)
+## Git-Based Synchronization
 
 ### Architecture Overview
-
-**Strategic Decision**: Use Git for multi-device sync instead of custom backend infrastructure.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     Git Repository                           │
-│                  (GitHub/GitLab/Self-hosted)                │
+│                      (GitHub)                               │
 │                                                              │
 │  ~/Parachute/                                               │
 │  ├── captures/                                              │
-│  │   ├── 2025-11-05_10-30-00.md (transcript)              │
-│  │   ├── 2025-11-05_10-30-00.wav (audio)                  │
-│  │   └── 2025-11-05_10-30-00.json (metadata)              │
-│  └── spaces/                                                │
-│      └── my-space/                                          │
+│  │   ├── 2025-11-24_10-30-00.md (transcript)              │
+│  │   ├── 2025-11-24_10-30-00.opus (audio)                 │
+│  │   └── 2025-11-24_10-30-00.json (metadata)              │
+│  └── spheres/                                                │
+│      └── work/                                              │
 │          ├── CLAUDE.md (system prompt)                     │
-│          ├── space.sqlite (knowledge graph)                │
-│          └── files/                                         │
+│          └── sphere.jsonl (links & metadata)               │
 └─────────────────────────────────────────────────────────────┘
          ▲                                    ▲
          │ git push                           │ git pull
          │                                    │
     ┌────┴─────┐                         ┌───┴──────┐
-    │ Frontend │                         │ Backend  │
-    │ (Mobile) │                         │ (Laptop) │
+    │  Phone   │                         │  Laptop  │
+    │(Android) │                         │ (macOS)  │
     │          │                         │          │
-    │ • git2dart                        │ • go-git  │
-    │ • Auto-commit                     │ • Pre-pull│
-    │ • GitHub PAT                      │ • Post-push│
+    │ • git2dart                        │ • git2dart│
+    │ • Auto-commit                     │ • Auto-commit
+    │ • GitHub PAT                      │ • GitHub PAT
     └──────────┘                         └──────────┘
 ```
 
 ### Key Principles
 
-1. **Git Replaces Custom Sync** - Standard Git operations instead of custom API
-2. **Backend Optional** - Frontend works standalone, backend only for agentic AI
-3. **Shared Repository** - Both frontend and backend sync to same repo
+1. **Git Replaces Custom Sync** - Standard Git operations
+2. **Frontend Only** - No backend needed for sync
+3. **Shared Repository** - All devices sync to same repo
 4. **Local-First** - Works offline, syncs when available
-5. **Standard Tools** - Any Git hosting (GitHub, GitLab, self-hosted)
+5. **Audio Compression** - Opus codec before upload (smaller than WAV)
 
-### Implementation Details
-
-**Frontend (Flutter)**
-
-- Library: `git2dart` (libgit2 bindings via FFI)
-- Auth: GitHub Personal Access Tokens (SSH keys future)
-- Operations: clone, pull, commit, push
-- Trigger: Auto-commit after each recording save
-- Status: Sync indicator in UI
-
-**Backend (Go)**
-
-- Library: `go-git` (pure Go implementation)
-- Workflow: Pull → AI task → Commit → Push
-- Verification: Check frontend/backend on compatible commits
-- Role: Only for long-running agentic AI tasks
-
-**Conflict Resolution**
+### Conflict Resolution
 
 - Strategy: Optimistic (most captures are new files)
 - Detection: Check for merge conflicts
-- Resolution: "Last write wins" for different files (MVP)
-- Future: UI for manual resolution, LLM-assisted merging
-
-### Benefits
-
-- **Standard workflows** - Familiar to developers
-- **No custom infrastructure** - Use existing Git hosting
-- **E2E encryption** - Git repos can be encrypted
-- **Version history** - Built-in with Git
-- **Flexibility** - Works with any Git provider
-
-### Trade-offs
-
-- **Binary files** - Audio files may need Git LFS eventually
-- **Learning curve** - Users need basic Git understanding
-- **Conflict complexity** - Manual resolution needed for complex cases
-
-**See**: [docs/architecture/git-sync-strategy.md](../architecture/git-sync-strategy.md) for detailed implementation plan
+- Resolution: "Last write wins" for different files
+- Future: UI for manual resolution if needed
 
 ---
 
 ## Security Considerations
 
-### MVP (Local-only)
+### Current (Local-First)
 
-- User provides their own Anthropic API key
-- Stored securely (Flutter secure storage)
-- Never transmitted to our servers (we don't have servers yet)
-- All data local
-
-### Git Sync (Current Focus)
-
-- GitHub Personal Access Tokens stored in flutter_secure_storage
+- All data stored locally
+- GitHub PAT stored in flutter_secure_storage
 - Private repositories only
-- User controls Git provider (can self-host)
-- E2E encrypted repos possible (future)
+- User controls Git provider
+- No cloud dependency for core features
+
+### API Keys (for AI features)
+
+- Anthropic API key stored securely
+- Never transmitted to our servers
+- User provides their own key
 
 ### Future Enhancements
 
 - SSH key support for Git authentication
 - GPG signing for commits
 - Git-crypt for encrypted repos
-- Federated sync options
-
----
-
-## Scalability Considerations
-
-### Current (MVP)
-
-- Single Go binary per user/device
-- SQLite database per user
-- No shared infrastructure needed
-- Can deploy on Mac Mini, Render, Fly.io, etc.
-
-### Future Growth Path
-
-**Phase 1: Multi-device for single user**
-
-- Cloud sync service
-- Conflict resolution
-- Still using SQLite per user
-
-**Phase 2: Team features**
-
-- PostgreSQL for shared data
-- Role-based permissions
-- Team Spaces
-
-**Phase 3: SaaS platform**
-
-- Multi-tenant architecture
-- Usage metering
-- Horizontal scaling
 
 ---
 
@@ -713,16 +458,22 @@ CREATE INDEX idx_relevant_notes_linked_at ON relevant_notes(linked_at DESC);
 ### Local Development
 
 ```bash
-# Terminal 1: Backend
+# Flutter (primary)
+cd app
+flutter run -d macos
+
+# Backend (optional - for AI chat features)
 cd backend
 go run cmd/server/main.go
-
-# Terminal 2: Frontend
-cd app
-flutter run
 ```
 
 ### Testing Strategy
+
+**Frontend:**
+
+- Unit tests for services (VAD, SmartChunker, etc.)
+- Widget tests for UI components
+- 116 tests for audio pipeline
 
 **Backend:**
 
@@ -730,103 +481,78 @@ flutter run
 - Integration tests for ACP client
 - API tests for endpoints
 
-**Frontend:**
-
-- Widget tests for UI components
-- Integration tests for user flows
-- Golden tests for visual regression (optional)
-
-**End-to-End:**
-
-- Test message flow from Flutter → Backend → ACP → Backend → Flutter
-- Test tool execution flow
-- Test permission handling
-
 ---
 
-## Deployment Options
+## Competitive Positioning
 
-### MVP Options
+### vs. Voice-First Hardware (Friend, Omi)
 
-1. **Local only**
-   - Run on same machine as user
-   - Simplest to start
+- They're focused on always-on recording → privacy nightmare
+- Parachute: Local-first = you control what's captured
 
-2. **Mac Mini + Tailscale**
-   - Backend on Mac Mini
-   - Tailscale for private network
-   - Access from mobile via VPN
-   - Free, private
+### vs. Note-Taking Tools (Obsidian, Notion)
 
-3. **Render.com**
-   - $7/month for persistent service
-   - Public or private
-   - Easy deploy from Git
+- Desktop-first → not where thinking happens
+- Parachute: Voice-first capture that exports to wherever you work
 
-4. **Fly.io**
-   - Pay-as-you-go
-   - Global edge deployment
-   - Good for scaling later
+### vs. AI Assistants (ChatGPT, Claude)
 
-**Recommendation:** Start local, deploy to Mac Mini for mobile testing, move to Render/Fly for beta users.
+- Cloud-dependent → no privacy, no offline
+- Parachute: Local-first with your actual context
 
 ---
 
 ## Open Questions
 
-### Current Feature (Space SQLite)
+### Current
 
-- [ ] Should spaces support custom table templates?
-- [ ] How to handle bulk linking operations?
-- [ ] Should spaces be able to auto-subscribe to notes by tag?
-- [ ] What's the discovery UX for notes that should be linked?
+- [ ] Best UX for sphere management and linking?
+- [ ] How to surface relevant captures in AI conversations?
+- [ ] iOS Git support timeline?
 
-### General
+### Future
 
-- [ ] **Authentication for MVP:** API key only vs. account system? (Current: API key only)
-- [ ] **Mobile priority:** iOS first, Android first, or both?
-- [ ] **Deployment:** Where to host for beta testing? (Current: Local-first)
-- [ ] **MCP configuration:** UI for managing MCP servers or file-only?
-- [ ] **Context restoration strategy:** Full history vs. summarization?
+- [ ] MCP integrations for connecting to other tools?
+- [ ] Knowledge graph visualization?
+- [ ] Plugin ecosystem (Obsidian model)?
 
 ---
 
 ## References
 
-- **ACP Specification:** https://agentclientprotocol.com/
 - **MCP Specification:** https://modelcontextprotocol.io/
-- **Fiber Docs:** https://docs.gofiber.io/
 - **Flutter Docs:** https://docs.flutter.dev/
 - **Riverpod Docs:** https://riverpod.dev/
+- **git2dart:** https://github.com/SkinnyMind/git2dart
 
 ---
 
 ## Next Steps
 
-See [ROADMAP.md](ROADMAP.md) for detailed feature queue and timeline.
+See [ROADMAP.md](ROADMAP.md) for detailed feature queue.
 
 **Current Focus (Nov 2025):**
 
-1. Implement Space SQLite Knowledge System
-   - Backend: SpaceDatabaseService and APIs
-   - Frontend: Note linking UI
-   - Frontend: Space note browser
-   - Integration: Chat references and CLAUDE.md variables
+1. Stability and reliability improvements
+2. Sphere management and organization
+3. Export integrations (to ChatGPT, Claude, etc.)
 
 **Future Work:**
 
-- Multi-device sync (E2E encrypted)
-- Smart note management (auto-suggest, tagging)
+- Personalized local LLM with deep personal context
+- MCP integrations
 - Knowledge graph visualization
-- Custom space templates
+- iOS Git support
 
 ---
 
-**Last Updated:** November 1, 2025
-**Status:** Active Development - Space SQLite Knowledge System
+**Last Updated:** November 24, 2025
+**Status:** Active Development - Stability Focus
 
 **Version History:**
 
-- v2.1 (Nov 1, 2025): Added vault-style architecture with configurable paths, Obsidian/Logseq compatibility
+- v3.0 (Nov 24, 2025): Renamed Spaces→Spheres, SQLite→JSONL, added pitch philosophy
+- v2.2 (Nov 6, 2025): Git sync implementation complete
+- v2.1 (Nov 1, 2025): Added vault-style architecture with configurable paths
 - v2.0 (Oct 27, 2025): Added space.sqlite knowledge system architecture
 - v1.0 (Oct 20, 2025): Initial architecture with ACP integration
