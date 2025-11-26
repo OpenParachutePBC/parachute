@@ -595,21 +595,19 @@ packages:
   git2dart:
     dependency: "direct main"
     description:
-      path: "."
-      ref: android-binaries-support
-      resolved-ref: "8e2af76d64922ea286bef1cf9099d3907906cfca"
-      url: "https://github.com/unforced/git2dart.git"
-    source: git
-    version: "0.3.0"
+      name: git2dart
+      sha256: ed158fa233a17bef2b06e0e8d0082951411475f05e85244e61926829480ee190
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.4.0"
   git2dart_binaries:
     dependency: "direct main"
     description:
-      path: "."
-      ref: android-openssl-support
-      resolved-ref: a7fcc3ad9d592d7521d2d400f4612b3c5c666850
-      url: "https://github.com/unforced/git2dart_binaries.git"
-    source: git
-    version: "1.9.16"
+      name: git2dart_binaries
+      sha256: "1184ebe1e357142e0656e6cb0d3b58a7b3bf6b84d40eb34afa9734542a6c2849"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.10.3"
   glob:
     dependency: transitive
     description:

@@ -37,15 +37,8 @@ dependencies:
   shared_preferences: ^2.0.0
 
   # Git Integration (GitHub with Android support)
-  # Using forked git2dart with Android SIGSEGV fix
-  git2dart:
-    git:
-      url: https://github.com/unforced/git2dart.git
-      ref: android-binaries-support
-  git2dart_binaries:
-    git:
-      url: https://github.com/unforced/git2dart_binaries.git
-      ref: android-openssl-support
+  git2dart: ^0.4.0
+  git2dart_binaries: ^1.10.3
 
   # GitHub OAuth & API
   oauth2: ^2.0.2
@@ -91,12 +84,6 @@ dependencies:
 
   # Crash Reporting & Logging
   sentry_flutter: ^8.11.0
-
-dependency_overrides:
-  git2dart_binaries:
-    git:
-      url: https://github.com/unforced/git2dart_binaries.git
-      ref: android-openssl-support
 
 dev_dependencies:
   flutter_test:

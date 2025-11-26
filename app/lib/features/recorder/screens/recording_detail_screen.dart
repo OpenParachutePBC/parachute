@@ -65,6 +65,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   BackgroundTranscriptionService?
   _backgroundServiceRef; // Store reference for cleanup
 
+  // Store reference to download notifier for cleanup (avoid using ref.read in dispose)
+  ModelDownloadNotifier? _downloadNotifier;
+
   // Controllers for inline editing
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _transcriptController = TextEditingController();
@@ -160,12 +163,14 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       }
     }
 
-    // Clear auto-retry callback
-    try {
-      final downloadNotifier = ref.read(modelDownloadProvider.notifier);
-      downloadNotifier.onModelsReady = null;
-    } catch (e) {
-      debugPrint('[RecordingDetail] Error clearing auto-retry callback: $e');
+    // Clear auto-retry callback using stored reference (avoid ref.read in dispose)
+    if (_downloadNotifier != null) {
+      try {
+        _downloadNotifier!.onModelsReady = null;
+        debugPrint('[RecordingDetail] Cleared auto-retry callback');
+      } catch (e) {
+        debugPrint('[RecordingDetail] Error clearing auto-retry callback: $e');
+      }
     }
 
     _titleController.dispose();
@@ -190,8 +195,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       _shouldAutoRetry = true;
 
       // Register callback for when models are ready
-      final downloadNotifier = ref.read(modelDownloadProvider.notifier);
-      downloadNotifier.onModelsReady = _handleModelsReady;
+      // Store reference for cleanup in dispose()
+      _downloadNotifier = ref.read(modelDownloadProvider.notifier);
+      _downloadNotifier!.onModelsReady = _handleModelsReady;
     }
   }
 

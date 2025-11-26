@@ -400,7 +400,74 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
     }
   }
 
+  /// Clean up orphaned temp WAV files
+  /// These are temp recording files (with numeric IDs) that don't have corresponding .md files
+  /// Returns the number of files cleaned up
+  Future<int> _cleanupOrphanedTempFiles() async {
+    try {
+      final fileSystemService = _ref.read(fileSystemServiceProvider);
+      final capturesPath = await fileSystemService.getCapturesPath();
+      final capturesDir = Directory(capturesPath);
+
+      if (!await capturesDir.exists()) {
+        return 0;
+      }
+
+      int cleanedCount = 0;
+      final orphanedFiles = <File>[];
+
+      // Find temp WAV files (format: 2025-11-25-1764132350130.wav - with numeric ID)
+      // These are different from saved recordings (format: 2025-11-25_11-30-20.wav - with time)
+      final tempFilePattern = RegExp(r'^\d{4}-\d{2}-\d{2}-\d+\.(wav|opus)$');
+
+      await for (final entity in capturesDir.list()) {
+        if (entity is File) {
+          final basename = p.basename(entity.path);
+          if (tempFilePattern.hasMatch(basename)) {
+            // This is a temp file - check if there's a corresponding .md file
+            // Temp files won't have .md files with the same name pattern
+            final timestamp = basename.replaceAll(RegExp(r'\.(wav|opus)$'), '');
+            final mdPath = p.join(capturesPath, '$timestamp.md');
+
+            if (!await File(mdPath).exists()) {
+              orphanedFiles.add(entity);
+            }
+          }
+        }
+      }
+
+      if (orphanedFiles.isEmpty) {
+        debugPrint('[GitSync] No orphaned temp files to clean up');
+        return 0;
+      }
+
+      debugPrint('[GitSync] Found ${orphanedFiles.length} orphaned temp files to clean up');
+
+      // Delete orphaned files
+      for (final file in orphanedFiles) {
+        try {
+          final basename = p.basename(file.path);
+          await file.delete();
+          debugPrint('[GitSync] Deleted orphaned file: $basename');
+          cleanedCount++;
+        } catch (e) {
+          debugPrint('[GitSync] ⚠️  Failed to delete ${p.basename(file.path)}: $e');
+        }
+      }
+
+      if (cleanedCount > 0) {
+        debugPrint('[GitSync] ✅ Cleaned up $cleanedCount orphaned temp files');
+      }
+
+      return cleanedCount;
+    } catch (e) {
+      debugPrint('[GitSync] ❌ Error cleaning up orphaned files: $e');
+      return 0;
+    }
+  }
+
   /// Convert any WAV files to Opus before syncing
+  /// Only converts WAV files that don't already have a corresponding .opus file
   /// Returns the number of files converted
   Future<int> _convertWavToOpus() async {
     try {
@@ -413,37 +480,43 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       }
 
       int convertedCount = 0;
-      final wavFiles = <File>[];
+      final wavFilesToConvert = <File>[];
 
-      // Find WAV files that have corresponding .md files (real recordings, not temp files)
+      // Find WAV files that need conversion:
+      // - Must have a corresponding .md file (real recording, not temp file)
+      // - Must NOT already have a corresponding .opus file (skip already converted)
       await for (final entity in capturesDir.list()) {
         if (entity is File && entity.path.endsWith('.wav')) {
-          // Check if there's a corresponding .md file
           final wavBasename = p.basename(entity.path);
           final timestamp = wavBasename.replaceAll('.wav', '');
           final mdPath = p.join(capturesPath, '$timestamp.md');
-          final mdFile = File(mdPath);
+          final opusPath = entity.path.replaceAll('.wav', '.opus');
 
-          if (await mdFile.exists()) {
-            // Only add WAV files that have a corresponding markdown file
-            wavFiles.add(entity);
-          } else {
-            debugPrint(
-              '[GitSync] Skipping temp WAV file (no .md): $wavBasename',
-            );
+          // Check if it's a real recording (has .md file)
+          if (!await File(mdPath).exists()) {
+            // Skip temp files - they'll be cleaned up by _cleanupOrphanedTempFiles
+            continue;
           }
+
+          // Check if already converted (has .opus file)
+          if (await File(opusPath).exists()) {
+            // Already has opus, skip
+            continue;
+          }
+
+          wavFilesToConvert.add(entity);
         }
       }
 
-      if (wavFiles.isEmpty) {
-        debugPrint('[GitSync] No WAV files to convert');
+      if (wavFilesToConvert.isEmpty) {
+        debugPrint('[GitSync] No WAV files need conversion (all already have .opus)');
         return 0;
       }
 
-      debugPrint('[GitSync] Found ${wavFiles.length} WAV files to convert');
+      debugPrint('[GitSync] Found ${wavFilesToConvert.length} WAV files to convert');
 
-      // Convert each WAV file to Opus (we already verified .md exists above)
-      for (final wavFile in wavFiles) {
+      // Convert each WAV file to Opus
+      for (final wavFile in wavFilesToConvert) {
         try {
           final wavBasename = p.basename(wavFile.path);
           debugPrint('[GitSync] Converting: $wavBasename');
@@ -531,12 +604,19 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
         final vaultPath = await fileSystemService.getRootPath();
         _repository = await _gitService.openRepository(vaultPath);
 
-        // Before checking status, convert any orphaned WAV files to Opus
+        // Clean up orphaned temp files first
+        final cleanedCount = await _cleanupOrphanedTempFiles();
+        if (cleanedCount > 0) {
+          debugPrint('[GitSync] ✅ Cleaned up $cleanedCount orphaned temp files');
+        }
+
+        // Convert any WAV files that need Opus versions
         final convertedCount = await _convertWavToOpus();
         if (convertedCount > 0) {
           debugPrint('[GitSync] ✅ Converted $convertedCount WAV files to Opus');
         }
 
+        // Check git status for changes
         final status = await _gitService.getStatus(_repository!);
 
         final untrackedFiles = status['untracked'] as List? ?? [];

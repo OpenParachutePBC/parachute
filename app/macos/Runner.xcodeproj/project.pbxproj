@@ -246,8 +246,6 @@
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				87A9EAC1C111E5A5C729BC2B /* [CP] Embed Pods Frameworks */,
 				0DF2215D4830B96566A3AE30 /* Copy Opus Library */,
-				B4F60545CF13C62BB2A66225 /* Copy Git Libraries */,
-				9FD6C1B4C3AC18C52EEB5C85 /* Fix libssh2 OpenSSL Path */,
 			);
 			buildRules = (
 			);
@@ -428,45 +426,6 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
-		};
-		9FD6C1B4C3AC18C52EEB5C85 /* Fix libssh2 OpenSSL Path */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Fix libssh2 OpenSSL Path";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\n# Fix libssh2 OpenSSL path to use bundled OpenSSL\nLIBSSH2_PATH=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/libssh2.1.dylib\"\n\nif [ -f \"$LIBSSH2_PATH\" ]; then\n    echo \"Fixing libssh2 OpenSSL path: $LIBSSH2_PATH\"\n    # Change from Homebrew path to bundled OpenSSL\n    install_name_tool -change /opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib @executable_path/libcrypto.3.dylib \"$LIBSSH2_PATH\" 2>/dev/null || true\n    # Also change from system path (if it was already changed before)\n    install_name_tool -change /usr/lib/libcrypto.dylib @executable_path/libcrypto.3.dylib \"$LIBSSH2_PATH\" 2>/dev/null || true\n    echo \"✅ libssh2 OpenSSL path fixed to use bundled library\"\nelse\n    echo \"⚠️  libssh2 not found at: $LIBSSH2_PATH\"\nfi\n";
-			showEnvVarsInLog = 0;
-		};
-		B4F60545CF13C62BB2A66225 /* Copy Git Libraries */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Copy Git Libraries";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libssh2.1.dylib",
-				"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libgit2-experimental.1.9.dylib",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\n# Copy git2dart libraries (libgit2 and libssh2) + OpenSSL dependency\n\nGIT2DART_PATH=\"/Users/unforced/.pub-cache/hosted/pub.dev/git2dart_binaries-1.9.16/macos\"\nFRAMEWORKS_DIR=\"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\nMACOS_DIR=\"${BUILT_PRODUCTS_DIR}/${EXECUTABLE_FOLDER_PATH}\"\nOPENSSL_PATH=\"/opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib\"\n\nmkdir -p \"$FRAMEWORKS_DIR\"\nmkdir -p \"$MACOS_DIR\"\n\nLIBGIT2_SOURCE=\"$GIT2DART_PATH/libgit2.dylib\"\nLIBSSH2_SOURCE=\"$GIT2DART_PATH/libssh2.1.dylib\"\n\n# Copy to Frameworks folder (for rpath)\nif [ -f \"$LIBGIT2_SOURCE\" ]; then\n    echo \"Copying libgit2 to Frameworks: $FRAMEWORKS_DIR\"\n    cp \"$LIBGIT2_SOURCE\" \"$FRAMEWORKS_DIR/libgit2-experimental.1.9.dylib\"\n    cp \"$LIBGIT2_SOURCE\" \"$FRAMEWORKS_DIR/libgit2.dylib\"\n    echo \"✅ libgit2 copied to Frameworks\"\nelse\n    echo \"⚠️  Warning: libgit2 not found at: $LIBGIT2_SOURCE\"\nfi\n\nif [ -f \"$LIBSSH2_SOURCE\" ]; then\n    echo \"Copying libssh2 to Frameworks: $FRAMEWORKS_DIR\"\n    cp \"$LIBSSH2_SOURCE\" \"$FRAMEWORKS_DIR/libssh2.1.dylib\"\n    echo \"✅ libssh2 copied to Frameworks\"\nelse\n    echo \"⚠️  Warning: libssh2 not found at: $LIBSSH2_SOURCE\"\nfi\n\n# Also copy to MacOS folder (for Platform.resolvedExecutable lookup)\nif [ -f \"$LIBGIT2_SOURCE\" ]; then\n    echo \"Copying libgit2 to MacOS: $MACOS_DIR\"\n    cp \"$LIBGIT2_SOURCE\" \"$MACOS_DIR/libgit2.dylib\"\n    echo \"✅ libgit2 copied to MacOS\"\nfi\n\nif [ -f \"$LIBSSH2_SOURCE\" ]; then\n    echo \"Copying libssh2 to MacOS: $MACOS_DIR\"\n    cp \"$LIBSSH2_SOURCE\" \"$MACOS_DIR/libssh2.1.dylib\"\n    echo \"✅ libssh2 copied to MacOS\"\nfi\n\n# Copy OpenSSL library (required by libssh2)\nif [ -f \"$OPENSSL_PATH\" ]; then\n    echo \"Copying OpenSSL to MacOS: $MACOS_DIR\"\n    cp \"$OPENSSL_PATH\" \"$MACOS_DIR/libcrypto.3.dylib\"\n    echo \"✅ OpenSSL copied to MacOS\"\nelse\n    echo \"⚠️  Warning: OpenSSL not found at: $OPENSSL_PATH\"\nfi\n";
 		};
 		CBBAF308141A2337CE8BB287 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
