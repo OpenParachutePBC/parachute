@@ -313,6 +313,131 @@ class SpaceKnowledgeService {
     _linkCache.clear();
     debugPrint('[SpaceKnowledge] Cleared all caches');
   }
+
+  /// Move a capture into a sphere (actually moves files to sphere/captures/)
+  ///
+  /// Unlike linking, this physically moves the .md and audio files into the
+  /// sphere's captures folder. The capture becomes "owned" by this sphere.
+  ///
+  /// Returns the new capture ID (may change if file already exists in target).
+  Future<String> moveCaptureToSpace({
+    required String spacePath,
+    required String captureId,
+    required String sourcePath,
+    String? context,
+    List<String>? tags,
+  }) async {
+    try {
+      final targetCapturesDir = Directory(p.join(spacePath, 'captures'));
+      if (!await targetCapturesDir.exists()) {
+        await targetCapturesDir.create(recursive: true);
+      }
+
+      // Find source files (md, opus, wav)
+      final sourceDir = Directory(p.dirname(sourcePath));
+      final baseName = captureId;
+
+      final filesToMove = <String, String>{};  // source -> target
+
+      // Check for each file type
+      for (final ext in ['.md', '.opus', '.wav', '.json']) {
+        final sourceFile = File(p.join(sourceDir.path, '$baseName$ext'));
+        if (await sourceFile.exists()) {
+          final targetPath = p.join(targetCapturesDir.path, '$baseName$ext');
+          filesToMove[sourceFile.path] = targetPath;
+        }
+      }
+
+      if (filesToMove.isEmpty) {
+        throw Exception('No capture files found for: $captureId');
+      }
+
+      // Check if any target files already exist
+      String finalCaptureId = captureId;
+      bool needsRename = false;
+      for (final targetPath in filesToMove.values) {
+        if (await File(targetPath).exists()) {
+          needsRename = true;
+          break;
+        }
+      }
+
+      // If files exist, generate new unique ID
+      if (needsRename) {
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        finalCaptureId = '${captureId}_$timestamp';
+        // Update file paths with new ID
+        final updatedMoves = <String, String>{};
+        for (final entry in filesToMove.entries) {
+          final ext = p.extension(entry.key);
+          final newTarget = p.join(targetCapturesDir.path, '$finalCaptureId$ext');
+          updatedMoves[entry.key] = newTarget;
+        }
+        filesToMove.clear();
+        filesToMove.addAll(updatedMoves);
+      }
+
+      // Move files
+      for (final entry in filesToMove.entries) {
+        final sourceFile = File(entry.key);
+        await sourceFile.rename(entry.value);
+        debugPrint('[SpaceKnowledge] Moved ${entry.key} -> ${entry.value}');
+      }
+
+      // Add to space_links.jsonl with isMoved flag
+      final newNotePath = p.join(targetCapturesDir.path, '$finalCaptureId.md');
+      final links = await _loadLinks(spacePath);
+      final now = DateTime.now();
+
+      final newLink = LinkedCapture(
+        id: _uuid.v4(),
+        captureId: finalCaptureId,
+        notePath: newNotePath,
+        linkedAt: now,
+        context: context,
+        tags: tags,
+        lastReferenced: now,
+        metadata: {'isMoved': true, 'originalId': captureId},
+      );
+
+      links.add(newLink);
+      await _writeLinks(spacePath, links);
+
+      debugPrint(
+        '[SpaceKnowledge] Moved capture $captureId to $spacePath as $finalCaptureId',
+      );
+      return finalCaptureId;
+    } catch (e) {
+      debugPrint('[SpaceKnowledge] Error moving capture: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all captures that live in a sphere's captures folder
+  ///
+  /// Unlike getLinkedCaptures which returns references, this returns captures
+  /// that are physically stored in the sphere/captures/ directory.
+  Future<List<String>> getSphereCaptureIds({required String spacePath}) async {
+    try {
+      final capturesDir = Directory(p.join(spacePath, 'captures'));
+      if (!await capturesDir.exists()) {
+        return [];
+      }
+
+      final captureIds = <String>[];
+      await for (final entity in capturesDir.list()) {
+        if (entity is File && entity.path.endsWith('.md')) {
+          final fileName = p.basenameWithoutExtension(entity.path);
+          captureIds.add(fileName);
+        }
+      }
+
+      return captureIds;
+    } catch (e) {
+      debugPrint('[SpaceKnowledge] Error getting sphere captures: $e');
+      return [];
+    }
+  }
 }
 
 /// Represents a capture linked to a space

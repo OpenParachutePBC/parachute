@@ -911,30 +911,37 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   void _linkToSpaces() async {
     if (_recording == null) return;
 
-    String cleanNotePath = _recording!.filePath;
-    if (cleanNotePath.startsWith('/api/')) {
-      cleanNotePath = cleanNotePath.substring(5);
-    }
-    if (cleanNotePath.endsWith('.wav')) {
-      cleanNotePath = cleanNotePath.replaceAll('.wav', '.md');
-    }
-    if (!cleanNotePath.startsWith('captures/')) {
-      cleanNotePath = 'captures/$cleanNotePath';
-    }
+    // Get the actual file path for the note
+    final fileSystemService = ref.read(fileSystemServiceProvider);
+    final capturesPath = await fileSystemService.getCapturesPath();
+    final notePath = '$capturesPath/${_recording!.id}.md';
 
-    final result = await Navigator.of(context).push<bool>(
+    final result = await Navigator.of(context).push<dynamic>(
       MaterialPageRoute(
         builder: (context) => LinkCaptureToSpaceScreen(
           captureId: _recording!.id,
           filename: _recording!.title,
-          notePath: cleanNotePath,
+          notePath: notePath,
         ),
       ),
     );
 
-    if (result == true && mounted) {
+    if (!mounted) return;
+
+    if (result == 'moved') {
+      // Recording was moved to a sphere, navigate back to list
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Successfully linked to spaces')),
+        const SnackBar(
+          content: Text('Recording moved to sphere'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      // Refresh the recordings list and go back
+      ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+      Navigator.of(context).pop();
+    } else if (result == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Successfully linked to sphere')),
       );
     }
   }

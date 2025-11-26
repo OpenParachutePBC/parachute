@@ -110,6 +110,7 @@ class SpaceStorageService {
 
       // Create directory structure
       await spaceDir.create(recursive: true);
+      await Directory('$spacePath/captures').create();
       await Directory('$spacePath/files').create();
 
       // Create space.json metadata
