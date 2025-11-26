@@ -431,13 +431,78 @@ Parachute includes a 4-step onboarding flow that runs on first launch:
 
 ---
 
+## Session Workflow
+
+Use structured sessions to maintain focus and ensure quality across context windows.
+
+### Session Commands
+
+- **`/session-start <objective>`** - Initialize a session with a clear goal
+- **`/session-check`** - Mid-session coherence check
+- **`/session-end`** - Clean shutdown and handoff
+
+### Session Files
+
+- **`claude-session.md`** - Current session state (objective, tasks, verification plan)
+- **`ROADMAP.md`** - Strategic view, updated when significant work completes
+- **Git history** - Source of truth for what was actually done
+
+### Session Principles
+
+1. **One feature at a time** - Don't try to do everything at once
+2. **Test as you go** - Don't wait until the end to verify
+3. **Verify before "done"** - Actually test that changes work (see below)
+4. **Keep session state current** - Update `claude-session.md` as tasks complete
+5. **Clean handoffs** - End sessions with clear state for next session
+
+---
+
+## Verification Practices
+
+**Never mark a feature complete without verifying it actually works.**
+
+### Before Declaring "Done"
+
+1. **Run unit tests**: `cd app && flutter test`
+2. **Manual verification**: Actually use the feature
+3. **UI testing with Playwright MCP**: For UI changes, use Playwright to verify flows
+
+### Using Playwright MCP for Verification
+
+For UI changes, verify with actual browser testing:
+
+1. Launch the app in web mode:
+   ```bash
+   cd app && flutter run -d chrome --web-port=8090
+   ```
+
+2. Use Playwright MCP to:
+   - Navigate to the relevant screen
+   - Test the actual user flow
+   - Take screenshots if helpful
+   - Verify the feature works end-to-end
+
+3. Note: Flutter web renders to canvas, so use accessibility labels/semantics for targeting elements
+
+### Why This Matters
+
+From [Anthropic's research on long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents):
+- Agents tend to "one-shot" projects or declare work complete prematurely
+- Real verification (not just "it compiles") catches issues early
+- Structured progress tracking prevents drift and forgotten tasks
+
+---
+
 ## When Working on Features
 
-1. **Read existing code first** - Understand patterns before changing
-2. **Update todos** - Use the TodoWrite tool to track implementation steps
-3. **Test incrementally** - Don't build everything before testing
-4. **Focus on reliability** - Stability over new features
-5. **Ask before committing** - Follow git workflow above
+1. **Start with `/session-start`** - Establish clear objectives
+2. **Read existing code first** - Understand patterns before changing
+3. **Update todos** - Use the TodoWrite tool to track implementation steps
+4. **Test incrementally** - Don't build everything before testing
+5. **Verify with Playwright MCP** - For UI changes, actually test in browser
+6. **Focus on reliability** - Stability over new features
+7. **Ask before committing** - Follow git workflow above
+8. **End with `/session-end`** - Clean handoff for next session
 
 ---
 
@@ -453,5 +518,5 @@ Read these files as needed for specific tasks. Context is your friend!
 
 ---
 
-**Last Updated**: November 24, 2025
+**Last Updated**: November 26, 2025
 **Next Review**: After Sphere management implementation
