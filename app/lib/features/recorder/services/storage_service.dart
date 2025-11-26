@@ -329,6 +329,7 @@ class StorageService {
       String? liveTranscriptionStatusStr;
       String? contextFromFrontmatter;
       String? summaryFromFrontmatter;
+      List<RecordingSegment>? segments;
 
       final lines = content.split('\n');
       if (lines.isNotEmpty && lines[0] == '---') {
@@ -343,9 +344,50 @@ class StorageService {
 
         if (endIndex > 0) {
           // Parse frontmatter fields
+          bool inSegments = false;
+          double? currentSegmentEnd;
+          DateTime? currentSegmentRecorded;
+
           for (int i = 1; i < endIndex; i++) {
             final line = lines[i];
-            if (line.contains(':')) {
+
+            // Check for segment list items
+            if (inSegments) {
+              if (line.startsWith('  - end:')) {
+                // Save previous segment if exists
+                if (currentSegmentEnd != null &&
+                    currentSegmentRecorded != null) {
+                  segments ??= [];
+                  segments.add(RecordingSegment(
+                    endSeconds: currentSegmentEnd,
+                    recorded: currentSegmentRecorded,
+                  ));
+                }
+                // Start new segment
+                final endValue = line.substring('  - end:'.length).trim();
+                currentSegmentEnd = double.tryParse(endValue);
+                currentSegmentRecorded = null;
+              } else if (line.startsWith('    recorded:')) {
+                final recordedValue =
+                    line.substring('    recorded:'.length).trim();
+                currentSegmentRecorded = DateTime.tryParse(recordedValue);
+              } else if (!line.startsWith('  ')) {
+                // End of segments section - save last segment
+                if (currentSegmentEnd != null &&
+                    currentSegmentRecorded != null) {
+                  segments ??= [];
+                  segments.add(RecordingSegment(
+                    endSeconds: currentSegmentEnd,
+                    recorded: currentSegmentRecorded,
+                  ));
+                }
+                inSegments = false;
+                currentSegmentEnd = null;
+                currentSegmentRecorded = null;
+              }
+            }
+
+            if (line.contains(':') && !inSegments) {
               final parts = line.split(':');
               final key = parts[0].trim();
               final value = parts.sublist(1).join(':').trim();
@@ -355,6 +397,9 @@ class StorageService {
               if (key == 'title') title = value;
               if (key == 'transcription_status') {
                 liveTranscriptionStatusStr = value;
+              }
+              if (key == 'segments') {
+                inSegments = true;
               }
               if (key == 'context') {
                 // Unescape the context value (remove quotes and unescape)
@@ -387,6 +432,17 @@ class StorageService {
                 summaryFromFrontmatter = unescapedSummary;
               }
             }
+          }
+
+          // Save last segment if we ended while still in segments section
+          if (inSegments &&
+              currentSegmentEnd != null &&
+              currentSegmentRecorded != null) {
+            segments ??= [];
+            segments.add(RecordingSegment(
+              endSeconds: currentSegmentEnd,
+              recorded: currentSegmentRecorded,
+            ));
           }
         }
       }
@@ -495,6 +551,7 @@ class StorageService {
         buttonTapCount: null,
         transcriptionStatus: finalTranscriptionStatus,
         liveTranscriptionStatus: liveTranscriptionStatusStr,
+        segments: segments,
       );
     } catch (e) {
       debugPrint('[StorageService] Error loading recording from markdown: $e');
@@ -686,6 +743,15 @@ class StorageService {
       );
     }
 
+    // Segments for recordings with multiple appended parts
+    if (recording.segments != null && recording.segments!.isNotEmpty) {
+      buffer.writeln('segments:');
+      for (final segment in recording.segments!) {
+        buffer.writeln('  - end: ${segment.endSeconds}');
+        buffer.writeln('    recorded: ${segment.recorded.toIso8601String()}');
+      }
+    }
+
     buffer.writeln('---');
     buffer.writeln();
 
@@ -737,6 +803,88 @@ class StorageService {
       return true;
     } catch (e, stackTrace) {
       debugPrint('[StorageService] ❌ Error updating recording: $e');
+      debugPrint('[StorageService] Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// Append a new segment to an existing recording
+  ///
+  /// This updates the recording with:
+  /// - Appended transcript text
+  /// - Updated duration
+  /// - New segment metadata
+  /// - Updated file size
+  ///
+  /// Note: Audio file appending should be done separately using AudioService.appendWavFile
+  Future<bool> appendToRecording({
+    required String recordingId,
+    required String newTranscript,
+    required double newSegmentEndSeconds,
+    required DateTime segmentRecordedAt,
+    required double newFileSizeKB,
+  }) async {
+    try {
+      debugPrint(
+        '[StorageService] 📎 Appending to recording: $recordingId',
+      );
+
+      // Load existing recording
+      final existing = await getRecording(recordingId);
+      if (existing == null) {
+        debugPrint('[StorageService] ❌ Recording not found: $recordingId');
+        return false;
+      }
+
+      // Build updated segments list
+      List<RecordingSegment> updatedSegments;
+      if (existing.segments != null && existing.segments!.isNotEmpty) {
+        // Add new segment to existing list
+        updatedSegments = [
+          ...existing.segments!,
+          RecordingSegment(
+            endSeconds: newSegmentEndSeconds,
+            recorded: segmentRecordedAt,
+          ),
+        ];
+      } else {
+        // First append - create initial segment for original recording
+        // and add the new segment
+        final originalDurationSeconds = existing.duration.inMilliseconds / 1000;
+        updatedSegments = [
+          RecordingSegment(
+            endSeconds: originalDurationSeconds,
+            recorded: existing.timestamp,
+          ),
+          RecordingSegment(
+            endSeconds: newSegmentEndSeconds,
+            recorded: segmentRecordedAt,
+          ),
+        ];
+      }
+
+      // Append transcript with separator
+      final updatedTranscript = existing.transcript.isEmpty
+          ? newTranscript
+          : '${existing.transcript}\n\n$newTranscript';
+
+      // Calculate new duration from final segment end
+      final newDuration = Duration(
+        milliseconds: (newSegmentEndSeconds * 1000).round(),
+      );
+
+      // Create updated recording
+      final updated = existing.copyWith(
+        transcript: updatedTranscript,
+        duration: newDuration,
+        segments: updatedSegments,
+        fileSizeKB: newFileSizeKB,
+      );
+
+      // Save the updated recording
+      return await updateRecording(updated);
+    } catch (e, stackTrace) {
+      debugPrint('[StorageService] ❌ Error appending to recording: $e');
       debugPrint('[StorageService] Stack trace: $stackTrace');
       return false;
     }

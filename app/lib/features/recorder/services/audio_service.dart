@@ -466,4 +466,221 @@ class AudioService {
       return false;
     }
   }
+
+  /// Appends audio from sourceWavPath to targetWavPath.
+  /// Both files must be WAV format with matching sample rate and channels.
+  /// Returns the duration of the appended segment in seconds.
+  Future<double> appendWavFile(String targetWavPath, String sourceWavPath) async {
+    try {
+      final targetFile = File(targetWavPath);
+      final sourceFile = File(sourceWavPath);
+
+      if (!await targetFile.exists()) {
+        throw Exception('Target WAV file not found: $targetWavPath');
+      }
+      if (!await sourceFile.exists()) {
+        throw Exception('Source WAV file not found: $sourceWavPath');
+      }
+
+      // Read both files
+      final targetBytes = await targetFile.readAsBytes();
+      final sourceBytes = await sourceFile.readAsBytes();
+
+      // Validate WAV headers (RIFF....WAVE)
+      if (targetBytes.length < 44 || sourceBytes.length < 44) {
+        throw Exception('Invalid WAV file: too small');
+      }
+
+      final targetRiff = String.fromCharCodes(targetBytes.sublist(0, 4));
+      final sourceRiff = String.fromCharCodes(sourceBytes.sublist(0, 4));
+      if (targetRiff != 'RIFF' || sourceRiff != 'RIFF') {
+        throw Exception('Invalid WAV file: missing RIFF header');
+      }
+
+      // Extract audio parameters from target to validate compatibility
+      // Find the 'fmt ' chunk to get audio parameters
+      final targetFmtOffset = _findChunkOffset(targetBytes, 'fmt ');
+      final sourceFmtOffset = _findChunkOffset(sourceBytes, 'fmt ');
+
+      if (targetFmtOffset == -1 || sourceFmtOffset == -1) {
+        throw Exception('Could not find fmt chunk in WAV file');
+      }
+
+      // fmt chunk layout after 'fmt ' and size (8 bytes):
+      // +0: audio format (2 bytes)
+      // +2: num channels (2 bytes)
+      // +4: sample rate (4 bytes)
+      // +8: byte rate (4 bytes)
+      // +12: block align (2 bytes)
+      // +14: bits per sample (2 bytes)
+      final targetNumChannels = _readUint16LE(targetBytes, targetFmtOffset + 10);
+      final targetSampleRate = _readUint32LE(targetBytes, targetFmtOffset + 12);
+      final targetBitsPerSample = _readUint16LE(targetBytes, targetFmtOffset + 22);
+
+      final sourceNumChannels = _readUint16LE(sourceBytes, sourceFmtOffset + 10);
+      final sourceSampleRate = _readUint32LE(sourceBytes, sourceFmtOffset + 12);
+      final sourceBitsPerSample = _readUint16LE(sourceBytes, sourceFmtOffset + 22);
+
+      debugPrint(
+        'WAV params - target: $targetSampleRate Hz, $targetNumChannels ch, $targetBitsPerSample bit; '
+        'source: $sourceSampleRate Hz, $sourceNumChannels ch, $sourceBitsPerSample bit',
+      );
+
+      if (targetSampleRate != sourceSampleRate ||
+          targetNumChannels != sourceNumChannels ||
+          targetBitsPerSample != sourceBitsPerSample) {
+        throw Exception(
+          'WAV format mismatch: target($targetSampleRate Hz, $targetNumChannels ch, $targetBitsPerSample bit) '
+          'vs source($sourceSampleRate Hz, $sourceNumChannels ch, $sourceBitsPerSample bit)',
+        );
+      }
+
+      // Find the data chunk in both files
+      final targetDataOffset = _findDataChunkOffset(targetBytes);
+      final sourceDataOffset = _findDataChunkOffset(sourceBytes);
+
+      if (targetDataOffset == -1 || sourceDataOffset == -1) {
+        throw Exception('Could not find data chunk in WAV file');
+      }
+
+      // Read existing data sizes
+      final targetDataSize = _readUint32LE(targetBytes, targetDataOffset + 4);
+      final sourceDataSize = _readUint32LE(sourceBytes, sourceDataOffset + 4);
+
+      // Extract source PCM data (after 'data' + size)
+      final sourcePcmData = sourceBytes.sublist(sourceDataOffset + 8);
+
+      // Use actual PCM data length (more reliable than header value)
+      final actualSourceDataSize = sourcePcmData.length;
+
+      debugPrint(
+        'Data sizes - target: $targetDataSize bytes, source header: $sourceDataSize bytes, '
+        'source actual: $actualSourceDataSize bytes',
+      );
+
+      // Calculate new total size using actual data length
+      final newDataSize = targetDataSize + actualSourceDataSize;
+      final newFileSize = targetBytes.length + actualSourceDataSize;
+
+      // Create new file with updated header
+      final newBytes = ByteData(newFileSize);
+
+      // Copy original target file
+      for (int i = 0; i < targetBytes.length; i++) {
+        newBytes.setUint8(i, targetBytes[i]);
+      }
+
+      // Update RIFF chunk size (file size - 8)
+      _writeInt32LE(newBytes, 4, newFileSize - 8);
+
+      // Update data chunk size
+      _writeInt32LE(newBytes, targetDataOffset + 4, newDataSize);
+
+      // Append source PCM data
+      for (int i = 0; i < sourcePcmData.length; i++) {
+        newBytes.setUint8(targetBytes.length + i, sourcePcmData[i]);
+      }
+
+      // Write the combined file
+      await targetFile.writeAsBytes(newBytes.buffer.asUint8List());
+
+      // Calculate segment duration
+      final bytesPerSample = targetBitsPerSample ~/ 8;
+      final bytesPerSecond = targetSampleRate * targetNumChannels * bytesPerSample;
+
+      // Guard against division by zero
+      double segmentDuration = 0.0;
+      if (bytesPerSecond > 0) {
+        segmentDuration = actualSourceDataSize / bytesPerSecond;
+      }
+
+      debugPrint(
+        'Appended ${actualSourceDataSize / 1024}KB of audio to $targetWavPath '
+        '(${segmentDuration.toStringAsFixed(2)}s, bytesPerSecond: $bytesPerSecond)',
+      );
+
+      return segmentDuration;
+    } catch (e, stackTrace) {
+      debugPrint('Error appending WAV files: $e');
+      debugPrint('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Gets the duration of a WAV file in seconds
+  Future<double> getWavDurationSeconds(String wavPath) async {
+    try {
+      final file = File(wavPath);
+      if (!await file.exists()) {
+        throw Exception('WAV file not found: $wavPath');
+      }
+
+      final bytes = await file.readAsBytes();
+      if (bytes.length < 44) {
+        throw Exception('Invalid WAV file: too small');
+      }
+
+      // Find the fmt chunk to get audio parameters
+      final fmtOffset = _findChunkOffset(bytes, 'fmt ');
+      if (fmtOffset == -1) {
+        throw Exception('Could not find fmt chunk in WAV file');
+      }
+
+      final numChannels = _readUint16LE(bytes, fmtOffset + 10);
+      final sampleRate = _readUint32LE(bytes, fmtOffset + 12);
+      final bitsPerSample = _readUint16LE(bytes, fmtOffset + 22);
+
+      final dataOffset = _findDataChunkOffset(bytes);
+      if (dataOffset == -1) {
+        throw Exception('Could not find data chunk in WAV file');
+      }
+
+      final dataSize = _readUint32LE(bytes, dataOffset + 4);
+      final bytesPerSecond = sampleRate * numChannels * (bitsPerSample ~/ 8);
+
+      if (bytesPerSecond == 0) return 0.0;
+      return dataSize / bytesPerSecond;
+    } catch (e) {
+      debugPrint('Error getting WAV duration: $e');
+      rethrow;
+    }
+  }
+
+  // Helper to find a chunk by ID in a WAV file
+  int _findChunkOffset(Uint8List bytes, String chunkIdToFind) {
+    // Start after the RIFF header (12 bytes)
+    int offset = 12;
+    while (offset < bytes.length - 8) {
+      final chunkId = String.fromCharCodes(bytes.sublist(offset, offset + 4));
+      if (chunkId == chunkIdToFind) {
+        return offset;
+      }
+      // Skip to next chunk (chunk header is 8 bytes + chunk size)
+      final chunkSize = _readUint32LE(bytes, offset + 4);
+      offset += 8 + chunkSize;
+    }
+    return -1;
+  }
+
+  // Helper to find the 'data' chunk offset in a WAV file
+  int _findDataChunkOffset(Uint8List bytes) {
+    return _findChunkOffset(bytes, 'data');
+  }
+
+  int _readUint16LE(Uint8List bytes, int offset) {
+    return bytes[offset] | (bytes[offset + 1] << 8);
+  }
+
+  int _readUint32LE(Uint8List bytes, int offset) {
+    // Use ByteData to properly read unsigned 32-bit integer
+    final byteData = ByteData.sublistView(bytes, offset, offset + 4);
+    return byteData.getUint32(0, Endian.little);
+  }
+
+  void _writeInt32LE(ByteData data, int offset, int value) {
+    data.setUint8(offset, value & 0xFF);
+    data.setUint8(offset + 1, (value >> 8) & 0xFF);
+    data.setUint8(offset + 2, (value >> 16) & 0xFF);
+    data.setUint8(offset + 3, (value >> 24) & 0xFF);
+  }
 }

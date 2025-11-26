@@ -415,10 +415,23 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
       int convertedCount = 0;
       final wavFiles = <File>[];
 
-      // Find all WAV files
+      // Find WAV files that have corresponding .md files (real recordings, not temp files)
       await for (final entity in capturesDir.list()) {
         if (entity is File && entity.path.endsWith('.wav')) {
-          wavFiles.add(entity);
+          // Check if there's a corresponding .md file
+          final wavBasename = p.basename(entity.path);
+          final timestamp = wavBasename.replaceAll('.wav', '');
+          final mdPath = p.join(capturesPath, '$timestamp.md');
+          final mdFile = File(mdPath);
+
+          if (await mdFile.exists()) {
+            // Only add WAV files that have a corresponding markdown file
+            wavFiles.add(entity);
+          } else {
+            debugPrint(
+              '[GitSync] Skipping temp WAV file (no .md): $wavBasename',
+            );
+          }
         }
       }
 
@@ -429,7 +442,7 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
 
       debugPrint('[GitSync] Found ${wavFiles.length} WAV files to convert');
 
-      // Convert each WAV file to Opus
+      // Convert each WAV file to Opus (we already verified .md exists above)
       for (final wavFile in wavFiles) {
         try {
           final wavBasename = p.basename(wavFile.path);
@@ -439,18 +452,6 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
             wavPath: wavFile.path,
             deleteOriginal: false, // Keep WAV for playback and local use
           );
-
-          // Update the corresponding markdown file to reference Opus instead of WAV
-          final timestamp = wavBasename.replaceAll('.wav', '');
-          final mdPath = p.join(capturesPath, '$timestamp.md');
-          final mdFile = File(mdPath);
-
-          if (await mdFile.exists()) {
-            // Note: The markdown files don't actually reference the audio file path
-            // They're just named with the same timestamp
-            // So no update needed to markdown content
-            debugPrint('[GitSync] Markdown file exists for $timestamp');
-          }
 
           convertedCount++;
         } catch (e) {

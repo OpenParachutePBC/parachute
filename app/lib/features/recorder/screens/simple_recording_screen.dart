@@ -8,6 +8,7 @@ import 'package:app/features/recorder/screens/recording_detail_screen.dart';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/services/recording_post_processing_service.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
+import 'package:app/features/recorder/services/audio_service.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/audio_compression_service_dart.dart';
 import 'package:app/features/files/providers/local_file_browser_provider.dart';
@@ -22,8 +23,18 @@ import 'package:path/path.dart' as path;
 /// - Blue = processing
 /// - Live waveform visualization
 /// - Context input during + after recording
+///
+/// Supports two modes:
+/// - New recording: Creates a new recording from scratch
+/// - Append mode: Adds content to an existing recording (when appendToRecordingId is set)
 class SimpleRecordingScreen extends ConsumerStatefulWidget {
-  const SimpleRecordingScreen({super.key});
+  /// If set, records a new segment to append to an existing recording
+  final String? appendToRecordingId;
+
+  const SimpleRecordingScreen({
+    super.key,
+    this.appendToRecordingId,
+  });
 
   @override
   ConsumerState<SimpleRecordingScreen> createState() =>
@@ -163,6 +174,18 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         throw Exception('No audio path returned');
       }
 
+      // Check if we're appending to an existing recording
+      if (widget.appendToRecordingId != null) {
+        await _saveAppendedRecording(
+          audioPath: audioPath,
+          audioService: audioService,
+          fileSystemService: fileSystemService,
+          postProcessingService: postProcessingService,
+          storageService: storageService,
+        );
+        return;
+      }
+
       // Copy audio file to captures folder immediately (keep as WAV for now)
       final timestamp = FileSystemService.formatTimestampForFilename(
         _startTime!,
@@ -220,6 +243,106 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
     } catch (e) {
       setState(() => _isSaving = false);
       _showError('Failed to save recording: $e');
+    }
+  }
+
+  /// Save a segment appended to an existing recording
+  Future<void> _saveAppendedRecording({
+    required String audioPath,
+    required AudioService audioService,
+    required FileSystemService fileSystemService,
+    required RecordingPostProcessingService postProcessingService,
+    required StorageService storageService,
+  }) async {
+    try {
+      final existingId = widget.appendToRecordingId!;
+      final capturesPath = await fileSystemService.getCapturesPath();
+
+      // Get existing recording
+      final existing = await storageService.getRecording(existingId);
+      if (existing == null) {
+        throw Exception('Recording not found: $existingId');
+      }
+
+      // Find the existing WAV file (might be .wav or need to decompress from .opus)
+      final existingWavPath = path.join(capturesPath, '$existingId.wav');
+      final existingOpusPath = path.join(capturesPath, '$existingId.opus');
+
+      String targetWavPath = existingWavPath;
+      if (!await File(existingWavPath).exists()) {
+        if (await File(existingOpusPath).exists()) {
+          // Decompress opus to wav for appending
+          debugPrint('[SimpleRecording] Decompressing opus to wav for append...');
+          final compressionService = AudioCompressionServiceDart();
+          await compressionService.decompressToWav(
+            opusPath: existingOpusPath,
+            outputPath: existingWavPath,
+          );
+          targetWavPath = existingWavPath;
+        } else {
+          throw Exception('No audio file found for recording: $existingId');
+        }
+      }
+
+      // Append the new audio to the existing WAV
+      debugPrint('[SimpleRecording] Appending audio segment...');
+      final segmentDuration = await audioService.appendWavFile(
+        targetWavPath,
+        audioPath,
+      );
+
+      // Get original duration
+      final originalDurationSeconds = existing.duration.inMilliseconds / 1000;
+      final newTotalDuration = originalDurationSeconds + segmentDuration;
+
+      // Get new file size
+      final newFileSizeKB = await File(targetWavPath).length() / 1024;
+
+      // Transcribe the new segment
+      debugPrint('[SimpleRecording] Transcribing appended segment...');
+      final result = await postProcessingService.process(audioPath: audioPath);
+
+      // Update the recording with appended content
+      final success = await storageService.appendToRecording(
+        recordingId: existingId,
+        newTranscript: result.transcript,
+        newSegmentEndSeconds: newTotalDuration,
+        segmentRecordedAt: _startTime!,
+        newFileSizeKB: newFileSizeKB,
+      );
+
+      if (!success) {
+        throw Exception('Failed to update recording metadata');
+      }
+
+      // Re-compress to opus after successful append
+      debugPrint('[SimpleRecording] Re-compressing to opus after append...');
+      final compressionService = AudioCompressionServiceDart();
+      await compressionService.compressToOpus(
+        wavPath: targetWavPath,
+        deleteOriginal: false, // Keep WAV for playback
+      );
+
+      // Clean up temp audio file
+      try {
+        await File(audioPath).delete();
+      } catch (_) {}
+
+      ref.read(recordingsRefreshTriggerProvider.notifier).state++;
+
+      setState(() {
+        _isRecording = false;
+        _isSaving = false;
+        _recordingDuration = Duration.zero;
+      });
+
+      // Navigate back with success result
+      if (mounted) {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      setState(() => _isSaving = false);
+      _showError('Failed to append recording: $e');
     }
   }
 
@@ -377,10 +500,12 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
           else
             const SizedBox(width: 48),
 
-          // App title
-          const Text(
-            'Parachute',
-            style: TextStyle(
+          // App title or append mode indicator
+          Text(
+            widget.appendToRecordingId != null
+                ? 'Adding Content'
+                : 'Parachute',
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 20,
               fontWeight: FontWeight.w300,
@@ -661,10 +786,19 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   }
 
   String _getStatusText() {
-    if (_isSaving) return 'Transcribing and processing...';
+    final isAppendMode = widget.appendToRecordingId != null;
+    if (_isSaving) {
+      return isAppendMode
+          ? 'Appending and transcribing...'
+          : 'Transcribing and processing...';
+    }
     if (_isPaused) return 'Paused • Tap Resume to continue or Save to finish';
-    if (_isRecording) return 'Recording • Speak naturally';
-    return 'Ready to record';
+    if (_isRecording) {
+      return isAppendMode
+          ? 'Recording new segment • Speak naturally'
+          : 'Recording • Speak naturally';
+    }
+    return isAppendMode ? 'Ready to add more content' : 'Ready to record';
   }
 
   /// Process transcription in background without blocking UI

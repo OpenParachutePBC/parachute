@@ -20,6 +20,7 @@ import 'package:app/features/space_notes/screens/link_capture_to_space_screen.da
 import 'package:app/features/spaces/providers/space_provider.dart';
 import 'package:app/features/spaces/providers/space_knowledge_provider.dart';
 import 'package:app/core/models/space.dart';
+import 'package:app/features/recorder/screens/simple_recording_screen.dart';
 
 /// Unified recording detail screen with inline editing
 /// Inspired by LiveRecordingScreen design - clean, focused, contextual status
@@ -591,6 +592,37 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           _transcriptionProgress = 0.0;
           _transcriptionStatus = '';
         });
+      }
+    }
+  }
+
+  /// Navigate to recording screen to add more content to this recording
+  Future<void> _addMoreContent() async {
+    if (_recording == null) return;
+
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SimpleRecordingScreen(
+          appendToRecordingId: _recording!.id,
+        ),
+      ),
+    );
+
+    // Reload the recording to get updated data
+    if (result == true && mounted) {
+      final storage = ref.read(storageServiceProvider);
+      final updated = await storage.getRecording(_recording!.id);
+      if (updated != null && mounted) {
+        setState(() {
+          _recording = updated;
+          _transcriptController.text = updated.transcript;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Content added successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     }
   }
@@ -1273,6 +1305,16 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                 ),
               ],
               const PopupMenuItem(
+                value: 'add-more',
+                child: Row(
+                  children: [
+                    Icon(Icons.add_circle_outline),
+                    SizedBox(width: 8),
+                    Text('Add more content'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
                 value: 're-transcribe',
                 child: Row(
                   children: [
@@ -1294,6 +1336,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               ),
             ],
             onSelected: (value) {
+              if (value == 'add-more') _addMoreContent();
               if (value == 'generate-title') _generateTitle();
               if (value == 'generate-summary') _generateSummary();
               if (value == 're-transcribe') _retranscribe();

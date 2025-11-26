@@ -24,6 +24,32 @@ enum RecordingSource {
   }
 }
 
+/// Represents a segment within a recording (for appended recordings)
+class RecordingSegment {
+  /// End time of this segment in seconds (start is previous segment's end, or 0)
+  final double endSeconds;
+
+  /// When this segment was recorded
+  final DateTime recorded;
+
+  RecordingSegment({
+    required this.endSeconds,
+    required this.recorded,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'end': endSeconds,
+    'recorded': recorded.toIso8601String(),
+  };
+
+  factory RecordingSegment.fromJson(Map<String, dynamic> json) =>
+      RecordingSegment(
+        endSeconds: (json['end'] as num?)?.toDouble() ?? 0.0,
+        recorded:
+            DateTime.tryParse(json['recorded'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
 /// Processing status for background tasks
 enum ProcessingStatus {
   pending, // Not started
@@ -83,6 +109,9 @@ class Recording {
   // Live transcription status (for detecting incomplete transcriptions)
   final String? liveTranscriptionStatus; // 'in_progress', 'completed', null
 
+  // Segments for recordings with multiple appended parts
+  final List<RecordingSegment>? segments;
+
   Recording({
     required this.id,
     required this.title,
@@ -101,6 +130,7 @@ class Recording {
     this.titleGenerationStatus = ProcessingStatus.pending,
     this.summaryStatus = ProcessingStatus.pending,
     this.liveTranscriptionStatus,
+    this.segments,
   }) : assert(id.isNotEmpty, 'Recording ID cannot be empty'),
        assert(title.isNotEmpty, 'Recording title cannot be empty'),
        assert(filePath.isNotEmpty, 'Recording file path cannot be empty'),
@@ -134,6 +164,7 @@ class Recording {
     'titleGenerationStatus': titleGenerationStatus.toString(),
     'summaryStatus': summaryStatus.toString(),
     'liveTranscriptionStatus': liveTranscriptionStatus,
+    'segments': segments?.map((s) => s.toJson()).toList(),
   };
 
   factory Recording.fromJson(Map<String, dynamic> json) => Recording(
@@ -163,6 +194,9 @@ class Recording {
         ? ProcessingStatus.fromString(json['summaryStatus'] as String)
         : ProcessingStatus.pending,
     liveTranscriptionStatus: json['liveTranscriptionStatus'] as String?,
+    segments: (json['segments'] as List<dynamic>?)
+        ?.map((s) => RecordingSegment.fromJson(s as Map<String, dynamic>))
+        .toList(),
   );
 
   String get durationString {
@@ -217,6 +251,7 @@ class Recording {
     ProcessingStatus? titleGenerationStatus,
     ProcessingStatus? summaryStatus,
     String? liveTranscriptionStatus,
+    List<RecordingSegment>? segments,
   }) {
     return Recording(
       id: id ?? this.id,
@@ -238,6 +273,7 @@ class Recording {
       summaryStatus: summaryStatus ?? this.summaryStatus,
       liveTranscriptionStatus:
           liveTranscriptionStatus ?? this.liveTranscriptionStatus,
+      segments: segments ?? this.segments,
     );
   }
 }
