@@ -223,6 +223,11 @@ class GitService {
     try {
       debugPrint('[GitService] 🔍 Getting repository status...');
 
+      // Read the index to ensure it's up to date with the working directory
+      // This is necessary to detect new/modified files
+      final index = repo.index;
+      index.read(force: true);
+
       // status is a getter property, not a method
       final statusMap = repo.status;
 

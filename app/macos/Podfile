@@ -47,8 +47,4 @@ post_install do |installer|
       end
     end
   end
-
-  # Note: Build phases for libssh2/libgit2/libopus are managed in project.pbxproj
-  # - "Copy Git Libraries" - copies libssh2, libgit2 symlink, and bundles OpenSSL 3.x
-  # - "Copy Opus Library" - copies libopus for Omi device support
 end
