@@ -224,11 +224,47 @@ class GitService {
       debugPrint('[GitService] 🔍 Getting repository status...');
 
       // Read the index to ensure it's up to date with the working directory
-      // This is necessary to detect new/modified files
       final index = repo.index;
       index.read(force: true);
 
-      // status is a getter property, not a method
+      // WORKAROUND: git2dart's status getter doesn't detect untracked files by default
+      // Use addAll + updateAll to detect what would be staged (untracked + modified)
+      // Then restore index to original state
+
+      // Save current index state (list of paths)
+      final originalIndexPaths = <String>{};
+      for (var i = 0; i < index.length; i++) {
+        originalIndexPaths.add(index[i].path);
+      }
+      debugPrint('[GitService] Original index has ${originalIndexPaths.length} entries');
+
+      // Stage everything (this will add untracked files to index)
+      index.addAll(['.']);
+      index.updateAll(['.']);
+      index.write();
+
+      // Now check what's in the index
+      final stagedPaths = <String>{};
+      for (var i = 0; i < index.length; i++) {
+        stagedPaths.add(index[i].path);
+      }
+      debugPrint('[GitService] After addAll, index has ${stagedPaths.length} entries');
+
+      // Untracked files = files now in index that weren't before
+      final untracked = stagedPaths.difference(originalIndexPaths).toList();
+      debugPrint('[GitService] Found ${untracked.length} untracked files');
+
+      // Restore index to original state by removing newly added files
+      for (final path in untracked) {
+        try {
+          index.remove(path);
+        } catch (e) {
+          debugPrint('[GitService] ⚠️  Failed to unstage $path: $e');
+        }
+      }
+      index.write();
+
+      // Now get the actual status for modified/deleted files
       final statusMap = repo.status;
 
       debugPrint('[GitService] Status map size: ${statusMap.length}');
@@ -240,14 +276,10 @@ class GitService {
       final modified = <String>[];
       final added = <String>[];
       final deleted = <String>[];
-      final untracked = <String>[];
 
       statusMap.forEach((path, statusSet) {
         if (statusSet.contains(GitStatus.wtModified)) {
           modified.add(path);
-        }
-        if (statusSet.contains(GitStatus.wtNew)) {
-          untracked.add(path);
         }
         if (statusSet.contains(GitStatus.indexNew)) {
           added.add(path);
@@ -269,7 +301,7 @@ class GitService {
         'deleted': deleted,
         'untracked': untracked,
         'untrackedCount': untracked.length,
-        'clean': statusMap.isEmpty,
+        'clean': statusMap.isEmpty && untracked.isEmpty,
       };
     } catch (e) {
       debugPrint('[GitService] ❌ Error getting status: $e');

@@ -118,7 +118,7 @@ SPEC CHECKSUMS:
   flutter_local_notifications: 7e5a17a1dbc00d83dc10d43c2c4c05f2ceed233c
   flutter_secure_storage_macos: 7f45e30f838cf2659862a4e4e3ee1c347c2b3b54
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
-  git2dart_binaries: 9cf70736ba4f6149d9cd0d3c9e2e5cf75ccacf58
+  git2dart_binaries: 4264bcf431b64980d2d97a7398b241c2ec1db393
   iOSDFULibrary: 198c36ebe5a31bf2ca04ee8fb40837176a423e85
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
   nordic_dfu: 668c41ac004163e2ce4c67200ae59ca224217a1b
@@ -133,6 +133,6 @@ SPEC CHECKSUMS:
   wakelock_plus: 917609be14d812ddd9e9528876538b2263aaa03b
   ZIPFoundation: b8c29ea7ae353b309bc810586181fd073cb3312c
 
-PODFILE CHECKSUM: 6deb5045318716eebac27100210207c279d1bf8a
+PODFILE CHECKSUM: a538790a76364b37062d0281cf7f2a5d473e902c
 
 COCOAPODS: 1.16.2
