@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/core/services/audio_compression_service_dart.dart';
+import 'package:app/core/services/file_system_service.dart';
 
 enum RecordingState { stopped, recording, paused }
 
@@ -157,15 +158,11 @@ class AudioService {
 
   Future<String> _getRecordingPath(String recordingId) async {
     try {
-      final syncFolder = await _storageService.getSyncFolderPath();
-
-      final now = DateTime.now();
-      final dateStr =
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-
-      // Use WAV format for Parakeet compatibility (16kHz mono)
-      final path = '$syncFolder/$dateStr-$recordingId.wav';
-      debugPrint('Generated recording path: $path');
+      // Use temp folder for recording-in-progress WAV files
+      // The final Opus file will be saved to captures folder by StorageService
+      final fileSystem = FileSystemService();
+      final path = await fileSystem.getRecordingTempPath();
+      debugPrint('Generated temp recording path: $path');
       return path;
     } catch (e) {
       debugPrint('Error getting recording path: $e');
@@ -349,13 +346,15 @@ class AudioService {
 
       String playbackPath = filePath;
 
-      // If it's an Opus file, check if WAV exists or convert it
+      // If it's an Opus file, convert to WAV in temp folder for playback
       if (filePath.endsWith('.opus')) {
-        final wavPath = filePath.replaceAll('.opus', '.wav');
+        final fileSystem = FileSystemService();
+        // Use deterministic temp path so we can reuse converted files
+        final wavPath = await fileSystem.getPlaybackTempPath(filePath);
         final wavFile = File(wavPath);
 
         if (!await wavFile.exists()) {
-          debugPrint('WAV not found for Opus file, converting...');
+          debugPrint('Converting Opus to WAV in temp folder for playback...');
 
           // Convert Opus to WAV for playback
           final service = AudioCompressionServiceDart();
@@ -371,7 +370,7 @@ class AudioService {
             return false;
           }
         } else {
-          debugPrint('Using existing WAV file for playback');
+          debugPrint('Using cached WAV file for playback: $wavPath');
           playbackPath = wavPath;
         }
       }

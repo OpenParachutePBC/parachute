@@ -9,6 +9,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - captures/     - Voice recordings and transcripts
 /// - spaces/       - AI chat spaces with conversations
 ///
+/// Also manages temporary audio files:
+/// - Temp folder for WAV files during recording/playback
+/// - Automatic cleanup of old temp files
+///
 /// Philosophy: Files are the source of truth, databases are indexes.
 class FileSystemService {
   static final FileSystemService _instance = FileSystemService._internal();
@@ -22,8 +26,20 @@ class FileSystemService {
   // Default subfolder names
   static const String _defaultCapturesFolderName = 'captures';
   static const String _defaultSpacesFolderName = 'spaces';
+  static const String _tempAudioFolderName = 'parachute_audio_temp';
+
+  // Temp subfolder names with different retention policies
+  static const String _tempRecordingsSubfolder = 'recordings'; // Precious - keep longer
+  static const String _tempPlaybackSubfolder = 'playback'; // Cache - clean aggressively
+  static const String _tempSegmentsSubfolder = 'segments'; // Transient - clean quickly
+
+  // Retention policies for different temp file types
+  static const Duration _recordingsTempMaxAge = Duration(days: 7); // Keep recordings 7 days
+  static const Duration _playbackTempMaxAge = Duration(hours: 24); // Keep playback cache 24 hours
+  static const Duration _segmentsTempMaxAge = Duration(hours: 1); // Clean segments after 1 hour
 
   String? _rootFolderPath;
+  String? _tempAudioPath;
   String _capturesFolderName = _defaultCapturesFolderName;
   String _spacesFolderName = _defaultSpacesFolderName;
   bool _isInitialized = false;
@@ -75,6 +91,260 @@ class FileSystemService {
     final root = await getRootPath();
     return '$root/$_spacesFolderName';
   }
+
+  // ============================================================
+  // Temporary Audio File Management
+  // ============================================================
+  //
+  // Folder structure:
+  //   parachute_audio_temp/
+  //   ├── recordings/   - WAV files during recording (7 day retention)
+  //   ├── playback/     - Cached WAV files for playback (24 hour retention)
+  //   └── segments/     - Transcription segment files (1 hour retention)
+  //
+  // This protects precious recordings from aggressive cleanup while
+  // still cleaning up transient cache files regularly.
+  // ============================================================
+
+  /// Get the root temporary audio folder path
+  Future<String> getTempAudioPath() async {
+    if (_tempAudioPath != null) {
+      return _tempAudioPath!;
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    _tempAudioPath = '${tempDir.path}/$_tempAudioFolderName';
+
+    // Ensure the directory and subfolders exist
+    await _ensureTempFolderStructure();
+
+    return _tempAudioPath!;
+  }
+
+  /// Ensure temp folder structure exists
+  Future<void> _ensureTempFolderStructure() async {
+    if (_tempAudioPath == null) return;
+
+    final subfolders = [
+      _tempRecordingsSubfolder,
+      _tempPlaybackSubfolder,
+      _tempSegmentsSubfolder,
+    ];
+
+    for (final subfolder in subfolders) {
+      final dir = Directory('$_tempAudioPath/$subfolder');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+        debugPrint('[FileSystemService] Created temp subfolder: ${dir.path}');
+      }
+    }
+  }
+
+  /// Generate a path for a recording-in-progress WAV file
+  /// These are kept for 7 days to protect against crashes before conversion
+  Future<String> getRecordingTempPath() async {
+    final tempPath = await getTempAudioPath();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    return '$tempPath/$_tempRecordingsSubfolder/recording_$timestamp.wav';
+  }
+
+  /// Generate a path for a playback WAV file (converted from Opus)
+  /// Uses a deterministic name based on the source file so we can reuse it
+  /// These are cached for 24 hours
+  Future<String> getPlaybackTempPath(String sourceOpusPath) async {
+    final tempPath = await getTempAudioPath();
+    // Create a deterministic filename from the source path
+    final sourceFileName = sourceOpusPath.split('/').last.replaceAll('.opus', '');
+    return '$tempPath/$_tempPlaybackSubfolder/playback_$sourceFileName.wav';
+  }
+
+  /// Generate a path for a transcription segment WAV file
+  /// These are transient and cleaned up after 1 hour
+  Future<String> getTranscriptionSegmentPath(int segmentIndex) async {
+    final tempPath = await getTempAudioPath();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    return '$tempPath/$_tempSegmentsSubfolder/segment_${timestamp}_$segmentIndex.wav';
+  }
+
+  /// Generate a path for a generic temp WAV file (goes to segments folder)
+  /// [prefix] - Optional prefix for the filename
+  Future<String> getTempWavPath({String prefix = 'temp'}) async {
+    final tempPath = await getTempAudioPath();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    return '$tempPath/$_tempSegmentsSubfolder/${prefix}_$timestamp.wav';
+  }
+
+  /// Clean up old temporary audio files based on retention policies
+  /// - recordings: 7 days (precious, might be crash recovery)
+  /// - playback: 24 hours (cache, can be regenerated)
+  /// - segments: 1 hour (transient, should be cleaned up after transcription)
+  /// Call this on app startup
+  Future<int> cleanupTempAudioFiles() async {
+    var totalDeleted = 0;
+
+    try {
+      final tempPath = await getTempAudioPath();
+
+      // Clean each subfolder with its own retention policy
+      totalDeleted += await _cleanupTempSubfolder(
+        '$tempPath/$_tempRecordingsSubfolder',
+        _recordingsTempMaxAge,
+        'recordings',
+      );
+
+      totalDeleted += await _cleanupTempSubfolder(
+        '$tempPath/$_tempPlaybackSubfolder',
+        _playbackTempMaxAge,
+        'playback',
+      );
+
+      totalDeleted += await _cleanupTempSubfolder(
+        '$tempPath/$_tempSegmentsSubfolder',
+        _segmentsTempMaxAge,
+        'segments',
+      );
+
+      if (totalDeleted > 0) {
+        debugPrint('[FileSystemService] Total temp files cleaned up: $totalDeleted');
+      }
+    } catch (e) {
+      debugPrint('[FileSystemService] Error cleaning up temp files: $e');
+    }
+
+    return totalDeleted;
+  }
+
+  /// Clean up files in a specific temp subfolder older than maxAge
+  Future<int> _cleanupTempSubfolder(String folderPath, Duration maxAge, String folderName) async {
+    try {
+      final dir = Directory(folderPath);
+      if (!await dir.exists()) {
+        return 0;
+      }
+
+      final now = DateTime.now();
+      var deletedCount = 0;
+
+      await for (final entity in dir.list()) {
+        if (entity is File) {
+          try {
+            final stat = await entity.stat();
+            final age = now.difference(stat.modified);
+
+            if (age > maxAge) {
+              await entity.delete();
+              deletedCount++;
+              debugPrint('[FileSystemService] Deleted old $folderName temp: ${entity.path.split('/').last}');
+            }
+          } catch (e) {
+            debugPrint('[FileSystemService] Error checking temp file: $e');
+          }
+        }
+      }
+
+      if (deletedCount > 0) {
+        debugPrint('[FileSystemService] Cleaned up $deletedCount old $folderName files (max age: ${maxAge.inHours}h)');
+      }
+
+      return deletedCount;
+    } catch (e) {
+      debugPrint('[FileSystemService] Error cleaning $folderName folder: $e');
+      return 0;
+    }
+  }
+
+  /// List unprocessed recordings in temp folder
+  /// These are recordings that weren't properly converted to Opus
+  /// Returns list of file paths that may need recovery
+  Future<List<String>> listOrphanedRecordings() async {
+    try {
+      final tempPath = await getTempAudioPath();
+      final recordingsDir = Directory('$tempPath/$_tempRecordingsSubfolder');
+
+      if (!await recordingsDir.exists()) {
+        return [];
+      }
+
+      final orphaned = <String>[];
+      await for (final entity in recordingsDir.list()) {
+        if (entity is File && entity.path.endsWith('.wav')) {
+          orphaned.add(entity.path);
+        }
+      }
+
+      if (orphaned.isNotEmpty) {
+        debugPrint('[FileSystemService] Found ${orphaned.length} orphaned recordings in temp');
+      }
+
+      return orphaned;
+    } catch (e) {
+      debugPrint('[FileSystemService] Error listing orphaned recordings: $e');
+      return [];
+    }
+  }
+
+  /// Delete a specific temporary file
+  Future<bool> deleteTempFile(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+        debugPrint('[FileSystemService] Deleted temp file: ${path.split('/').last}');
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[FileSystemService] Error deleting temp file: $e');
+      return false;
+    }
+  }
+
+  /// Clear all temporary audio files (use with caution!)
+  /// Only call when no recording/playback is active
+  Future<int> clearAllTempAudioFiles() async {
+    try {
+      final tempPath = await getTempAudioPath();
+      final tempDir = Directory(tempPath);
+
+      if (!await tempDir.exists()) {
+        return 0;
+      }
+
+      var deletedCount = 0;
+
+      // Delete files in all subfolders
+      await for (final entity in tempDir.list(recursive: true)) {
+        if (entity is File) {
+          try {
+            await entity.delete();
+            deletedCount++;
+          } catch (e) {
+            debugPrint('[FileSystemService] Error deleting ${entity.path}: $e');
+          }
+        }
+      }
+
+      debugPrint('[FileSystemService] Cleared $deletedCount temp audio files');
+      return deletedCount;
+    } catch (e) {
+      debugPrint('[FileSystemService] Error clearing temp files: $e');
+      return 0;
+    }
+  }
+
+  /// Check if a path is in the temp audio folder
+  bool isTempAudioPath(String path) {
+    return path.contains(_tempAudioFolderName);
+  }
+
+  /// Check if a path is a temp recording (precious, should not be aggressively cleaned)
+  bool isTempRecordingPath(String path) {
+    return path.contains('$_tempAudioFolderName/$_tempRecordingsSubfolder');
+  }
+
+  // ============================================================
+  // End Temporary Audio File Management
+  // ============================================================
 
   /// Set custom subfolder names (e.g., for Obsidian vault integration)
   Future<bool> setSubfolderNames({
@@ -185,6 +455,9 @@ class FileSystemService {
 
       // Ensure folder structure exists
       await _ensureFolderStructure();
+
+      // Clean up old temp audio files on startup
+      await cleanupTempAudioFiles();
 
       _isInitialized = true;
       _initializationFuture = null;

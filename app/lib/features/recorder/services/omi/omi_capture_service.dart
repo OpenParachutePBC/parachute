@@ -8,6 +8,7 @@ import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/utils/audio/wav_bytes_util.dart';
 import 'package:app/core/services/audio_compression_service_dart.dart';
+import 'package:app/core/services/file_system_service.dart';
 
 /// Service for capturing audio recordings from Omi device
 ///
@@ -332,22 +333,19 @@ class OmiCaptureService {
     await _stopRecordingWithTapCount(_currentButtonTapCount ?? 1);
   }
 
-  /// Save WAV file to storage (keep as WAV for transcription)
+  /// Save WAV file to temp recordings folder (will be compressed to Opus after transcription)
+  /// Uses the recordings subfolder which has 7-day retention for crash recovery
   Future<String?> _saveWavFile(Uint8List wavBytes, String recordingId) async {
     try {
-      final syncFolder = await storageService.getSyncFolderPath();
-
-      final now = DateTime.now();
-      final dateStr = _formatDate(now);
-
-      // Save as WAV (will be compressed to Opus after transcription)
-      final wavFileName = '$dateStr-$recordingId.wav';
-      final wavFilePath = '$syncFolder/$wavFileName';
+      // Save to temp recordings folder - protected from aggressive cleanup
+      // Will be converted to Opus and moved to captures after transcription
+      final fileSystem = FileSystemService();
+      final wavFilePath = await fileSystem.getRecordingTempPath();
 
       final wavFile = File(wavFilePath);
       await wavFile.writeAsBytes(wavBytes);
 
-      debugPrint('[OmiCaptureService] Saved WAV file: $wavFilePath');
+      debugPrint('[OmiCaptureService] Saved WAV file to temp recordings: $wavFilePath');
       return wavFilePath;
     } catch (e) {
       debugPrint('[OmiCaptureService] Error saving WAV file: $e');
@@ -379,6 +377,8 @@ class OmiCaptureService {
         debugPrint(
           '[OmiCaptureService] Auto-transcribe disabled, skipping transcription',
         );
+        // Still need to compress and move from temp to captures folder
+        await _compressAndSaveRecording(recording, null);
         return;
       }
 
@@ -394,43 +394,68 @@ class OmiCaptureService {
         },
       );
 
-      // Compress WAV to Opus after successful transcription
       debugPrint(
-        '[OmiCaptureService] Transcription complete, compressing to Opus...',
+        '[OmiCaptureService] Transcription complete: ${transcriptResult.text.length} chars',
       );
+      onStatusMessage?.call('Transcription complete!');
+
+      // Compress and save with transcript
+      await _compressAndSaveRecording(recording, transcriptResult.text);
+    } catch (e) {
+      debugPrint('[OmiCaptureService] Auto-transcription failed: $e');
+      onStatusMessage?.call('Transcription failed');
+      // Still try to save the recording without transcript
+      await _compressAndSaveRecording(recording, null);
+    }
+  }
+
+  /// Compress WAV to Opus and save to captures folder
+  Future<void> _compressAndSaveRecording(Recording recording, String? transcript) async {
+    try {
+      // Get the destination path in captures folder
+      final syncFolder = await storageService.getSyncFolderPath();
+      final now = recording.timestamp;
+      final dateStr = _formatDate(now);
+      final opusFileName = '$dateStr-${recording.id}.opus';
+      final opusDestPath = '$syncFolder/$opusFileName';
+
+      // Compress WAV to Opus
+      debugPrint('[OmiCaptureService] Compressing to Opus...');
       final compressionService = AudioCompressionServiceDart();
-      final opusPath = await compressionService.compressToOpus(
+
+      // First compress (this creates .opus next to the .wav in temp)
+      final tempOpusPath = await compressionService.compressToOpus(
         wavPath: recording.filePath,
-        deleteOriginal: false, // Keep WAV for playback and local use
+        deleteOriginal: true, // Delete the temp WAV file
       );
-      debugPrint('[OmiCaptureService] Compression complete: $opusPath');
+      debugPrint('[OmiCaptureService] Compression complete: $tempOpusPath');
+
+      // Move the Opus file from temp to captures folder
+      final tempOpusFile = File(tempOpusPath);
+      await tempOpusFile.copy(opusDestPath);
+      await tempOpusFile.delete();
+      debugPrint('[OmiCaptureService] Moved Opus to captures: $opusDestPath');
 
       // Update recording with transcript and new Opus file path
       final updatedRecording = Recording(
         id: recording.id,
         title: recording.title,
-        filePath: opusPath,
+        filePath: opusDestPath,
         timestamp: recording.timestamp,
         duration: recording.duration,
         tags: recording.tags,
-        transcript: transcriptResult.text,
-        fileSizeKB: await File(opusPath).length() / 1024,
+        transcript: transcript ?? '',
+        fileSizeKB: await File(opusDestPath).length() / 1024,
         source: recording.source,
         deviceId: recording.deviceId,
         buttonTapCount: recording.buttonTapCount,
       );
       await storageService.saveRecording(updatedRecording);
 
-      debugPrint(
-        '[OmiCaptureService] Transcription complete: ${transcriptResult.text.length} chars',
-      );
-      onStatusMessage?.call('Transcription complete!');
-
       // Notify UI again with updated recording
       onRecordingSaved?.call(updatedRecording);
     } catch (e) {
-      debugPrint('[OmiCaptureService] Auto-transcription failed: $e');
-      onStatusMessage?.call('Transcription failed');
+      debugPrint('[OmiCaptureService] Error compressing/saving recording: $e');
     }
   }
 

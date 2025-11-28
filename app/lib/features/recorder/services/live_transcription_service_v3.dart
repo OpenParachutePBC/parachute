@@ -4,10 +4,10 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
-import 'package:path/path.dart' as path;
 import 'package:app/features/recorder/services/transcription_service_adapter.dart';
 import 'package:app/features/recorder/services/vad/smart_chunker.dart';
 import 'package:app/features/recorder/services/audio_processing/simple_noise_filter.dart';
+import 'package:app/core/services/file_system_service.dart';
 
 /// Audio debug metrics for visualization
 class AudioDebugMetrics {
@@ -135,15 +135,15 @@ class AutoPauseTranscriptionService {
 
   AutoPauseTranscriptionService(this._transcriptionService);
 
-  /// Initialize service and create temp directory
+  /// Initialize service using centralized temp directory
   Future<void> initialize() async {
     if (_tempDirectory != null) return;
 
-    final tempDir = Directory.systemTemp;
-    _tempDirectory = path.join(tempDir.path, 'parachute_transcription');
-    await Directory(_tempDirectory!).create(recursive: true);
+    // Use centralized temp audio folder from FileSystemService
+    final fileSystem = FileSystemService();
+    _tempDirectory = await fileSystem.getTempAudioPath();
 
-    debugPrint('[AutoPauseTranscription] Initialized: $_tempDirectory');
+    debugPrint('[AutoPauseTranscription] Initialized with temp dir: $_tempDirectory');
   }
 
   /// Start auto-pause recording
@@ -194,9 +194,9 @@ class AutoPauseTranscriptionService {
         ),
       );
 
-      // Set final audio file path
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      _audioFilePath = path.join(_tempDirectory!, 'recording_$timestamp.wav');
+      // Set final audio file path using recordings subfolder (7-day retention for crash recovery)
+      final fileSystem = FileSystemService();
+      _audioFilePath = await fileSystem.getRecordingTempPath();
 
       // Start recording with stream
       // Note: Keeping minimal OS processing to reduce CoreAudio instability
@@ -623,10 +623,9 @@ class AutoPauseTranscriptionService {
       }
 
       // Save samples to temp WAV file for Whisper
-      final tempWavPath = path.join(
-        _tempDirectory!,
-        'temp_segment_${segment.index}.wav',
-      );
+      // Use centralized temp folder with unique path
+      final fileSystem = FileSystemService();
+      final tempWavPath = await fileSystem.getTranscriptionSegmentPath(segment.index);
 
       debugPrint(
         '[AutoPauseTranscription] Saving temp WAV: $tempWavPath (${segment.samples.length} samples)',
@@ -685,9 +684,7 @@ class AutoPauseTranscriptionService {
 
         // Clean up temp WAV file on error too
         try {
-          final errorFile = File(
-            path.join(_tempDirectory!, 'temp_segment_${segment.index}.wav'),
-          );
+          final errorFile = File(tempWavPath);
           if (await errorFile.exists()) {
             await errorFile.delete();
           }
@@ -864,17 +861,20 @@ class AutoPauseTranscriptionService {
     await _debugMetricsController.close();
     await _streamHealthController.close();
 
-    // Clean up temp directory
-    if (_tempDirectory != null) {
+    // Clean up our temp files (but not the shared temp directory)
+    if (_audioFilePath != null) {
       try {
-        final dir = Directory(_tempDirectory!);
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
+        final file = File(_audioFilePath!);
+        if (await file.exists()) {
+          await file.delete();
+          debugPrint('[AutoPauseTranscription] Deleted temp recording: $_audioFilePath');
         }
       } catch (e) {
-        debugPrint('[AutoPauseTranscription] Cleanup failed: $e');
+        debugPrint('[AutoPauseTranscription] Failed to cleanup temp recording: $e');
       }
     }
+    // Note: Segment temp files are cleaned up after transcription
+    // Any remaining old files will be cleaned up by FileSystemService.cleanupTempAudioFiles()
 
     debugPrint('[AutoPauseTranscription] ✅ Service disposed');
   }
