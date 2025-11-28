@@ -245,6 +245,7 @@
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				87A9EAC1C111E5A5C729BC2B /* [CP] Embed Pods Frameworks */,
+				0DF2215D4830B96566A3AE30 /* Copy Opus Library */,
 			);
 			buildRules = (
 			);
@@ -330,6 +331,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		0DF2215D4830B96566A3AE30 /* Copy Opus Library */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Opus Library";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libopus.dylib",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/bin/bash\n# Copy Opus library to app bundle\nOPUS_SOURCE=\"${SRCROOT}/Frameworks/libopus.dylib\"\nOPUS_DEST=\"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libopus.dylib\"\n\nif [ -f \"$OPUS_SOURCE\" ]; then\n    echo \"Copying Opus library from: $OPUS_SOURCE\"\n    echo \"Copying Opus library to: $OPUS_DEST\"\n    mkdir -p \"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\n    cp \"$OPUS_SOURCE\" \"$OPUS_DEST\"\n    echo \"✅ Opus library copied successfully\"\nelse\n    echo \"⚠️  Warning: Opus library not found at: $OPUS_SOURCE\"\nfi\n";
+		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

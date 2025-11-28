@@ -278,13 +278,16 @@ class GitService {
       final deleted = <String>[];
 
       statusMap.forEach((path, statusSet) {
-        if (statusSet.contains(GitStatus.wtModified)) {
+        if (statusSet.contains(GitStatus.wtModified) ||
+            statusSet.contains(GitStatus.indexModified)) {
           modified.add(path);
         }
         if (statusSet.contains(GitStatus.indexNew)) {
           added.add(path);
         }
-        if (statusSet.contains(GitStatus.wtDeleted)) {
+        // Check both working tree deleted AND index deleted (already staged for deletion)
+        if (statusSet.contains(GitStatus.wtDeleted) ||
+            statusSet.contains(GitStatus.indexDeleted)) {
           deleted.add(path);
         }
       });

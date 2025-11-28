@@ -95,10 +95,20 @@ void main() async {
     if (Platform.isMacOS) {
       logger.debug('Main', 'Platform: macOS - loading Opus library manually');
 
-      // Try to load from bundled library first, then fall back to system paths
+      // Try to load from bundled library first, then fall back to other paths
+      // During development, the library may be in the project's macos/Frameworks folder
       final possiblePaths = [
-        '@executable_path/../Frameworks/libopus.dylib', // Bundled with app
+        '@executable_path/../Frameworks/libopus.dylib', // Bundled with app (release)
         'libopus.dylib', // Relative to app
+        // Homebrew paths (try both symlink and versioned file)
+        '/opt/homebrew/opt/opus/lib/libopus.0.dylib', // Homebrew keg-only (versioned)
+        '/opt/homebrew/opt/opus/lib/libopus.dylib', // Homebrew keg-only (symlink)
+        '/opt/homebrew/lib/libopus.0.dylib', // Apple Silicon Homebrew (versioned)
+        '/opt/homebrew/lib/libopus.dylib', // Apple Silicon Homebrew (symlink)
+        '/usr/local/opt/opus/lib/libopus.0.dylib', // Intel Homebrew keg-only (versioned)
+        '/usr/local/opt/opus/lib/libopus.dylib', // Intel Homebrew keg-only (symlink)
+        '/usr/local/lib/libopus.0.dylib', // Intel Homebrew (versioned)
+        '/usr/local/lib/libopus.dylib', // Intel Homebrew (symlink)
       ];
 
       DynamicLibrary? loadedLib;

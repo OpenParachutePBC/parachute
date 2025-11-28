@@ -1,13 +1,36 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:opus_dart/opus_dart.dart';
+import 'package:opus_dart/opus_dart.dart' as opus_dart;
 
 /// Pure Dart audio compression service using opus_dart
 ///
 /// Converts WAV files to Opus format without relying on ffmpeg
 /// This avoids sandboxing issues on macOS and other platforms
 class AudioCompressionServiceDart {
+  /// Check if Opus library has been initialized
+  /// Must call opus_dart.initOpus() in main.dart before using this service
+  static bool get isOpusInitialized {
+    try {
+      // Try to get version - this will throw if not initialized
+      opus_dart.getOpusVersion();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Ensure Opus is initialized before operations
+  void _ensureOpusInitialized() {
+    if (!isOpusInitialized) {
+      throw Exception(
+        'Opus library not initialized. '
+        'Ensure opus_dart.initOpus() is called in main.dart before using audio compression. '
+        'On macOS, this requires libopus.dylib to be bundled with the app.',
+      );
+    }
+  }
+
   /// Compress a WAV file to Opus format using pure Dart
   ///
   /// Returns the path to the compressed Opus file
@@ -17,6 +40,9 @@ class AudioCompressionServiceDart {
     bool deleteOriginal = true,
   }) async {
     try {
+      // Verify Opus is initialized before attempting compression
+      _ensureOpusInitialized();
+
       debugPrint('[AudioCompressionDart] Compressing: $wavPath');
 
       final wavFile = File(wavPath);
@@ -185,10 +211,10 @@ class AudioCompressionServiceDart {
     try {
       // Create Opus encoder
       // For voice, we use Application.voip optimized for voice
-      final encoder = SimpleOpusEncoder(
+      final encoder = opus_dart.SimpleOpusEncoder(
         sampleRate: sampleRate,
         channels: channels,
-        application: Application.voip,
+        application: opus_dart.Application.voip,
       );
 
       // Convert PCM bytes to Int16List samples
@@ -299,6 +325,9 @@ class AudioCompressionServiceDart {
     String? outputPath,
   }) async {
     try {
+      // Verify Opus is initialized before attempting decompression
+      _ensureOpusInitialized();
+
       debugPrint('[AudioCompressionDart] Decompressing: $opusPath');
 
       final opusFile = File(opusPath);
@@ -353,7 +382,7 @@ class AudioCompressionServiceDart {
     const sampleRate = 16000;
     const channels = 1;
 
-    final decoder = SimpleOpusDecoder(
+    final decoder = opus_dart.SimpleOpusDecoder(
       sampleRate: sampleRate,
       channels: channels,
     );

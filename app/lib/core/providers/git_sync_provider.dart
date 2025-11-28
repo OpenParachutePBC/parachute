@@ -475,6 +475,13 @@ class GitSyncNotifier extends StateNotifier<GitSyncState> {
   /// Returns the number of files converted
   Future<int> _convertWavToOpus() async {
     try {
+      // Skip conversion if Opus library isn't available (e.g., macOS without libopus)
+      if (!AudioCompressionServiceDart.isOpusInitialized) {
+        debugPrint('[GitSync] ⚠️  Opus not initialized, skipping WAV→Opus conversion');
+        debugPrint('[GitSync] ℹ️  WAV files will be synced as-is');
+        return 0;
+      }
+
       final fileSystemService = _ref.read(fileSystemServiceProvider);
       final capturesPath = await fileSystemService.getCapturesPath();
       final capturesDir = Directory(capturesPath);
