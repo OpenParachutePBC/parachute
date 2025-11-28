@@ -1,4 +1,4 @@
-platform :osx, '14.0'
+platform :osx, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -38,13 +38,5 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
-
-    # Fix deployment target warnings - enforce minimum macOS 10.15
-    # whisper_ggml requires 10.15, so we need to use that as the minimum
-    target.build_configurations.each do |config|
-      if config.build_settings['MACOSX_DEPLOYMENT_TARGET'].to_f < 10.15
-        config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '10.15'
-      end
-    end
   end
 end
