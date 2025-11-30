@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:app/core/theme/design_tokens.dart';
 
+/// Advanced features step with brand styling
+///
+/// Shows optional features like AI Chat and Omi device support
 class AdvancedFeaturesStep extends ConsumerWidget {
   final VoidCallback onComplete;
   final VoidCallback onBack;
@@ -13,147 +17,198 @@ class AdvancedFeaturesStep extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.all(Spacing.xl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              IconButton(icon: const Icon(Icons.arrow_back), onPressed: onBack),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
-          // Title
-          Text(
-            'Optional Features',
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-          ),
-
-          const SizedBox(height: 8),
-
-          Text(
-            'These advanced features are disabled by default. You can enable them anytime in Settings.',
-            style: TextStyle(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.7),
-            ),
-          ),
-
-          const SizedBox(height: 32),
-
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
+              // Header
+              Row(
                 children: [
-                  // AI Chat feature card
-                  _buildFeatureCard(
-                    context,
-                    icon: Icons.chat_bubble_outline,
-                    iconColor: Colors.purple,
-                    title: 'AI Chat with Claude',
-                    description:
-                        'Have conversations with AI in dedicated spaces. Requires running the Parachute backend server.',
-                    isAdvanced: true,
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Omi device feature card
-                  _buildFeatureCard(
-                    context,
-                    icon: Icons.bluetooth,
-                    iconColor: Colors.blue,
-                    title: 'Omi Wearable Device',
-                    description:
-                        'Connect your Omi device to record with a button tap. Includes firmware updates over-the-air.',
-                    isAdvanced: true,
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // What you get out of the box
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.green.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
+                  IconButton(
+                    icon: Icon(
+                      Icons.arrow_back,
+                      color:
+                          isDark ? BrandColors.nightText : BrandColors.charcoal,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              color: Colors.green[700],
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'What you get right now:',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green[900],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        _buildCheckItem('Voice recording with transcription'),
-                        _buildCheckItem('AI-powered title generation'),
-                        _buildCheckItem('Local file storage (~/Parachute/)'),
-                        _buildCheckItem(
-                          'Complete privacy - everything stays on your device',
-                        ),
-                      ],
-                    ),
+                    onPressed: onBack,
                   ),
                 ],
               ),
-            ),
-          ),
 
-          const SizedBox(height: 24),
+              SizedBox(height: Spacing.sm),
 
-          // Finish button
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: onComplete,
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+              // Title
+              Text(
+                'Optional Features',
+                style: TextStyle(
+                  fontSize: TypographyTokens.headlineLarge,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                ),
               ),
-              child: const Text(
-                'Start Recording',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+
+              SizedBox(height: Spacing.sm),
+
+              Text(
+                'These advanced features are disabled by default. '
+                'You can enable them anytime in Settings.',
+                style: TextStyle(
+                  fontSize: TypographyTokens.bodyMedium,
+                  color: isDark
+                      ? BrandColors.nightTextSecondary
+                      : BrandColors.driftwood,
+                  height: 1.5,
+                ),
               ),
-            ),
-          ),
 
-          const SizedBox(height: 12),
+              SizedBox(height: Spacing.xxl),
 
-          // Settings reminder
-          Text(
-            'You can change any of these settings later',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-            textAlign: TextAlign.center,
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      // AI Chat feature card
+                      _buildFeatureCard(
+                        context,
+                        icon: Icons.chat_bubble_outline,
+                        iconColor: BrandColors.turquoise,
+                        title: 'AI Chat with Claude',
+                        description:
+                            'Have conversations with AI in dedicated spheres. '
+                            'Requires running the Parachute backend server.',
+                        isDark: isDark,
+                      ),
+
+                      SizedBox(height: Spacing.lg),
+
+                      // Omi device feature card
+                      _buildFeatureCard(
+                        context,
+                        icon: Icons.bluetooth,
+                        iconColor: BrandColors.forest,
+                        title: 'Omi Wearable Device',
+                        description:
+                            'Connect your Omi device to record with a button tap. '
+                            'Includes firmware updates over-the-air.',
+                        isDark: isDark,
+                      ),
+
+                      SizedBox(height: Spacing.xxl),
+
+                      // What you get out of the box
+                      Container(
+                        padding: EdgeInsets.all(Spacing.lg),
+                        decoration: BoxDecoration(
+                          color: BrandColors.successLight,
+                          borderRadius: BorderRadius.circular(Radii.md),
+                          border: Border.all(
+                            color: BrandColors.success.withValues(alpha: 0.5),
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  color: BrandColors.success,
+                                  size: 22,
+                                ),
+                                SizedBox(width: Spacing.sm),
+                                Text(
+                                  'What you get right now:',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: BrandColors.forestDeep,
+                                    fontSize: TypographyTokens.bodyLarge,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: Spacing.lg),
+                            _buildCheckItem(
+                              'Voice recording with transcription',
+                              isDark,
+                            ),
+                            _buildCheckItem(
+                              'AI-powered title generation',
+                              isDark,
+                            ),
+                            _buildCheckItem(
+                              'Local file storage in your Parachute folder',
+                              isDark,
+                            ),
+                            _buildCheckItem(
+                              'Complete privacy - everything stays on your device',
+                              isDark,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              SizedBox(height: Spacing.xl),
+
+              // Finish button
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: onComplete,
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        isDark ? BrandColors.nightForest : BrandColors.forest,
+                    foregroundColor: BrandColors.softWhite,
+                    padding: EdgeInsets.symmetric(vertical: Spacing.lg),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(Radii.md),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.rocket_launch, size: 20),
+                      SizedBox(width: Spacing.sm),
+                      Text(
+                        'Start Recording',
+                        style: TextStyle(
+                          fontSize: TypographyTokens.bodyLarge,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              SizedBox(height: Spacing.md),
+
+              // Settings reminder
+              Center(
+                child: Text(
+                  'You can change any of these settings later',
+                  style: TextStyle(
+                    fontSize: TypographyTokens.labelSmall,
+                    color: isDark
+                        ? BrandColors.nightTextSecondary
+                        : BrandColors.driftwood,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -164,27 +219,35 @@ class AdvancedFeaturesStep extends ConsumerWidget {
     required Color iconColor,
     required String title,
     required String description,
-    bool isAdvanced = false,
+    required bool isDark,
   }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(Spacing.lg),
       decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.2), width: 1),
+        color: isDark
+            ? BrandColors.nightSurfaceElevated
+            : BrandColors.softWhite,
+        borderRadius: BorderRadius.circular(Radii.md),
+        border: Border.all(
+          color: isDark
+              ? BrandColors.nightTextSecondary.withValues(alpha: 0.2)
+              : BrandColors.stone,
+          width: 1,
+        ),
+        boxShadow: isDark ? null : Elevation.cardShadow,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.all(Spacing.md),
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
+              color: iconColor.withValues(alpha: isDark ? 0.2 : 0.1),
+              borderRadius: BorderRadius.circular(Radii.md),
             ),
             child: Icon(icon, size: 24, color: iconColor),
           ),
-          const SizedBox(width: 16),
+          SizedBox(width: Spacing.lg),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,43 +256,45 @@ class AdvancedFeaturesStep extends ConsumerWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontSize: 15,
+                      style: TextStyle(
+                        fontSize: TypographyTokens.bodyLarge,
                         fontWeight: FontWeight.bold,
+                        color:
+                            isDark ? BrandColors.nightText : BrandColors.charcoal,
                       ),
                     ),
-                    if (isAdvanced) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'DISABLED',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange[800],
-                          ),
+                    SizedBox(width: Spacing.sm),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: Spacing.sm,
+                        vertical: Spacing.xs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? BrandColors.warning.withValues(alpha: 0.2)
+                            : BrandColors.warningLight,
+                        borderRadius: BorderRadius.circular(Radii.sm),
+                      ),
+                      child: Text(
+                        'OPTIONAL',
+                        style: TextStyle(
+                          fontSize: TypographyTokens.labelSmall - 1,
+                          fontWeight: FontWeight.bold,
+                          color: BrandColors.warning,
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                SizedBox(height: Spacing.sm),
                 Text(
                   description,
                   style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.7),
-                    height: 1.4,
+                    fontSize: TypographyTokens.bodySmall,
+                    color: isDark
+                        ? BrandColors.nightTextSecondary
+                        : BrandColors.driftwood,
+                    height: 1.5,
                   ),
                 ),
               ],
@@ -240,15 +305,23 @@ class AdvancedFeaturesStep extends ConsumerWidget {
     );
   }
 
-  Widget _buildCheckItem(String text) {
+  Widget _buildCheckItem(String text, bool isDark) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.only(bottom: Spacing.sm),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.check, color: Colors.green[700], size: 16),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 13))),
+          Icon(Icons.check, color: BrandColors.success, size: 18),
+          SizedBox(width: Spacing.sm),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: TypographyTokens.bodySmall,
+                color: BrandColors.forestDeep,
+              ),
+            ),
+          ),
         ],
       ),
     );

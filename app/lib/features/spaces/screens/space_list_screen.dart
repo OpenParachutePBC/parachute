@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:app/core/theme/design_tokens.dart';
 import '../providers/space_provider.dart';
 import '../widgets/create_space_dialog.dart';
 import './space_detail_screen.dart';
@@ -168,7 +169,7 @@ class SpaceListScreen extends ConsumerWidget {
                                     : Icon(
                                         Icons.folder,
                                         color: space.color != null
-                                            ? Colors.white
+                                            ? BrandColors.softWhite
                                             : (isSelected
                                                   ? Theme.of(
                                                       context,
@@ -248,7 +249,7 @@ class SpaceListScreen extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              Icon(Icons.error_outline, size: 48, color: BrandColors.error),
               const SizedBox(height: 16),
               Text('Error: $error'),
               const SizedBox(height: 16),
@@ -304,7 +305,7 @@ class SpaceListScreen extends ConsumerWidget {
                 }
               }
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text('Delete', style: TextStyle(color: BrandColors.error)),
           ),
         ],
       ),
@@ -321,7 +322,7 @@ class SpaceListScreen extends ConsumerWidget {
       return Color(int.parse(fullHex, radix: 16));
     } catch (e) {
       // Return a default color if parsing fails
-      return Colors.grey;
+      return BrandColors.driftwood;
     }
   }
 }

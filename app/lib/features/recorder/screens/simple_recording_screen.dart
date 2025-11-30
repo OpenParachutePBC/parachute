@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/screens/recording_detail_screen.dart';
 import 'package:app/features/recorder/models/recording.dart';
@@ -15,18 +16,14 @@ import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:path/path.dart' as path;
 
-/// Enhanced recording screen with live waveform ring and context input
+/// Recording screen with Parachute brand styling
 ///
-/// Design principles:
-/// - Green = recording (go!)
-/// - Orange = paused (waiting)
-/// - Blue = processing
-/// - Live waveform visualization
-/// - Context input during + after recording
+/// "Think naturally" - A calm, immersive space for voice capture.
 ///
-/// Supports two modes:
-/// - New recording: Creates a new recording from scratch
-/// - Append mode: Adds content to an existing recording (when appendToRecordingId is set)
+/// State colors:
+/// - Forest green = recording (natural, grounded)
+/// - Warm amber = paused (waiting, calm)
+/// - Turquoise = processing (flow, clarity)
 class SimpleRecordingScreen extends ConsumerStatefulWidget {
   /// If set, records a new segment to append to an existing recording
   final String? appendToRecordingId;
@@ -73,25 +70,25 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   void initState() {
     super.initState();
 
-    // Gentle fade animation for recording state (soft and subtle)
+    // Gentle breathing animation (4s - calm, unhurried)
     _pulseController = AnimationController(
-      duration: const Duration(seconds: 4), // Slow breathing rhythm
+      duration: Motion.breathing,
       vsync: this,
     );
     _pulseAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _pulseController, curve: Motion.breathe),
     );
 
     // Context input slide animation
     _contextSlideController = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: Motion.gentle,
       vsync: this,
     );
     _contextSlideAnimation =
         Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero).animate(
           CurvedAnimation(
             parent: _contextSlideController,
-            curve: Curves.easeOut,
+            curve: Motion.settling,
           ),
         );
 
@@ -122,7 +119,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       });
       _startDurationTimer();
       _startWaveformAnimation();
-      _pulseController.repeat(reverse: true); // Gentle fade in/out
+      _pulseController.repeat(reverse: true);
     } catch (e) {
       if (!mounted) return;
       _showError('Failed to start recording: $e');
@@ -154,7 +151,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         _isPaused = false;
       });
       _startWaveformAnimation();
-      _pulseController.repeat(reverse: true); // Resume gentle fade
+      _pulseController.repeat(reverse: true);
     } catch (e) {
       if (!mounted) return;
       _showError('Failed to resume recording: $e');
@@ -215,11 +212,11 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         timestamp: startTime,
         duration: _recordingDuration,
         tags: [],
-        transcript: 'Transcribing...', // Placeholder
+        transcript: 'Transcribing...',
         context: _contextInput,
         fileSizeKB: await File(audioDestPath).length() / 1024,
         source: RecordingSource.phone,
-        transcriptionStatus: ProcessingStatus.processing, // In progress
+        transcriptionStatus: ProcessingStatus.processing,
         titleGenerationStatus: ProcessingStatus.pending,
         liveTranscriptionStatus: 'in_progress',
       );
@@ -231,7 +228,6 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       }
 
       // Start background transcription (non-blocking)
-      // Will compress to Opus after transcription completes
       _processInBackground(
         audioDestPath: audioDestPath,
         recording: recording,
@@ -247,7 +243,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         _recordingDuration = Duration.zero;
       });
 
-      // Navigate immediately to detail screen (transcription will update in background)
+      // Navigate immediately to detail screen
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -279,14 +275,13 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
         throw Exception('Recording not found: $existingId');
       }
 
-      // Find the existing WAV file (might be .wav or need to decompress from .opus)
+      // Find the existing WAV file
       final existingWavPath = path.join(capturesPath, '$existingId.wav');
       final existingOpusPath = path.join(capturesPath, '$existingId.opus');
 
       String targetWavPath = existingWavPath;
       if (!await File(existingWavPath).exists()) {
         if (await File(existingOpusPath).exists()) {
-          // Decompress opus to wav for appending
           debugPrint('[SimpleRecording] Decompressing opus to wav for append...');
           final compressionService = AudioCompressionServiceDart();
           await compressionService.decompressToWav(
@@ -335,7 +330,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       final compressionService = AudioCompressionServiceDart();
       await compressionService.compressToOpus(
         wavPath: targetWavPath,
-        deleteOriginal: false, // Keep WAV for playback
+        deleteOriginal: false,
       );
 
       // Clean up temp audio file
@@ -375,7 +370,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: BrandColors.error),
             child: const Text('Discard'),
           ),
         ],
@@ -389,7 +384,6 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       _stopWaveformAnimation();
       _pulseController.stop();
 
-      // Navigate back to home
       if (mounted) {
         Navigator.pop(context);
       }
@@ -425,8 +419,6 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   void _startWaveformAnimation() {
     _waveformTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       setState(() {
-        // Simulate waveform with random amplitudes
-        // In real implementation, this would come from actual audio input
         for (int i = 0; i < _waveformAmplitudes.length; i++) {
           _waveformAmplitudes[i] = 0.3 + _random.nextDouble() * 0.7;
         }
@@ -444,7 +436,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: BrandColors.error),
     );
   }
 
@@ -459,16 +451,16 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   }
 
   Color get _primaryColor {
-    if (_isSaving) return Colors.blue;
-    if (_isPaused) return Colors.orange;
-    if (_isRecording) return Colors.green;
-    return Colors.grey;
+    if (_isSaving) return BrandColors.turquoise;
+    if (_isPaused) return BrandColors.warning;
+    if (_isRecording) return BrandColors.forest;
+    return BrandColors.driftwood;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A3A2F), // Dark teal
+      backgroundColor: BrandColors.forestDeep,
       body: SafeArea(
         child: Column(
           children: [
@@ -501,7 +493,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(Spacing.lg),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -509,27 +501,30 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
           if (_isRecording || _isPaused)
             IconButton(
               onPressed: _discardRecording,
-              icon: const Icon(Icons.close, color: Colors.white),
+              icon: Icon(
+                Icons.close,
+                color: BrandColors.cream.withValues(alpha: 0.9),
+              ),
               tooltip: 'Discard recording',
             )
           else
-            const SizedBox(width: 48),
+            SizedBox(width: Spacing.xxxl),
 
           // App title or append mode indicator
           Text(
             widget.appendToRecordingId != null
                 ? 'Adding Content'
                 : 'Parachute',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
+            style: TextStyle(
+              color: BrandColors.cream,
+              fontSize: TypographyTokens.headlineMedium,
               fontWeight: FontWeight.w300,
               letterSpacing: 1.2,
             ),
           ),
 
           // Spacing to keep title centered
-          const SizedBox(width: 48),
+          SizedBox(width: Spacing.xxxl),
         ],
       ),
     );
@@ -564,27 +559,30 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (_isSaving)
-                        const CircularProgressIndicator(color: Colors.white)
+                        CircularProgressIndicator(
+                          color: BrandColors.cream,
+                          strokeWidth: 2,
+                        )
                       else if (_isRecording || _isPaused)
                         Icon(
                           _isPaused ? Icons.pause : Icons.mic,
                           size: 48,
-                          color: Colors.white,
+                          color: BrandColors.cream,
                         )
                       else
-                        const Icon(
+                        Icon(
                           Icons.mic_none,
                           size: 48,
-                          color: Colors.white54,
+                          color: BrandColors.cream.withValues(alpha: 0.5),
                         ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: Spacing.lg),
                       Text(
                         _formatDuration(_recordingDuration),
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: BrandColors.cream,
                           fontSize: 32,
                           fontWeight: FontWeight.w300,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -594,26 +592,35 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
             ),
           ),
 
-          const SizedBox(height: 32),
+          SizedBox(height: Spacing.xxl),
 
           // Status text
           Text(
             _getStatusText(),
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
+            style: TextStyle(
+              color: BrandColors.cream.withValues(alpha: 0.7),
+              fontSize: TypographyTokens.bodyLarge,
+            ),
             textAlign: TextAlign.center,
           ),
 
           // Context hint (when recording)
           if (_isRecording && !_showContextInput)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: EdgeInsets.only(top: Spacing.sm),
               child: TextButton.icon(
                 onPressed: _toggleContextInput,
-                icon: const Icon(Icons.note_add, size: 16),
-                label: const Text('Add context'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white54,
-                  textStyle: const TextStyle(fontSize: 14),
+                icon: Icon(
+                  Icons.note_add,
+                  size: 16,
+                  color: BrandColors.cream.withValues(alpha: 0.5),
+                ),
+                label: Text(
+                  'Add context',
+                  style: TextStyle(
+                    color: BrandColors.cream.withValues(alpha: 0.5),
+                    fontSize: TypographyTokens.bodyMedium,
+                  ),
                 ),
               ),
             ),
@@ -624,10 +631,15 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
 
   Widget _buildControls() {
     if (_isSaving) {
-      return const Padding(
-        padding: EdgeInsets.all(32),
+      return Padding(
+        padding: EdgeInsets.all(Spacing.xxl),
         child: Center(
-          child: Text('Processing...', style: TextStyle(color: Colors.white70)),
+          child: Text(
+            'Processing...',
+            style: TextStyle(
+              color: BrandColors.cream.withValues(alpha: 0.7),
+            ),
+          ),
         ),
       );
     }
@@ -635,25 +647,29 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
     if (!_isRecording) {
       // Start recording button
       return Padding(
-        padding: const EdgeInsets.all(32),
+        padding: EdgeInsets.all(Spacing.xxl),
         child: SizedBox(
           width: double.infinity,
           height: 56,
           child: ElevatedButton(
             onPressed: _startRecording,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
+              backgroundColor: BrandColors.forest,
+              foregroundColor: BrandColors.cream,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(Radii.full),
               ),
+              elevation: Elevation.low,
             ),
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.fiber_manual_record),
-                SizedBox(width: 8),
-                Text('Start Recording', style: TextStyle(fontSize: 18)),
+                const Icon(Icons.fiber_manual_record),
+                SizedBox(width: Spacing.sm),
+                Text(
+                  'Start Recording',
+                  style: TextStyle(fontSize: TypographyTokens.titleMedium),
+                ),
               ],
             ),
           ),
@@ -663,7 +679,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
 
     // Pause/Resume and Save buttons
     return Padding(
-      padding: const EdgeInsets.all(32),
+      padding: EdgeInsets.all(Spacing.xxl),
       child: Row(
         children: [
           Expanded(
@@ -672,48 +688,54 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
               child: OutlinedButton(
                 onPressed: _isPaused ? _resumeRecording : _pauseRecording,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: _isPaused ? Colors.green : Colors.orange,
+                  foregroundColor: _isPaused
+                      ? BrandColors.forest
+                      : BrandColors.warning,
                   side: BorderSide(
-                    color: _isPaused ? Colors.green : Colors.orange,
+                    color: _isPaused ? BrandColors.forest : BrandColors.warning,
                     width: 2,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(Radii.full),
                   ),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(_isPaused ? Icons.play_arrow : Icons.pause),
-                    const SizedBox(width: 8),
+                    SizedBox(width: Spacing.sm),
                     Text(
                       _isPaused ? 'Resume' : 'Pause',
-                      style: const TextStyle(fontSize: 18),
+                      style: TextStyle(fontSize: TypographyTokens.titleMedium),
                     ),
                   ],
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 16),
+          SizedBox(width: Spacing.lg),
           Expanded(
             child: SizedBox(
               height: 56,
               child: ElevatedButton(
                 onPressed: _saveRecording,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF0A3A2F),
+                  backgroundColor: BrandColors.cream,
+                  foregroundColor: BrandColors.forestDeep,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(Radii.full),
                   ),
+                  elevation: Elevation.low,
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.check),
-                    SizedBox(width: 8),
-                    Text('Save', style: TextStyle(fontSize: 18)),
+                    const Icon(Icons.check),
+                    SizedBox(width: Spacing.sm),
+                    Text(
+                      'Save',
+                      style: TextStyle(fontSize: TypographyTokens.titleMedium),
+                    ),
                   ],
                 ),
               ),
@@ -729,16 +751,18 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       child: GestureDetector(
         onTap: _toggleContextInput,
         child: Container(
-          color: Colors.black54,
+          color: BrandColors.ink.withValues(alpha: 0.6),
           child: SlideTransition(
             position: _contextSlideAnimation,
             child: Align(
               alignment: Alignment.bottomCenter,
               child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                padding: EdgeInsets.all(Spacing.xl),
+                decoration: BoxDecoration(
+                  color: BrandColors.softWhite,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(Radii.xl),
+                  ),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -746,47 +770,64 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Add Context',
                           style: TextStyle(
-                            fontSize: 20,
+                            fontSize: TypographyTokens.headlineMedium,
                             fontWeight: FontWeight.w600,
+                            color: BrandColors.charcoal,
                           ),
                         ),
                         IconButton(
                           onPressed: _toggleContextInput,
-                          icon: const Icon(Icons.close),
+                          icon: Icon(
+                            Icons.close,
+                            color: BrandColors.charcoal,
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: Spacing.lg),
                     TextField(
                       autofocus: true,
                       maxLines: 3,
-                      style: const TextStyle(color: Colors.black, fontSize: 16),
-                      decoration: const InputDecoration(
+                      style: TextStyle(
+                        color: BrandColors.charcoal,
+                        fontSize: TypographyTokens.bodyLarge,
+                      ),
+                      decoration: InputDecoration(
                         hintText: 'What is this recording about?',
-                        hintStyle: TextStyle(color: Colors.black38),
-                        border: OutlineInputBorder(),
+                        hintStyle: TextStyle(
+                          color: BrandColors.driftwood,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Radii.md),
+                        ),
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: BrandColors.softWhite,
                       ),
                       onChanged: (value) => _contextInput = value,
                     ),
-                    const SizedBox(height: 16),
+                    SizedBox(height: Spacing.lg),
                     Row(
                       children: [
                         IconButton(
                           onPressed: () {
                             // TODO: Voice input for context
                           },
-                          icon: const Icon(Icons.mic),
+                          icon: Icon(
+                            Icons.mic,
+                            color: BrandColors.forest,
+                          ),
                           tooltip: 'Voice input',
                         ),
                         const Spacer(),
                         TextButton(
                           onPressed: _toggleContextInput,
-                          child: const Text('Done'),
+                          child: Text(
+                            'Done',
+                            style: TextStyle(color: BrandColors.forest),
+                          ),
                         ),
                       ],
                     ),
@@ -836,7 +877,7 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
       final compressionService = AudioCompressionServiceDart();
       final opusPath = await compressionService.compressToOpus(
         wavPath: audioDestPath,
-        deleteOriginal: false, // Keep WAV for playback and local use
+        deleteOriginal: false,
       );
       debugPrint('[SimpleRecording] Compression complete: $opusPath');
 
@@ -915,5 +956,3 @@ class WaveformRingPainter extends CustomPainter {
         oldDelegate.isRecording != isRecording;
   }
 }
-
-/// Post-save context input modal
