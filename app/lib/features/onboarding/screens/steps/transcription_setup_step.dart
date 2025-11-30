@@ -1,12 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/services/parakeet_service.dart';
 
-/// Platform-adaptive transcription setup step
-///
-/// Shows Parakeet v3 info - models download automatically on first use
+/// Platform-adaptive transcription setup step with brand styling
 class TranscriptionSetupStep extends ConsumerStatefulWidget {
   final VoidCallback onNext;
   final VoidCallback onBack;
@@ -41,10 +40,11 @@ class _TranscriptionSetupStepState
   Future<void> _checkParakeetStatus() async {
     if (_isApplePlatform) {
       final parakeetService = ParakeetService();
-      final isReady = await parakeetService.isReady();
+      // Check if models are downloaded (not just loaded in memory)
+      final isDownloaded = await parakeetService.areModelsDownloaded();
       if (mounted) {
         setState(() {
-          _parakeetInitialized = isReady;
+          _parakeetInitialized = isDownloaded;
         });
       }
     } else {
@@ -96,17 +96,31 @@ class _TranscriptionSetupStepState
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
+      backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(
+            Icons.arrow_back,
+            color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+          ),
           onPressed: widget.onBack,
         ),
-        title: const Text('Transcription Setup'),
+        title: Text(
+          'Transcription Setup',
+          style: TextStyle(
+            color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: EdgeInsets.all(Spacing.xl),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -117,23 +131,35 @@ class _TranscriptionSetupStepState
                     children: [
                       Text(
                         'Voice Transcription',
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: TypographyTokens.headlineLarge,
+                          fontWeight: FontWeight.bold,
+                          color: isDark
+                              ? BrandColors.nightText
+                              : BrandColors.charcoal,
+                        ),
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: Spacing.lg),
                       Text(
-                        'Parachute uses Parakeet v3 for fast, offline transcription.',
-                        style: Theme.of(context).textTheme.bodyLarge,
+                        'Parachute uses Parakeet v3 for fast, offline transcription. '
+                        'Your voice stays on your device.',
+                        style: TextStyle(
+                          fontSize: TypographyTokens.bodyLarge,
+                          color: isDark
+                              ? BrandColors.nightTextSecondary
+                              : BrandColors.driftwood,
+                          height: 1.5,
+                        ),
                       ),
-                      const SizedBox(height: 32),
+                      SizedBox(height: Spacing.xxl),
 
-                      _buildParakeetInfo(),
+                      _buildParakeetInfo(isDark),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              _buildBottomButtons(),
+              SizedBox(height: Spacing.lg),
+              _buildBottomButtons(isDark),
             ],
           ),
         ),
@@ -141,128 +167,188 @@ class _TranscriptionSetupStepState
     );
   }
 
-  Widget _buildParakeetInfo() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
+  Widget _buildParakeetInfo(bool isDark) {
+    return Container(
+      padding: EdgeInsets.all(Spacing.xl),
+      decoration: BoxDecoration(
+        color: isDark
+            ? BrandColors.nightSurfaceElevated
+            : BrandColors.softWhite,
+        borderRadius: BorderRadius.circular(Radii.lg),
+        border: Border.all(
+          color: isDark
+              ? BrandColors.nightTextSecondary.withValues(alpha: 0.2)
+              : BrandColors.stone,
+          width: 1,
+        ),
+        boxShadow: isDark ? null : Elevation.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(Spacing.md),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? BrandColors.nightTurquoise.withValues(alpha: 0.2)
+                      : BrandColors.turquoiseMist,
+                  borderRadius: BorderRadius.circular(Radii.md),
+                ),
+                child: Icon(
                   Icons.auto_awesome,
-                  color: Theme.of(context).colorScheme.primary,
+                  color: isDark
+                      ? BrandColors.nightTurquoise
+                      : BrandColors.turquoiseDeep,
                   size: 28,
                 ),
-                const SizedBox(width: 12),
-                Text(
-                  'Parakeet v3',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildFeatureItem(
-              icon: Icons.speed,
-              title: _isApplePlatform ? '~190x Real-time' : '~5x Real-time',
-              subtitle: _isApplePlatform
-                  ? 'Uses Apple Neural Engine'
-                  : 'ONNX Runtime optimized',
-            ),
-            const SizedBox(height: 12),
-            _buildFeatureItem(
-              icon: Icons.language,
-              title: '25 Languages',
-              subtitle: 'Auto-detects language',
-            ),
-            const SizedBox(height: 12),
-            _buildFeatureItem(
-              icon: Icons.cloud_off,
-              title: '100% Offline',
-              subtitle: 'No internet required',
-            ),
-            const SizedBox(height: 12),
-            _buildFeatureItem(
-              icon: Icons.download,
-              title: _isApplePlatform ? '~500 MB download' : '~640 MB download',
-              subtitle: 'Downloads automatically on first use',
-            ),
-            if (_parakeetInitialized) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle, color: Colors.green.shade700),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Ready to use!',
-                        style: TextStyle(
-                          color: Colors.green.shade700,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
+              ),
+              SizedBox(width: Spacing.lg),
+              Text(
+                'Parakeet v3',
+                style: TextStyle(
+                  fontSize: TypographyTokens.headlineSmall,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
                 ),
               ),
             ],
-            if (_parakeetError != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.error, color: Colors.red.shade700),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _parakeetError!,
-                        style: TextStyle(
-                          color: Colors.red.shade700,
-                          fontSize: 12,
-                        ),
+          ),
+          SizedBox(height: Spacing.xl),
+          _buildFeatureItem(
+            icon: Icons.speed,
+            title: _isApplePlatform ? '~190x Real-time' : '~5x Real-time',
+            subtitle: _isApplePlatform
+                ? 'Uses Apple Neural Engine'
+                : 'ONNX Runtime optimized',
+            isDark: isDark,
+          ),
+          SizedBox(height: Spacing.md),
+          _buildFeatureItem(
+            icon: Icons.language,
+            title: '25 Languages',
+            subtitle: 'Auto-detects language',
+            isDark: isDark,
+          ),
+          SizedBox(height: Spacing.md),
+          _buildFeatureItem(
+            icon: Icons.cloud_off,
+            title: '100% Offline',
+            subtitle: 'No internet required',
+            isDark: isDark,
+          ),
+          SizedBox(height: Spacing.md),
+          _buildFeatureItem(
+            icon: Icons.download,
+            title: _isApplePlatform ? '~500 MB download' : '~640 MB download',
+            subtitle: 'Downloads automatically on first use',
+            isDark: isDark,
+          ),
+          if (_parakeetInitialized) ...[
+            SizedBox(height: Spacing.xl),
+            Container(
+              padding: EdgeInsets.all(Spacing.md),
+              decoration: BoxDecoration(
+                color: BrandColors.successLight,
+                borderRadius: BorderRadius.circular(Radii.md),
+                border: Border.all(color: BrandColors.success, width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle, color: BrandColors.success),
+                  SizedBox(width: Spacing.md),
+                  Expanded(
+                    child: Text(
+                      'Ready to use!',
+                      style: TextStyle(
+                        color: BrandColors.success,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ],
-            if (!_parakeetInitialized && _parakeetError == null) ...[
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _isInitializingParakeet
-                      ? null
-                      : _initializeParakeet,
-                  icon: _isInitializingParakeet
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.download),
-                  label: Text(
-                    _isInitializingParakeet ? 'Downloading...' : 'Download Now',
                   ),
+                ],
+              ),
+            ),
+          ],
+          if (_parakeetError != null) ...[
+            SizedBox(height: Spacing.xl),
+            Container(
+              padding: EdgeInsets.all(Spacing.md),
+              decoration: BoxDecoration(
+                color: BrandColors.errorLight,
+                borderRadius: BorderRadius.circular(Radii.md),
+                border: Border.all(color: BrandColors.error, width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error, color: BrandColors.error),
+                  SizedBox(width: Spacing.md),
+                  Expanded(
+                    child: Text(
+                      _parakeetError!,
+                      style: TextStyle(
+                        color: BrandColors.error,
+                        fontSize: TypographyTokens.bodySmall,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (!_parakeetInitialized && _parakeetError == null) ...[
+            SizedBox(height: Spacing.xl),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isInitializingParakeet
+                    ? null
+                    : _initializeParakeet,
+                icon: _isInitializingParakeet
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isDark
+                                ? BrandColors.nightTurquoise
+                                : BrandColors.turquoise,
+                          ),
+                        ),
+                      )
+                    : const Icon(Icons.download),
+                label: Text(
+                  _isInitializingParakeet ? 'Downloading...' : 'Download Now',
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isDark
+                      ? BrandColors.nightTurquoise
+                      : BrandColors.turquoise,
+                  side: BorderSide(
+                    color: isDark
+                        ? BrandColors.nightTurquoise
+                        : BrandColors.turquoise,
+                  ),
+                  padding: EdgeInsets.symmetric(vertical: Spacing.md),
                 ),
               ),
-            ],
+            ),
+            SizedBox(height: Spacing.md),
+            Center(
+              child: Text(
+                'Or skip and download later',
+                style: TextStyle(
+                  fontSize: TypographyTokens.labelSmall,
+                  color: isDark
+                      ? BrandColors.nightTextSecondary
+                      : BrandColors.driftwood,
+                ),
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -271,31 +357,37 @@ class _TranscriptionSetupStepState
     required IconData icon,
     required String title,
     required String subtitle,
+    required bool isDark,
   }) {
     return Row(
       children: [
         Icon(
           icon,
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+          color: isDark
+              ? BrandColors.nightForest.withValues(alpha: 0.7)
+              : BrandColors.forest.withValues(alpha: 0.7),
           size: 20,
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: Spacing.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: TypographyTokens.bodyMedium,
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
                 ),
               ),
               Text(
                 subtitle,
                 style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).textTheme.bodySmall?.color,
+                  fontSize: TypographyTokens.bodySmall,
+                  color: isDark
+                      ? BrandColors.nightTextSecondary
+                      : BrandColors.driftwood,
                 ),
               ),
             ],
@@ -305,19 +397,36 @@ class _TranscriptionSetupStepState
     );
   }
 
-  Widget _buildBottomButtons() {
+  Widget _buildBottomButtons(bool isDark) {
     return Row(
       children: [
         Expanded(
           child: OutlinedButton(
             onPressed: widget.onSkip,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: isDark
+                  ? BrandColors.nightTextSecondary
+                  : BrandColors.driftwood,
+              side: BorderSide(
+                color: isDark
+                    ? BrandColors.nightTextSecondary.withValues(alpha: 0.3)
+                    : BrandColors.driftwood.withValues(alpha: 0.3),
+              ),
+              padding: EdgeInsets.symmetric(vertical: Spacing.md),
+            ),
             child: const Text('Skip'),
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: Spacing.md),
         Expanded(
           child: FilledButton(
             onPressed: widget.onNext,
+            style: FilledButton.styleFrom(
+              backgroundColor:
+                  isDark ? BrandColors.nightForest : BrandColors.forest,
+              foregroundColor: BrandColors.softWhite,
+              padding: EdgeInsets.symmetric(vertical: Spacing.md),
+            ),
             child: const Text('Next'),
           ),
         ),

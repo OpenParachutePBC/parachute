@@ -63,7 +63,7 @@ class _GemmaSetupStepState extends ConsumerState<GemmaSetupStep> {
                 onPressed: widget.onBack,
               ),
               const Spacer(),
-              TextButton(onPressed: widget.onSkip, child: const Text('Skip')),
+              TextButton(onPressed: widget.onSkip, child: const Text('Skip Setup')),
             ],
           ),
 
@@ -228,7 +228,7 @@ class _GemmaSetupStepState extends ConsumerState<GemmaSetupStep> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text(
-                'Continue',
+                'Get Started',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),

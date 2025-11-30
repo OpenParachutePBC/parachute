@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:app/core/theme/design_tokens.dart';
 
 import 'steps/welcome_step.dart';
 import 'steps/transcription_setup_step.dart';
 import 'steps/gemma_setup_step.dart';
-import 'steps/advanced_features_step.dart';
 
 /// Multi-step onboarding flow for first-time users
+///
+/// "Think naturally" - A calm, spacious introduction to Parachute
 class OnboardingFlow extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
 
@@ -31,19 +33,36 @@ class OnboardingFlow extends ConsumerStatefulWidget {
   ConsumerState<OnboardingFlow> createState() => _OnboardingFlowState();
 }
 
-class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
+class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
+    with SingleTickerProviderStateMixin {
   int _currentStep = 0;
+  late AnimationController _progressController;
 
   final List<OnboardingStepData> _steps = [
     OnboardingStepData(title: 'Welcome', icon: Icons.waving_hand),
-    OnboardingStepData(title: 'Transcription', icon: Icons.transcribe),
-    OnboardingStepData(title: 'Titles', icon: Icons.title),
-    OnboardingStepData(title: 'Advanced', icon: Icons.tune),
+    OnboardingStepData(title: 'Transcription', icon: Icons.record_voice_over),
+    OnboardingStepData(title: 'Get Started', icon: Icons.rocket_launch),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _progressController = AnimationController(
+      duration: Motion.standard,
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _progressController.dispose();
+    super.dispose();
+  }
 
   void _nextStep() {
     if (_currentStep < _steps.length - 1) {
       setState(() => _currentStep++);
+      _progressController.forward(from: 0);
     } else {
       _completeOnboarding();
     }
@@ -52,11 +71,13 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   void _previousStep() {
     if (_currentStep > 0) {
       setState(() => _currentStep--);
+      _progressController.forward(from: 0);
     }
   }
 
   void _skipToEnd() {
     setState(() => _currentStep = _steps.length - 1);
+    _progressController.forward(from: 0);
   }
 
   Future<void> _completeOnboarding() async {
@@ -66,34 +87,39 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
+      backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
       body: SafeArea(
         child: Column(
           children: [
             // Progress indicator
-            _buildProgressIndicator(),
+            _buildProgressIndicator(isDark),
 
             // Current step content
             Expanded(
-              child: IndexedStack(
-                index: _currentStep,
-                children: [
-                  WelcomeStep(onNext: _nextStep, onSkip: _skipToEnd),
-                  TranscriptionSetupStep(
-                    onNext: _nextStep,
-                    onBack: _previousStep,
-                    onSkip: _skipToEnd,
-                  ),
-                  GemmaSetupStep(
-                    onNext: _nextStep,
-                    onBack: _previousStep,
-                    onSkip: _skipToEnd,
-                  ),
-                  AdvancedFeaturesStep(
-                    onComplete: _completeOnboarding,
-                    onBack: _previousStep,
-                  ),
-                ],
+              child: AnimatedSwitcher(
+                duration: Motion.standard,
+                switchInCurve: Motion.settling,
+                switchOutCurve: Motion.settling,
+                child: IndexedStack(
+                  key: ValueKey(_currentStep),
+                  index: _currentStep,
+                  children: [
+                    WelcomeStep(onNext: _nextStep, onSkip: _skipToEnd),
+                    TranscriptionSetupStep(
+                      onNext: _nextStep,
+                      onBack: _previousStep,
+                      onSkip: _skipToEnd,
+                    ),
+                    GemmaSetupStep(
+                      onNext: _completeOnboarding,
+                      onBack: _previousStep,
+                      onSkip: _completeOnboarding,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -102,54 +128,76 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     );
   }
 
-  Widget _buildProgressIndicator() {
+  Widget _buildProgressIndicator(bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: EdgeInsets.symmetric(
+        horizontal: Spacing.xl,
+        vertical: Spacing.lg,
+      ),
       child: Row(
         children: List.generate(_steps.length, (index) {
           final step = _steps[index];
           final isActive = index == _currentStep;
           final isCompleted = index < _currentStep;
 
+          final activeColor = isDark
+              ? BrandColors.nightForest
+              : BrandColors.forest;
+          final inactiveColor = isDark
+              ? BrandColors.nightTextSecondary.withValues(alpha: 0.3)
+              : BrandColors.stone;
+          final completedColor = isDark
+              ? BrandColors.nightForest.withValues(alpha: 0.7)
+              : BrandColors.forestLight;
+
           return Expanded(
             child: Column(
               children: [
                 Row(
                   children: [
-                    // Step circle
+                    // Progress bar segment
                     Expanded(
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: Motion.standard,
+                        curve: Motion.settling,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: isCompleted || isActive
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+                          color: isCompleted
+                              ? completedColor
+                              : isActive
+                              ? activeColor
+                              : inactiveColor,
+                          borderRadius: BorderRadius.circular(Radii.sm),
                         ),
                       ),
                     ),
+                    // Connector between segments
                     if (index < _steps.length - 1)
-                      Container(
-                        width: 8,
+                      AnimatedContainer(
+                        duration: Motion.standard,
+                        width: Spacing.sm,
                         height: 4,
-                        color: isCompleted
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.grey[300],
+                        color: isCompleted ? completedColor : inactiveColor,
                       ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: Spacing.sm),
                 // Step label
-                Text(
-                  step.title,
+                AnimatedDefaultTextStyle(
+                  duration: Motion.quick,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: TypographyTokens.labelSmall,
                     fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                     color: isActive
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.grey[600],
+                        ? activeColor
+                        : (isDark
+                              ? BrandColors.nightTextSecondary
+                              : BrandColors.driftwood),
                   ),
-                  textAlign: TextAlign.center,
+                  child: Text(
+                    step.title,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ],
             ),

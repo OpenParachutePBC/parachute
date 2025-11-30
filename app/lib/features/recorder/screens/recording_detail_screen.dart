@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
+import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/models/recording.dart';
 
 import 'package:app/features/recorder/providers/service_providers.dart';
@@ -533,7 +534,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Failed to reset transcription status'),
-          backgroundColor: Colors.red,
+          backgroundColor: BrandColors.error,
         ),
       );
     }
@@ -587,7 +588,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Transcription failed: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: BrandColors.error,
           ),
         );
       }
@@ -626,7 +627,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Content added successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: BrandColors.success,
           ),
         );
       }
@@ -663,7 +664,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Title generated successfully!'),
-              backgroundColor: Colors.green,
+              backgroundColor: BrandColors.success,
             ),
           );
         }
@@ -713,7 +714,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Title generation failed: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: BrandColors.error,
             ),
           );
         }
@@ -757,7 +758,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Summary generated successfully!'),
-              backgroundColor: Colors.green,
+              backgroundColor: BrandColors.success,
             ),
           );
         }
@@ -807,7 +808,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Summary generation failed: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: BrandColors.error,
             ),
           );
         }
@@ -899,7 +900,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Cleanup failed: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: BrandColors.error,
               duration: const Duration(seconds: 4),
             ),
           );
@@ -939,7 +940,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Recording moved to sphere'),
-          backgroundColor: Colors.green,
+          backgroundColor: BrandColors.success,
         ),
       );
       // Refresh the recordings list and go back
@@ -986,7 +987,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Failed to decode Opus file: $e'),
-              backgroundColor: Colors.red,
+              backgroundColor: BrandColors.error,
             ),
           );
         }
@@ -998,7 +999,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Audio file not found. Cannot re-transcribe.'),
-            backgroundColor: Colors.orange,
+            backgroundColor: BrandColors.warning,
           ),
         );
       }
@@ -1038,7 +1039,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Re-transcription complete!'),
-              backgroundColor: Colors.green,
+              backgroundColor: BrandColors.success,
             ),
           );
         }
@@ -1055,7 +1056,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Re-transcription failed: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: BrandColors.error,
           ),
         );
       }
@@ -1145,7 +1146,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Microphone permission required'),
-            backgroundColor: Colors.red,
+            backgroundColor: BrandColors.error,
           ),
         );
       }
@@ -1161,7 +1162,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Failed to start recording'),
-          backgroundColor: Colors.red,
+          backgroundColor: BrandColors.error,
         ),
       );
     }
@@ -1180,7 +1181,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to save recording'),
-            backgroundColor: Colors.red,
+            backgroundColor: BrandColors.error,
           ),
         );
       }
@@ -1224,7 +1225,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Transcription failed: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: BrandColors.error,
           ),
         );
       }
@@ -1341,9 +1342,9 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                 value: 'delete',
                 child: Row(
                   children: [
-                    Icon(Icons.delete, color: Colors.red),
+                    Icon(Icons.delete, color: BrandColors.error),
                     SizedBox(width: 8),
-                    Text('Delete', style: TextStyle(color: Colors.red)),
+                    Text('Delete', style: TextStyle(color: BrandColors.error)),
                   ],
                 ),
               ),
@@ -1418,18 +1419,18 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
   Widget _buildMetadataSection() {
     return Row(
       children: [
-        Icon(Icons.access_time, size: 16, color: Colors.grey.shade600),
+        Icon(Icons.access_time, size: 16, color: BrandColors.driftwood),
         const SizedBox(width: 4),
         Text(
           _recording?.timeAgo ?? 'Just now',
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+          style: TextStyle(color: BrandColors.driftwood, fontSize: 14),
         ),
         const SizedBox(width: 16),
-        Icon(Icons.folder, size: 16, color: Colors.grey.shade600),
+        Icon(Icons.folder, size: 16, color: BrandColors.driftwood),
         const SizedBox(width: 4),
         Text(
           _recording?.source == RecordingSource.omiDevice ? 'Omi' : 'Phone',
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+          style: TextStyle(color: BrandColors.driftwood, fontSize: 14),
         ),
       ],
     );
@@ -1631,7 +1632,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                       label: const Text('Transcribe'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Theme.of(context).colorScheme.primary,
-                        foregroundColor: Colors.white,
+                        foregroundColor: BrandColors.softWhite,
                       ),
                     ),
                   // Show retry button for failed transcriptions
@@ -1644,8 +1645,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                       icon: const Icon(Icons.refresh, size: 18),
                       label: const Text('Retry Transcription'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
+                        backgroundColor: BrandColors.error,
+                        foregroundColor: BrandColors.softWhite,
                       ),
                     ),
                   // Show "Complete Transcription" button only for interrupted (not processing)
@@ -1655,8 +1656,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                       icon: const Icon(Icons.refresh, size: 18),
                       label: const Text('Complete Transcription'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
+                        backgroundColor: BrandColors.warning,
+                        foregroundColor: BrandColors.softWhite,
                       ),
                     ),
                 ],
@@ -1672,10 +1673,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.orange.shade50,
+                color: BrandColors.warningLight,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.orange.shade700.withValues(alpha: 0.3),
+                  color: BrandColors.warning.withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
@@ -1686,7 +1687,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                     children: [
                       Icon(
                         Icons.warning_amber_rounded,
-                        color: Colors.orange.shade700,
+                        color: BrandColors.warning,
                         size: 20,
                       ),
                       const SizedBox(width: 12),
@@ -1694,7 +1695,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                         child: Text(
                           'Transcription appears stuck. The background process may have been interrupted.',
                           style: TextStyle(
-                            color: Colors.orange.shade700,
+                            color: BrandColors.warning,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -1708,8 +1709,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                     icon: const Icon(Icons.refresh, size: 18),
                     label: const Text('Reset & Retry Transcription'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
+                      backgroundColor: BrandColors.warning,
+                      foregroundColor: BrandColors.softWhite,
                     ),
                   ),
                 ],
@@ -1730,10 +1731,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
+                      color: BrandColors.turquoiseMist,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.blue.shade700.withValues(alpha: 0.3),
+                        color: BrandColors.turquoiseDeep.withValues(alpha: 0.3),
                         width: 1,
                       ),
                     ),
@@ -1741,7 +1742,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                       children: [
                         Icon(
                           Icons.download,
-                          color: Colors.blue.shade700,
+                          color: BrandColors.turquoiseDeep,
                           size: 20,
                         ),
                         const SizedBox(width: 12),
@@ -1749,7 +1750,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                           child: Text(
                             'Downloading transcription models... Transcription will start automatically when ready.',
                             style: TextStyle(
-                              color: Colors.blue.shade700,
+                              color: BrandColors.turquoiseDeep,
                               fontSize: 14,
                             ),
                           ),
@@ -1764,10 +1765,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
+                    color: BrandColors.warningLight,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: Colors.orange.shade700.withValues(alpha: 0.3),
+                      color: BrandColors.warning.withValues(alpha: 0.3),
                       width: 1,
                     ),
                   ),
@@ -1775,7 +1776,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                     children: [
                       Icon(
                         Icons.warning_amber,
-                        color: Colors.orange.shade700,
+                        color: BrandColors.warning,
                         size: 20,
                       ),
                       const SizedBox(width: 12),
@@ -1783,7 +1784,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                         child: Text(
                           'Transcription was interrupted. Tap "Complete Transcription" to finish.',
                           style: TextStyle(
-                            color: Colors.orange.shade700,
+                            color: BrandColors.warning,
                             fontSize: 14,
                           ),
                         ),
@@ -1805,7 +1806,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             Text(
               'No transcript yet. Tap "Transcribe" to generate.',
               style: TextStyle(
-                color: Colors.grey.shade600,
+                color: BrandColors.driftwood,
                 fontStyle: FontStyle.italic,
               ),
             )
@@ -1831,7 +1832,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                   fontSize: 16,
                   height: 1.5,
                   color: _transcriptController.text.isEmpty
-                      ? Colors.grey.shade600
+                      ? BrandColors.driftwood
                       : null,
                   fontStyle: _transcriptController.text.isEmpty
                       ? FontStyle.italic
@@ -1849,10 +1850,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: BrandColors.turquoiseMist,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Colors.blue.shade700.withValues(alpha: 0.3),
+          color: BrandColors.turquoiseDeep.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -1863,7 +1864,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(Colors.blue.shade700),
+              valueColor: AlwaysStoppedAnimation(BrandColors.turquoiseDeep),
             ),
           ),
           const SizedBox(width: 12),
@@ -1874,7 +1875,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                 Text(
                   'Generating title',
                   style: TextStyle(
-                    color: Colors.blue.shade700,
+                    color: BrandColors.turquoiseDeep,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
@@ -1892,16 +1893,16 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.orange.shade50,
+        color: BrandColors.warningLight,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Colors.orange.shade700.withValues(alpha: 0.3),
+          color: BrandColors.warning.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
       child: Row(
         children: [
-          Icon(Icons.sync, color: Colors.orange.shade700, size: 20),
+          Icon(Icons.sync, color: BrandColors.warning, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1910,7 +1911,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                 Text(
                   'Transcribing audio',
                   style: TextStyle(
-                    color: Colors.orange.shade700,
+                    color: BrandColors.warning,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
@@ -1921,7 +1922,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                       ? 'Please wait...'
                       : '$_transcriptionStatus ${(_transcriptionProgress * 100).toStringAsFixed(0)}%',
                   style: TextStyle(
-                    color: Colors.orange.shade700.withValues(alpha: 0.8),
+                    color: BrandColors.warning.withValues(alpha: 0.8),
                     fontSize: 12,
                   ),
                 ),
@@ -1999,7 +2000,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                       fontSize: 14,
                       height: 1.5,
                       color: _contextController.text.isEmpty
-                          ? Colors.grey.shade600
+                          ? BrandColors.driftwood
                           : null,
                       fontStyle: _contextController.text.isEmpty
                           ? FontStyle.italic
@@ -2017,22 +2018,22 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
+        color: BrandColors.errorLight,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Colors.red.shade700.withValues(alpha: 0.3),
+          color: BrandColors.error.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
       child: Row(
         children: [
-          Icon(Icons.mic, color: Colors.red.shade700, size: 20),
+          Icon(Icons.mic, color: BrandColors.error, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               'Recording context...',
               style: TextStyle(
-                color: Colors.red.shade700,
+                color: BrandColors.error,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
@@ -2041,8 +2042,8 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           ElevatedButton(
             onPressed: _stopContextVoiceInput,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              foregroundColor: Colors.white,
+              backgroundColor: BrandColors.error,
+              foregroundColor: BrandColors.softWhite,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             ),
             child: const Text('Stop'),
@@ -2057,10 +2058,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.orange.shade50,
+        color: BrandColors.warningLight,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Colors.orange.shade700.withValues(alpha: 0.3),
+          color: BrandColors.warning.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -2071,7 +2072,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(Colors.orange.shade700),
+              valueColor: AlwaysStoppedAnimation(BrandColors.warning),
             ),
           ),
           const SizedBox(width: 12),
@@ -2079,7 +2080,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             child: Text(
               'Transcribing voice input...',
               style: TextStyle(
-                color: Colors.orange.shade700,
+                color: BrandColors.warning,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
@@ -2156,7 +2157,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
                       fontSize: 14,
                       height: 1.5,
                       color: _summaryController.text.isEmpty
-                          ? Colors.grey.shade600
+                          ? BrandColors.driftwood
                           : null,
                       fontStyle: _summaryController.text.isEmpty
                           ? FontStyle.italic
@@ -2174,10 +2175,10 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.purple.shade50,
+        color: BrandColors.forestMist,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Colors.purple.shade700.withValues(alpha: 0.3),
+          color: BrandColors.forest.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -2188,7 +2189,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(Colors.purple.shade700),
+              valueColor: AlwaysStoppedAnimation(BrandColors.forest),
             ),
           ),
           const SizedBox(width: 12),
@@ -2196,7 +2197,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             child: Text(
               'Generating summary...',
               style: TextStyle(
-                color: Colors.purple.shade700,
+                color: BrandColors.forest,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
@@ -2232,7 +2233,7 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             label: const Text('Save Changes'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Colors.white,
+              foregroundColor: BrandColors.softWhite,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -2364,7 +2365,7 @@ class _CleanupPreviewDialog extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(true),
           style: ElevatedButton.styleFrom(
             backgroundColor: Theme.of(context).colorScheme.primary,
-            foregroundColor: Colors.white,
+            foregroundColor: BrandColors.softWhite,
           ),
           child: const Text('Apply'),
         ),
