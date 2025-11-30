@@ -84,7 +84,7 @@ Multi-device synchronization using Git:
 - [x] Configurable vault location (platform-specific defaults)
 - [x] Configurable subfolder names
 - [x] Obsidian/Logseq compatibility
-- [x] 4-step onboarding flow
+- [x] 3-step onboarding flow
 - [x] Model download management
 
 #### Local-First Recording (Nov 5, 2025)
