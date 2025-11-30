@@ -323,7 +323,7 @@ Metadata stored as JSON Lines (one JSON object per line):
 - Obsidian/Logseq compatibility
 - Local Whisper transcription (on-device models)
 - Gemma 2B title generation
-- 4-step onboarding flow
+- 3-step onboarding flow
 
 **Local-First Recording (Nov 5, 2025)**
 
@@ -404,7 +404,7 @@ Metadata stored as JSON Lines (one JSON object per line):
 
 ## First-Time Setup (Onboarding)
 
-Parachute includes a 4-step onboarding flow that runs on first launch:
+Parachute includes a 3-step onboarding flow that runs on first launch:
 
 ### Step 1: Welcome
 
@@ -412,22 +412,17 @@ Parachute includes a 4-step onboarding flow that runs on first launch:
 - Shows Obsidian/Logseq compatibility
 - Displays current vault location
 
-### Step 2: Whisper Model Setup
+### Step 2: Transcription Setup (Parakeet v3)
 
-- Download local Whisper model for transcription
-- Three model sizes: Tiny (75 MB), Base (142 MB), Small (466 MB)
-- Users can skip and download later
+- Shows Parakeet v3 model info (~500 MB on Apple, ~640 MB on Android)
+- Models download automatically on first use
+- Users can optionally download immediately or skip
 
-### Step 3: Gemma Model Setup (Optional)
+### Step 3: Title Generation Setup
 
-- Download Gemma 2B model for AI-powered title generation
-- Requires HuggingFace Token (models are gated)
-- Users can skip if not using AI features
-
-### Step 4: Advanced Features
-
-- Explains Omi device integration
-- Can be enabled later in Settings
+- Choose title generation mode: API (Gemini), Local (Gemma), or Disabled
+- Download Gemma models for offline title generation
+- Users can skip and configure later in Settings
 
 ---
 
@@ -518,5 +513,5 @@ Read these files as needed for specific tasks. Context is your friend!
 
 ---
 
-**Last Updated**: November 26, 2025
+**Last Updated**: November 30, 2025
 **Next Review**: After Sphere management implementation

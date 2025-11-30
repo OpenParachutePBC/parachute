@@ -85,6 +85,46 @@ testWidgets('Test', (tester) async {
 
 ---
 
+## Design System
+
+### Design Tokens (`lib/core/theme/design_tokens.dart`)
+
+Centralized brand styling constants:
+
+```dart
+// Colors
+BrandColors.forest      // Primary green (#40695B)
+BrandColors.turquoise   // Accent (#5EA8A7)
+BrandColors.cream       // Light background
+BrandColors.nightSurface // Dark mode background
+
+// Spacing
+Spacing.xs, Spacing.sm, Spacing.md, Spacing.lg, Spacing.xl, Spacing.xxl
+
+// Radii
+Radii.sm, Radii.md, Radii.lg
+
+// Typography
+TypographyTokens.bodySmall, .bodyMedium, .bodyLarge, .titleMedium, etc.
+
+// Motion
+Motion.quick     // 150ms
+Motion.standard  // 250ms
+Motion.settling  // Curves.easeOutCubic
+```
+
+### Brand Components (`lib/core/widgets/brand_components.dart`)
+
+Reusable styled widgets following brand guidelines.
+
+### Settings Section Widgets (`lib/features/settings/widgets/`)
+
+Settings is organized into focused section widgets:
+- `expandable_settings_section.dart` - Collapsible section container
+- `transcription_section.dart`, `storage_section.dart`, etc. - Individual sections
+
+---
+
 ## Key Services
 
 ### FileSystemService (`lib/core/services/file_system_service.dart`)
@@ -197,4 +237,4 @@ flutter test test/features/recorder/
 
 ---
 
-**Last Updated:** November 24, 2025
+**Last Updated:** November 30, 2025
