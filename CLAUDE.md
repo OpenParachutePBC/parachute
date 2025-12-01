@@ -23,11 +23,16 @@ We build local-first, voice-first AI tooling that gives people agency over their
 
 ## Current Development Focus
 
-**🎯 Status**: Stability & reliability focus (Nov 24, 2025)
+**🎯 Status**: Sphere management in progress (Dec 1, 2025)
 
 **Primary Platforms:** macOS and Android (iOS coming soon with additional team members)
 
 ### Recently Completed
+
+**Bug Fixes & Sphere Improvements (Dec 1, 2025)**: ✅ Complete
+- Fixed transcription UI not updating after background processing
+- Added orphan link detection for spheres (shows deleted recordings)
+- Added "Clean up broken links" bulk action in sphere detail
 
 **Reliability Improvements (Nov 20-24, 2025)**: ✅ Complete
 - Critical memory leak fixes and dead code removal
@@ -64,12 +69,14 @@ Automatic silence detection with intelligent noise suppression:
 
 ### Next Up
 
-**Sphere Management** - Organize captures into themed spheres with JSONL metadata
+**Sphere Management** - Core functionality complete, polish remaining:
+- Cross-sphere search
+- Tag suggestions and autocomplete
+- UI refinements
 
 **Focus Areas:**
-- Reliability and stability improvements
-- Sphere linking and organization
 - Export/integration with external AI tools (ChatGPT, Claude, etc.)
+- Stability and reliability improvements
 
 **Deferred:** AI chat features (backend-dependent) - will return once core capture is rock-solid
 
@@ -513,5 +520,5 @@ Read these files as needed for specific tasks. Context is your friend!
 
 ---
 
-**Last Updated**: November 30, 2025
+**Last Updated**: December 1, 2025
 **Next Review**: After Sphere management implementation

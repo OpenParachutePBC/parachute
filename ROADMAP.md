@@ -1,6 +1,6 @@
 # Parachute Development Roadmap
 
-**Last Updated**: November 24, 2025
+**Last Updated**: December 1, 2025
 
 ---
 
@@ -21,8 +21,14 @@ We build local-first, voice-first AI tooling that gives people agency over their
 
 ## Current Focus: Stability & Sphere Management
 
-**Status**: Stability focus (Nov 24, 2025)
+**Status**: Sphere management in progress (Dec 1, 2025)
 **Primary Platforms**: macOS and Android (iOS coming soon)
+
+### Recent Bug Fixes (Dec 1, 2025)
+
+- Fixed transcription UI not updating after background processing completes
+- Added orphan link detection for spheres (shows "Recording deleted" for broken links)
+- Added "Clean up broken links" bulk action in sphere detail screen
 
 ### Recent Reliability Work (Nov 20-24, 2025)
 
@@ -134,15 +140,19 @@ Multi-device synchronization using Git:
 ### Sphere Management
 
 **Priority**: P1
-**Status**: Next up
+**Status**: In progress
 **Timeline**: December 2025
 
 Organize captures into themed spheres with JSONL metadata:
 
-- Create/edit/delete spheres
-- Link captures to spheres with context
-- Sphere-specific CLAUDE.md system prompts
-- sphere.jsonl for git-friendly metadata storage
+- [x] Create/edit/delete spheres
+- [x] Link captures to spheres with context and tags
+- [x] Move captures to spheres (physical file relocation)
+- [x] Sphere-specific CLAUDE.md system prompts
+- [x] space_links.jsonl for git-friendly metadata storage
+- [x] Orphan link detection and cleanup
+- [ ] Cross-sphere search
+- [ ] Tag suggestions and autocomplete
 
 **Why JSONL over SQLite:**
 - Human-readable and git-friendly
