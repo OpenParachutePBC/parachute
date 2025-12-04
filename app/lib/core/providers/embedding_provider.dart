@@ -4,6 +4,7 @@ import 'package:app/core/models/embedding_models.dart';
 import 'package:app/core/services/embedding/embedding_service.dart';
 import 'package:app/core/services/embedding/embedding_model_manager.dart';
 import 'package:app/core/services/embedding/mobile_embedding_service.dart';
+import 'package:app/core/services/embedding/desktop_embedding_service.dart';
 
 /// Provider for mobile embedding service (Android/iOS)
 ///
@@ -21,19 +22,21 @@ final mobileEmbeddingServiceProvider = Provider<EmbeddingService>((ref) {
 /// Provider for desktop embedding service (macOS/Linux/Windows)
 ///
 /// Uses Ollama with embedding models.
-/// TODO: Implement in issue #22
 final desktopEmbeddingServiceProvider = Provider<EmbeddingService>((ref) {
-  throw UnimplementedError(
-    'Desktop embedding service not yet implemented.\n'
-    'See issue #22 for progress.',
-  );
+  final service = DesktopEmbeddingService();
+
+  ref.onDispose(() async {
+    await service.dispose();
+  });
+
+  return service;
 });
 
 /// Provider for the embedding service
 ///
 /// Automatically selects the appropriate implementation based on platform:
 /// - Mobile (Android/iOS): flutter_gemma_embedder
-/// - Desktop (macOS/Linux/Windows): Ollama (TODO: issue #22)
+/// - Desktop (macOS/Linux/Windows): Ollama
 final embeddingServiceProvider = Provider<EmbeddingService>((ref) {
   if (Platform.isAndroid || Platform.isIOS) {
     return ref.watch(mobileEmbeddingServiceProvider);
