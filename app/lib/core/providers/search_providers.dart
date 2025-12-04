@@ -2,13 +2,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/services/search/search_index_service.dart';
 import 'package:app/core/services/search/content_hasher.dart';
 import 'package:app/core/services/search/chunking/recording_chunker.dart';
+import 'package:app/core/services/search/hybrid_search_service.dart';
+import 'package:app/core/services/search/models/search_result.dart';
 import 'package:app/core/providers/vector_store_provider.dart';
 import 'package:app/core/providers/bm25_provider.dart';
 import 'package:app/core/providers/embedding_provider.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 
-// Export IndexingStatus for convenience
+// Export for convenience
 export 'package:app/core/services/search/search_index_service.dart' show IndexingStatus;
+export 'package:app/core/services/search/models/search_result.dart';
 
 /// Provider for ContentHasher
 ///
@@ -119,4 +122,70 @@ final indexingTotalProvider = StateProvider<int>((ref) {
 /// Number of recordings processed so far in current operation.
 final indexingCountProvider = StateProvider<int>((ref) {
   return 0;
+});
+
+// ========================================================================
+// Hybrid Search Providers
+// ========================================================================
+
+/// Provider for HybridSearchService
+///
+/// The main search API combining vector (semantic) and BM25 (keyword) search
+/// using Reciprocal Rank Fusion (RRF) to merge results.
+///
+/// **Usage:**
+/// ```dart
+/// final searchService = ref.read(hybridSearchServiceProvider);
+/// final results = await searchService.search('project alpha', limit: 20);
+/// ```
+final hybridSearchServiceProvider = Provider<HybridSearchService>((ref) {
+  final vectorStore = ref.watch(vectorStoreProvider);
+  final bm25Service = ref.watch(bm25SearchServiceProvider);
+  final embeddingService = ref.watch(embeddingServiceProvider);
+  final storageService = ref.watch(storageServiceProvider);
+
+  return HybridSearchService(
+    vectorStore,
+    bm25Service,
+    embeddingService,
+    storageService,
+  );
+});
+
+/// State provider for search query
+///
+/// Holds the current search query string. Update this to trigger a search.
+final searchQueryProvider = StateProvider<String>((ref) => '');
+
+/// Future provider for search results
+///
+/// Automatically runs hybrid search when [searchQueryProvider] changes.
+/// Returns empty list for empty queries.
+///
+/// **Example:**
+/// ```dart
+/// // In your widget
+/// final results = ref.watch(searchResultsProvider);
+///
+/// return results.when(
+///   data: (results) => ListView.builder(
+///     itemCount: results.length,
+///     itemBuilder: (context, index) {
+///       final result = results[index];
+///       return SearchResultCard(result: result);
+///     },
+///   ),
+///   loading: () => CircularProgressIndicator(),
+///   error: (err, stack) => Text('Search failed: $err'),
+/// );
+/// ```
+final searchResultsProvider = FutureProvider<List<SearchResult>>((ref) async {
+  final query = ref.watch(searchQueryProvider);
+
+  if (query.trim().isEmpty) {
+    return [];
+  }
+
+  final searchService = ref.watch(hybridSearchServiceProvider);
+  return await searchService.search(query);
 });
