@@ -12,6 +12,7 @@ import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/recorder/widgets/recording_card.dart';
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
+import 'package:app/features/search/screens/search_debug_screen.dart';
 
 /// Home screen for Parachute - voice capture hub
 ///
@@ -204,6 +205,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         title: const Text('Notes'),
         elevation: 0,
         actions: [
+          // Search button (debug)
+          IconButton(
+            icon: Icon(
+              Icons.search,
+              color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SearchDebugScreen(),
+                ),
+              );
+            },
+            tooltip: 'Search (Debug)',
+          ),
           // Refresh button
           IconButton(
             icon: Icon(

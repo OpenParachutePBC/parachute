@@ -35,6 +35,8 @@ dependencies:
   path_provider: ^2.0.0
   path: ^1.9.0
   shared_preferences: ^2.0.0
+  sqlite3: ^2.4.0
+  sqlite3_flutter_libs: ^0.5.0
 
   # GitHub OAuth & API
   oauth2: ^2.0.2
@@ -70,11 +72,14 @@ dependencies:
   # Sherpa-ONNX for cross-platform ASR (Parakeet on Android)
   sherpa_onnx: ^1.12.12
 
-  # Local LLM for Title Generation
+  # Local LLM for Title Generation & Embeddings
   flutter_gemma: ^0.11.8
 
   # Ollama integration for desktop LLM
   ollama_dart: ^0.3.0
+
+  # BM25 keyword search for RAG
+  bm25: ^1.0.0
 
   # OTA Firmware Updates
   nordic_dfu: ^6.1.4
@@ -97,6 +102,7 @@ dev_dependencies:
   # Testing
   http_mock_adapter: ^0.6.0
   mockito: ^5.4.0
+  mocktail: ^1.0.4
 
   # Icon generation
   flutter_launcher_icons: ^0.13.1
