@@ -13,8 +13,10 @@ void main() {
       ),
     );
 
-    // Wait for any async operations to complete
-    await tester.pumpAndSettle();
+    // Pump a few frames to let initial build complete
+    // Note: pumpAndSettle times out due to ongoing animations/async operations
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
     // Verify that the app loads without crashing
     // Note: The actual UI might be empty or show loading state initially

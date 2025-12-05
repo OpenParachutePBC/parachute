@@ -6,7 +6,6 @@ import 'package:app/core/services/file_system_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:app/core/providers/git_sync_provider.dart';
 import 'package:just_audio/just_audio.dart';
 
 /// Local-first storage service for recording management
@@ -15,8 +14,6 @@ import 'package:just_audio/just_audio.dart';
 /// - Audio file (.opus for new recordings, .wav for legacy)
 /// - Markdown transcript file (.md)
 /// - JSON metadata file (.json)
-///
-/// Git sync handles multi-device synchronization
 class StorageService {
   final Ref? _ref; // Optional ref for accessing providers (like Git sync)
 
@@ -630,75 +627,11 @@ class StorageService {
       // Invalidate cache since we added a new recording
       _invalidateCache();
 
-      // Trigger Git sync if enabled (async, don't wait for it)
-      debugPrint('[StorageService] 🔄 Attempting to trigger auto-sync...');
-      _triggerAutoSync();
-
       return timestamp; // Return timestamp as ID for local-first architecture
     } catch (e) {
       debugPrint('[StorageService] Error saving recording locally: $e');
       return null;
     }
-  }
-
-  /// Trigger Git sync in the background (don't block UI)
-  void _triggerAutoSync() {
-    debugPrint('[StorageService] 🔍 _triggerAutoSync called');
-
-    final ref = _ref;
-    if (ref == null) {
-      debugPrint('[StorageService] ❌ No ref available for auto-sync');
-      return;
-    }
-
-    debugPrint('[StorageService] ✅ Ref is available, scheduling sync...');
-
-    // Use Future.delayed with zero duration instead of microtask
-    // This ensures state updates are properly propagated to listeners
-    Future.delayed(Duration.zero, () async {
-      try {
-        debugPrint(
-          '[StorageService] 📡 Inside Future.delayed, reading git sync state...',
-        );
-
-        final gitSync = ref.read(gitSyncProvider.notifier);
-        final gitSyncState = ref.read(gitSyncProvider);
-
-        debugPrint('[StorageService] Git sync state:');
-        debugPrint('  - isEnabled: ${gitSyncState.isEnabled}');
-        debugPrint('  - isSyncing: ${gitSyncState.isSyncing}');
-        debugPrint('  - hasRemote: ${gitSyncState.hasRemote}');
-        debugPrint('  - repositoryUrl: ${gitSyncState.repositoryUrl}');
-
-        if (!gitSyncState.isEnabled) {
-          debugPrint(
-            '[StorageService] ⚠️  Git sync is NOT enabled, skipping auto-sync',
-          );
-          return;
-        }
-
-        if (gitSyncState.isSyncing) {
-          debugPrint(
-            '[StorageService] ⚠️  Git sync already in progress, skipping',
-          );
-          return;
-        }
-
-        debugPrint(
-          '[StorageService] 🚀 Triggering auto-sync after recording save',
-        );
-        final success = await gitSync.sync();
-
-        if (success) {
-          debugPrint('[StorageService] ✅ Auto-sync completed successfully');
-        } else {
-          debugPrint('[StorageService] ❌ Auto-sync failed');
-        }
-      } catch (e, stackTrace) {
-        debugPrint('[StorageService] ❌ Auto-sync error: $e');
-        debugPrint('[StorageService] Stack trace: $stackTrace');
-      }
-    });
   }
 
   /// Generate markdown content from recording
@@ -805,10 +738,6 @@ class StorageService {
 
       // Invalidate cache since we modified a recording
       _invalidateCache();
-
-      // Trigger Git sync to commit the update
-      debugPrint('[StorageService] 🔄 Triggering auto-sync after update...');
-      _triggerAutoSync();
 
       return true;
     } catch (e, stackTrace) {
@@ -957,12 +886,6 @@ class StorageService {
 
         // Invalidate cache since we deleted a recording
         _invalidateCache();
-
-        // Trigger Git sync to commit the deletion
-        debugPrint(
-          '[StorageService] 🔄 Triggering auto-sync after deletion...',
-        );
-        _triggerAutoSync();
 
         return true;
       } else {

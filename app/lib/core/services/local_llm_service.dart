@@ -57,7 +57,15 @@ class LocalLlmService {
     }
 
     final prompt = _buildTitlePrompt(transcript, context: context);
-    return await _generateCompletion(prompt, maxTokens: 100);
+    // maxTokens is TOTAL (input + output), need ~200 for prompt + transcript + response
+    final rawTitle = await _generateCompletion(prompt, maxTokens: 512);
+
+    if (rawTitle == null || rawTitle.trim().isEmpty) {
+      return null;
+    }
+
+    // Clean up the output (small models often don't follow instructions precisely)
+    return _cleanTitleOutput(rawTitle);
   }
 
   /// Generate a summary of a transcript
@@ -207,30 +215,63 @@ $transcript''';
 
   /// Build prompt for title generation
   String _buildTitlePrompt(String transcript, {String? context}) {
-    final contextSection = context != null && context.trim().isNotEmpty
-        ? '''
-Context/Purpose: $context
-(Use this context to generate a more relevant and specific title.)
+    // Truncate transcript for title generation - only need beginning to understand topic
+    // This keeps token count low for mobile LLMs
+    final truncatedTranscript = _truncateForTitle(transcript);
 
-'''
+    final contextHint = context != null && context.trim().isNotEmpty
+        ? ' about $context'
         : '';
 
-    return '''Generate a concise, meaningful title for this voice note transcript. The title should capture the main topic or purpose.
+    // Very simple prompt - small models follow simple instructions better
+    return '''Write a short title (5-8 words) for this voice note$contextHint:
 
-${contextSection}Guidelines:
-- Maximum 8-10 words
-- Capture the core topic or action
-- Use natural, conversational language
-- Don't use quotes or special formatting
-- Don't add punctuation at the end
-- If context is provided, use it to make the title more specific and relevant
-
-Output ONLY the title, nothing else.
-
-Transcript:
-$transcript
+"$truncatedTranscript"
 
 Title:''';
+  }
+
+  /// Clean up title output from LLM (extract just the title)
+  String _cleanTitleOutput(String rawOutput) {
+    var title = rawOutput.trim();
+
+    // Remove markdown formatting (bold, italic)
+    title = title.replaceAll(RegExp(r'\*+'), '');
+    title = title.replaceAll(RegExp(r'_+'), '');
+
+    // Remove quotes if wrapped
+    if ((title.startsWith('"') && title.endsWith('"')) ||
+        (title.startsWith("'") && title.endsWith("'"))) {
+      title = title.substring(1, title.length - 1);
+    }
+
+    // If it's multiple lines, take just the first line
+    if (title.contains('\n')) {
+      title = title.split('\n').first.trim();
+    }
+
+    // If it's too long (model wrote a summary), truncate to first sentence
+    if (title.length > 80) {
+      final firstSentence = title.split(RegExp(r'[.!?]')).first.trim();
+      if (firstSentence.length > 10 && firstSentence.length <= 80) {
+        title = firstSentence;
+      } else {
+        // Just take first 60 chars and add ellipsis
+        title = '${title.substring(0, 60).trim()}...';
+      }
+    }
+
+    // Remove trailing punctuation
+    title = title.replaceAll(RegExp(r'[.!?]+$'), '');
+
+    return title.trim();
+  }
+
+  /// Truncate transcript for title generation (keep first ~150 words)
+  String _truncateForTitle(String transcript) {
+    final words = transcript.split(RegExp(r'\s+'));
+    if (words.length <= 150) return transcript;
+    return '${words.take(150).join(' ')}...';
   }
 
   /// Build prompt for summary generation

@@ -8,7 +8,7 @@ import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/widgets/audio_debug_overlay.dart';
 import 'package:app/features/recorder/screens/recording_detail_screen.dart';
 import 'package:app/core/services/file_system_service.dart';
-import 'package:app/features/files/providers/local_file_browser_provider.dart';
+import 'package:app/core/providers/file_system_provider.dart';
 import 'package:path/path.dart' as path;
 
 /// Live journaling screen with auto-pause transcription

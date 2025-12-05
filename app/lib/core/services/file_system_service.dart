@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// Manages the ~/Parachute/ folder structure:
 /// - captures/     - Voice recordings and transcripts
-/// - spaces/       - AI chat spaces with conversations
 ///
 /// Also manages temporary audio files:
 /// - Temp folder for WAV files during recording/playback
@@ -21,11 +20,9 @@ class FileSystemService {
 
   static const String _rootFolderPathKey = 'parachute_root_folder_path';
   static const String _capturesFolderNameKey = 'parachute_captures_folder_name';
-  static const String _spacesFolderNameKey = 'parachute_spaces_folder_name';
 
   // Default subfolder names
   static const String _defaultCapturesFolderName = 'captures';
-  static const String _defaultSpacesFolderName = 'spaces';
   static const String _tempAudioFolderName = 'parachute_audio_temp';
 
   // Temp subfolder names with different retention policies
@@ -41,7 +38,6 @@ class FileSystemService {
   String? _rootFolderPath;
   String? _tempAudioPath;
   String _capturesFolderName = _defaultCapturesFolderName;
-  String _spacesFolderName = _defaultSpacesFolderName;
   bool _isInitialized = false;
   Future<void>? _initializationFuture;
 
@@ -75,21 +71,10 @@ class FileSystemService {
     return _capturesFolderName;
   }
 
-  /// Get the spaces folder name
-  String getSpacesFolderName() {
-    return _spacesFolderName;
-  }
-
   /// Get the captures folder path
   Future<String> getCapturesPath() async {
     final root = await getRootPath();
     return '$root/$_capturesFolderName';
-  }
-
-  /// Get the spaces folder path
-  Future<String> getSpacesPath() async {
-    final root = await getRootPath();
-    return '$root/$_spacesFolderName';
   }
 
   // ============================================================
@@ -349,7 +334,6 @@ class FileSystemService {
   /// Set custom subfolder names (e.g., for Obsidian vault integration)
   Future<bool> setSubfolderNames({
     String? capturesFolderName,
-    String? spacesFolderName,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -359,11 +343,6 @@ class FileSystemService {
         await prefs.setString(_capturesFolderNameKey, capturesFolderName);
       }
 
-      if (spacesFolderName != null && spacesFolderName.isNotEmpty) {
-        _spacesFolderName = spacesFolderName;
-        await prefs.setString(_spacesFolderNameKey, spacesFolderName);
-      }
-
       // Recreate folder structure with new names
       await _ensureFolderStructure();
       return true;
@@ -371,24 +350,6 @@ class FileSystemService {
       debugPrint('[FileSystemService] Error setting subfolder names: $e');
       return false;
     }
-  }
-
-  /// Get path for a specific space
-  Future<String> getSpacePath(String spaceName) async {
-    final spacesPath = await getSpacesPath();
-    return '$spacesPath/$spaceName';
-  }
-
-  /// Get conversations folder for a space
-  Future<String> getSpaceConversationsPath(String spaceName) async {
-    final spacePath = await getSpacePath(spaceName);
-    return '$spacePath/conversations';
-  }
-
-  /// Get files folder for a space
-  Future<String> getSpaceFilesPath(String spaceName) async {
-    final spacePath = await getSpacePath(spaceName);
-    return '$spacePath/files';
   }
 
   /// Initialize the file system
@@ -418,18 +379,22 @@ class FileSystemService {
         // Check if we can access the saved path
         debugPrint('[FileSystemService] Loaded saved root: $_rootFolderPath');
 
-        // On macOS, verify we still have access to the saved path
-        if (Platform.isMacOS) {
+        // Verify we still have access to the saved path
+        // On iOS, the container UUID changes on reinstall
+        // On macOS, the user might revoke folder access
+        if (Platform.isMacOS || Platform.isIOS) {
           final savedDir = Directory(_rootFolderPath!);
           bool hasAccess = false;
 
           try {
-            // Test if we can list the directory
-            await savedDir.list().first.timeout(
-              const Duration(milliseconds: 100),
-              onTimeout: () => throw Exception('No access'),
-            );
-            hasAccess = true;
+            // Test if the directory exists and is accessible
+            if (await savedDir.exists()) {
+              hasAccess = true;
+            } else {
+              // Try to create it - will fail if container changed
+              await savedDir.create(recursive: true);
+              hasAccess = true;
+            }
           } catch (e) {
             debugPrint('[FileSystemService] Lost access to saved path: $e');
           }
@@ -447,11 +412,8 @@ class FileSystemService {
       // Load custom subfolder names if set
       _capturesFolderName =
           prefs.getString(_capturesFolderNameKey) ?? _defaultCapturesFolderName;
-      _spacesFolderName =
-          prefs.getString(_spacesFolderNameKey) ?? _defaultSpacesFolderName;
 
       debugPrint('[FileSystemService] Captures folder: $_capturesFolderName');
-      debugPrint('[FileSystemService] Spaces folder: $_spacesFolderName');
 
       // Ensure folder structure exists
       await _ensureFolderStructure();
@@ -570,15 +532,6 @@ class FileSystemService {
       );
     }
 
-    // Create spaces folder (using configured name)
-    final spacesDir = Directory('${_rootFolderPath!}/$_spacesFolderName');
-    if (!await spacesDir.exists()) {
-      await spacesDir.create(recursive: true);
-      debugPrint(
-        '[FileSystemService] Created $_spacesFolderName/: ${spacesDir.path}',
-      );
-    }
-
     debugPrint('[FileSystemService] Folder structure ready');
   }
 
@@ -683,135 +636,4 @@ class FileSystemService {
     }
   }
 
-  /// Create a new space folder
-  Future<bool> createSpace(String spaceName) async {
-    try {
-      final spacePath = await getSpacePath(spaceName);
-      final spaceDir = Directory(spacePath);
-
-      if (await spaceDir.exists()) {
-        debugPrint('[FileSystemService] Space already exists: $spaceName');
-        return false;
-      }
-
-      await spaceDir.create(recursive: true);
-
-      // Create subdirectories
-      await Directory('$spacePath/conversations').create();
-      await Directory('$spacePath/files').create();
-
-      // Create default SPACE.md
-      final spaceMd = File('$spacePath/SPACE.md');
-      await spaceMd.writeAsString(_getDefaultSpaceMd(spaceName));
-
-      // Create .space.json metadata
-      final spaceJson = File('$spacePath/.space.json');
-      await spaceJson.writeAsString(_getDefaultSpaceJson(spaceName));
-
-      debugPrint('[FileSystemService] Created space: $spaceName');
-      return true;
-    } catch (e) {
-      debugPrint('[FileSystemService] Error creating space: $e');
-      return false;
-    }
-  }
-
-  String _getDefaultSpaceMd(String spaceName) {
-    return '''# $spaceName
-
-This is the context file for the **$spaceName** space.
-
-## About This Space
-
-Add information here about what this space is for, relevant context, and any guidelines for conversations in this space.
-
-## Files
-
-Files related to this space are stored in the `files/` folder.
-
-## Conversations
-
-All conversations in this space are stored in the `conversations/` folder.
-
----
-
-*Last updated: ${DateTime.now().toIso8601String()}*
-''';
-  }
-
-  String _getDefaultSpaceJson(String spaceName) {
-    final now = DateTime.now().toIso8601String();
-    return '''{
-  "id": "${_generateId()}",
-  "name": "$spaceName",
-  "createdAt": "$now",
-  "updatedAt": "$now",
-  "mcpServers": [],
-  "icon": "📁",
-  "color": "#2E7D32"
-}''';
-  }
-
-  String _generateId() {
-    // Simple UUID-like ID generator
-    final timestamp = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
-    final random = (DateTime.now().microsecondsSinceEpoch % 1000000)
-        .toRadixString(36);
-    return '$timestamp-$random';
-  }
-
-  /// List all spaces
-  Future<List<String>> listSpaces() async {
-    try {
-      final spacesPath = await getSpacesPath();
-      final spacesDir = Directory(spacesPath);
-
-      if (!await spacesDir.exists()) {
-        return [];
-      }
-
-      final spaces = <String>[];
-      await for (final entity in spacesDir.list()) {
-        if (entity is Directory) {
-          final name = entity.path.split('/').last;
-          // Skip hidden folders
-          if (!name.startsWith('.')) {
-            spaces.add(name);
-          }
-        }
-      }
-
-      return spaces;
-    } catch (e) {
-      debugPrint('[FileSystemService] Error listing spaces: $e');
-      return [];
-    }
-  }
-
-  /// Delete a space
-  Future<bool> deleteSpace(String spaceName) async {
-    try {
-      final spacePath = await getSpacePath(spaceName);
-      final spaceDir = Directory(spacePath);
-
-      if (!await spaceDir.exists()) {
-        debugPrint('[FileSystemService] Space does not exist: $spaceName');
-        return false;
-      }
-
-      await spaceDir.delete(recursive: true);
-      debugPrint('[FileSystemService] Deleted space: $spaceName');
-      return true;
-    } catch (e) {
-      debugPrint('[FileSystemService] Error deleting space: $e');
-      return false;
-    }
-  }
-
-  /// Check if a space exists
-  Future<bool> spaceExists(String spaceName) async {
-    final spacePath = await getSpacePath(spaceName);
-    final spaceDir = Directory(spacePath);
-    return await spaceDir.exists();
-  }
 }

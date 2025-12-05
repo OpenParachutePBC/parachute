@@ -15,13 +15,9 @@ import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:app/features/recorder/widgets/playback_controls.dart';
 import 'package:app/core/providers/title_generation_provider.dart';
 import 'package:app/core/services/audio_compression_service_dart.dart';
-import 'package:app/features/files/providers/local_file_browser_provider.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
-import 'package:app/features/space_notes/screens/link_capture_to_space_screen.dart';
-import 'package:app/features/spaces/providers/space_provider.dart';
-import 'package:app/features/spaces/providers/space_knowledge_provider.dart';
-import 'package:app/core/models/space.dart';
 import 'package:app/features/recorder/screens/simple_recording_screen.dart';
+import 'package:app/core/providers/file_system_provider.dart';
 
 /// Unified recording detail screen with inline editing
 /// Inspired by LiveRecordingScreen design - clean, focused, contextual status
@@ -972,44 +968,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
     }
   }
 
-  void _linkToSpaces() async {
-    if (_recording == null) return;
-
-    // Get the actual file path for the note
-    final fileSystemService = ref.read(fileSystemServiceProvider);
-    final capturesPath = await fileSystemService.getCapturesPath();
-    final notePath = '$capturesPath/${_recording!.id}.md';
-
-    final result = await Navigator.of(context).push<dynamic>(
-      MaterialPageRoute(
-        builder: (context) => LinkCaptureToSpaceScreen(
-          captureId: _recording!.id,
-          filename: _recording!.title,
-          notePath: notePath,
-        ),
-      ),
-    );
-
-    if (!mounted) return;
-
-    if (result == 'moved') {
-      // Recording was moved to a sphere, navigate back to list
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Recording moved to sphere'),
-          backgroundColor: BrandColors.success,
-        ),
-      );
-      // Refresh the recordings list and go back
-      ref.read(recordingsRefreshTriggerProvider.notifier).state++;
-      Navigator.of(context).pop();
-    } else if (result == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Successfully linked to sphere')),
-      );
-    }
-  }
-
   /// Re-transcribe the recording
   Future<void> _retranscribe() async {
     if (_recording == null) return;
@@ -1353,11 +1311,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
             onPressed: () => setState(() => _isTitleEditing = true),
             tooltip: 'Edit title',
           ),
-          IconButton(
-            icon: const Icon(Icons.bubble_chart),
-            onPressed: _linkToSpaces,
-            tooltip: 'Add to Sphere',
-          ),
           PopupMenuButton(
             itemBuilder: (context) => [
               if (_recording?.transcript.isNotEmpty ?? false) ...[
@@ -1446,11 +1399,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
           // Metadata
           _buildMetadataSection(),
 
-          const SizedBox(height: 12),
-
-          // Linked spaces indicator
-          if (_recording != null) _buildLinkedSpacesIndicator(),
-
           const SizedBox(height: 24),
 
           // Main content container (like LiveRecordingScreen)
@@ -1503,127 +1451,6 @@ class _RecordingDetailScreenState extends ConsumerState<RecordingDetailScreen> {
         ),
       ],
     );
-  }
-
-  Widget _buildLinkedSpacesIndicator() {
-    if (_recording == null) return const SizedBox.shrink();
-
-    final spacesAsync = ref.watch(spaceListProvider);
-
-    return spacesAsync.when(
-      data: (allSpaces) {
-        return FutureBuilder<List<Space>>(
-          future: _getLinkedSpaces(allSpaces),
-          builder: (context, snapshot) {
-            final linkedSpaces = snapshot.data ?? [];
-
-            if (linkedSpaces.isEmpty) {
-              return const SizedBox.shrink();
-            }
-
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.primaryContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.link,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: linkedSpaces.map((space) {
-                        return InkWell(
-                          onTap: () {
-                            // Navigate to space detail (optional)
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (space.icon?.isNotEmpty ?? false)
-                                  Text(
-                                    space.icon!,
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                if (space.icon?.isNotEmpty ?? false)
-                                  const SizedBox(width: 4),
-                                Text(
-                                  space.name,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onPrimaryContainer,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, _) => const SizedBox.shrink(),
-    );
-  }
-
-  Future<List<Space>> _getLinkedSpaces(List<Space> allSpaces) async {
-    if (_recording == null) return [];
-
-    try {
-      final fileSystemService = ref.read(fileSystemServiceProvider);
-      final spacesPath = await fileSystemService.getSpacesPath();
-      final knowledgeService = ref.read(spaceKnowledgeServiceProvider);
-
-      final linkedSpaces = <Space>[];
-
-      for (final space in allSpaces) {
-        final spacePath = '$spacesPath/${space.path}';
-        final isLinked = await knowledgeService.isCaptureLinked(
-          spacePath: spacePath,
-          captureId: _recording!.id,
-        );
-
-        if (isLinked) {
-          linkedSpaces.add(space);
-        }
-      }
-
-      return linkedSpaces;
-    } catch (e) {
-      debugPrint('[RecordingDetail] Error getting linked spaces: $e');
-      return [];
-    }
   }
 
   Widget _buildMainContentContainer() {

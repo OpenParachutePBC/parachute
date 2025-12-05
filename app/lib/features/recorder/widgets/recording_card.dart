@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
-import 'package:app/features/space_notes/screens/link_capture_to_space_screen.dart';
 
 /// Recording card with Parachute brand styling
 ///
@@ -57,35 +56,6 @@ class RecordingCard extends ConsumerWidget {
         ).showSnackBar(const SnackBar(content: Text('Recording deleted')));
         onDeleted?.call();
       }
-    }
-  }
-
-  void _linkToSpaces(BuildContext context) async {
-    String cleanNotePath = recording.filePath;
-    if (cleanNotePath.startsWith('/api/')) {
-      cleanNotePath = cleanNotePath.substring(5);
-    }
-    if (cleanNotePath.endsWith('.wav')) {
-      cleanNotePath = cleanNotePath.replaceAll('.wav', '.md');
-    }
-    if (!cleanNotePath.startsWith('captures/')) {
-      cleanNotePath = 'captures/$cleanNotePath';
-    }
-
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (context) => LinkCaptureToSpaceScreen(
-          captureId: recording.id,
-          filename: recording.title,
-          notePath: cleanNotePath,
-        ),
-      ),
-    );
-
-    if (result == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Successfully linked to spheres')),
-      );
     }
   }
 
@@ -220,23 +190,6 @@ class RecordingCard extends ConsumerWidget {
         ),
         itemBuilder: (context) => [
           PopupMenuItem(
-            value: 'link',
-            child: Row(
-              children: [
-                Icon(
-                  Icons.workspaces_outline,
-                  size: 18,
-                  color: BrandColors.forest,
-                ),
-                SizedBox(width: Spacing.sm),
-                Text(
-                  'Link to Sphere',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-          PopupMenuItem(
             value: 'delete',
             child: Row(
               children: [
@@ -259,8 +212,6 @@ class RecordingCard extends ConsumerWidget {
         onSelected: (value) {
           if (value == 'delete') {
             _confirmDelete(context, ref);
-          } else if (value == 'link') {
-            _linkToSpaces(context);
           }
         },
       ),

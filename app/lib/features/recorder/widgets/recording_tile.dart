@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/features/recorder/models/recording.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
-import 'package:app/features/space_notes/screens/link_capture_to_space_screen.dart';
 
 /// Modern recording tile matching RecordingDetailScreen design
 /// Features: transcript preview, menu actions, status indicators
@@ -52,35 +51,6 @@ class RecordingTile extends ConsumerWidget {
         ).showSnackBar(const SnackBar(content: Text('Recording deleted')));
         onDeleted?.call();
       }
-    }
-  }
-
-  void _linkToSpaces(BuildContext context) async {
-    String cleanNotePath = recording.filePath;
-    if (cleanNotePath.startsWith('/api/')) {
-      cleanNotePath = cleanNotePath.substring(5);
-    }
-    if (cleanNotePath.endsWith('.wav')) {
-      cleanNotePath = cleanNotePath.replaceAll('.wav', '.md');
-    }
-    if (!cleanNotePath.startsWith('captures/')) {
-      cleanNotePath = 'captures/$cleanNotePath';
-    }
-
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (context) => LinkCaptureToSpaceScreen(
-          captureId: recording.id,
-          filename: recording.title,
-          notePath: cleanNotePath,
-        ),
-      ),
-    );
-
-    if (result == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Successfully linked to spaces')),
-      );
     }
   }
 
@@ -157,16 +127,6 @@ class RecordingTile extends ConsumerWidget {
                     icon: Icon(Icons.more_vert, color: Colors.grey.shade600),
                     itemBuilder: (context) => [
                       const PopupMenuItem(
-                        value: 'link',
-                        child: Row(
-                          children: [
-                            Icon(Icons.link),
-                            SizedBox(width: 8),
-                            Text('Link to Space'),
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
                         value: 'delete',
                         child: Row(
                           children: [
@@ -180,8 +140,6 @@ class RecordingTile extends ConsumerWidget {
                     onSelected: (value) {
                       if (value == 'delete') {
                         _confirmDelete(context, ref);
-                      } else if (value == 'link') {
-                        _linkToSpaces(context);
                       }
                     },
                   ),

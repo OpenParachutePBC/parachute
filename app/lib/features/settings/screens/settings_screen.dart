@@ -8,7 +8,6 @@ import '../widgets/expandable_settings_section.dart';
 import '../widgets/device_integration_section.dart';
 import '../widgets/ai_chat_section.dart';
 import '../widgets/storage_section.dart';
-import '../widgets/git_sync_settings_card.dart';
 import '../widgets/omi_device_section.dart';
 import '../widgets/transcription_section.dart';
 import '../widgets/title_generation_section.dart';
@@ -134,41 +133,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildStorageSyncSection(bool isDark) {
     return ExpandableSettingsSection(
-      title: 'Storage & Sync',
-      subtitle: 'File locations and Git synchronization',
+      title: 'Storage',
+      subtitle: 'File locations and folder settings',
       icon: Icons.folder_open,
       accentColor: isDark ? BrandColors.nightForest : BrandColors.forest,
-      children: [
-        const StorageSection(),
-        _buildGitSyncContent(isDark),
-      ],
-    );
-  }
-
-  Widget _buildGitSyncContent(bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Git Sync',
-          style: TextStyle(
-            fontSize: TypographyTokens.titleLarge,
-            fontWeight: FontWeight.bold,
-            color: isDark ? BrandColors.nightText : BrandColors.charcoal,
-          ),
-        ),
-        SizedBox(height: Spacing.sm),
-        Text(
-          'Sync your captures to GitHub for backup and cross-device access',
-          style: TextStyle(
-            fontSize: TypographyTokens.bodySmall,
-            color: isDark
-                ? BrandColors.nightTextSecondary
-                : BrandColors.driftwood,
-          ),
-        ),
-        SizedBox(height: Spacing.lg),
-        const GitSyncSettingsCard(),
+      children: const [
+        StorageSection(),
       ],
     );
   }

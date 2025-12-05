@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:record/record.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/screens/recording_detail_screen.dart';
@@ -12,7 +13,7 @@ import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/services/audio_service.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/audio_compression_service_dart.dart';
-import 'package:app/features/files/providers/local_file_browser_provider.dart';
+import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
 import 'package:path/path.dart' as path;
 
@@ -51,13 +52,12 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   Timer? _durationTimer;
   DateTime? _startTime;
 
-  // Waveform state
-  List<double> _waveformAmplitudes = List.filled(
-    24,
-    0.0,
-  ); // 24 dots around circle
-  Timer? _waveformTimer;
-  final _random = math.Random();
+  // Waveform state - smooth animation using real amplitude
+  List<double> _waveformAmplitudes = List.filled(24, 0.0);
+  List<double> _targetAmplitudes = List.filled(24, 0.0);
+  StreamSubscription<Amplitude>? _amplitudeSubscription;
+  late AnimationController _waveformController;
+  double _currentAmplitude = 0.0;
 
   // Animations
   late AnimationController _pulseController;
@@ -78,6 +78,12 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
     _pulseAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Motion.breathe),
     );
+
+    // Smooth waveform animation - listener fires every frame while animating
+    _waveformController = AnimationController(
+      duration: const Duration(seconds: 1),
+      vsync: this,
+    )..addListener(_updateWaveformAmplitudes);
 
     // Context input slide animation
     _contextSlideController = AnimationController(
@@ -101,7 +107,8 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   @override
   void dispose() {
     _durationTimer?.cancel();
-    _waveformTimer?.cancel();
+    _amplitudeSubscription?.cancel();
+    _waveformController.dispose();
     _pulseController.dispose();
     _contextSlideController.dispose();
     super.dispose();
@@ -417,21 +424,55 @@ class _SimpleRecordingScreenState extends ConsumerState<SimpleRecordingScreen>
   }
 
   void _startWaveformAnimation() {
-    _waveformTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      setState(() {
-        for (int i = 0; i < _waveformAmplitudes.length; i++) {
-          _waveformAmplitudes[i] = 0.3 + _random.nextDouble() * 0.7;
-        }
-      });
+    final audioService = ref.read(audioServiceProvider);
+
+    // Subscribe to real audio amplitude from the recorder
+    _amplitudeSubscription = audioService.recorder.onAmplitudeChanged(
+      const Duration(milliseconds: 50),
+    ).listen((amp) {
+      // Convert dBFS to 0-1 range (dBFS is typically -160 to 0)
+      // amp.current is the current amplitude in dBFS
+      final normalized = ((amp.current + 50) / 50).clamp(0.0, 1.0);
+      _currentAmplitude = normalized;
+
+      // Generate target amplitudes based on current level with some variation
+      final random = math.Random();
+      for (int i = 0; i < _targetAmplitudes.length; i++) {
+        // Base amplitude from audio + small random variation for organic feel
+        final variation = (random.nextDouble() - 0.5) * 0.3;
+        _targetAmplitudes[i] = (_currentAmplitude + variation).clamp(0.1, 1.0);
+      }
     });
+
+    // Start smooth interpolation animation
+    _waveformController.repeat();
+  }
+
+  /// Smoothly interpolate current amplitudes toward targets (called every frame)
+  void _updateWaveformAmplitudes() {
+    if (!mounted) return;
+
+    const smoothing = 0.15; // Lower = smoother but slower response
+
+    for (int i = 0; i < _waveformAmplitudes.length; i++) {
+      final diff = _targetAmplitudes[i] - _waveformAmplitudes[i];
+      _waveformAmplitudes[i] += diff * smoothing;
+    }
+
+    // Always trigger rebuild - shouldRepaint handles optimization
+    setState(() {});
   }
 
   void _stopWaveformAnimation() {
-    _waveformTimer?.cancel();
-    _waveformTimer = null;
-    setState(() {
-      _waveformAmplitudes = List.filled(24, 0.0);
-    });
+    _amplitudeSubscription?.cancel();
+    _amplitudeSubscription = null;
+    _waveformController.stop();
+
+    // Smoothly fade out to zero
+    for (int i = 0; i < _targetAmplitudes.length; i++) {
+      _targetAmplitudes[i] = 0.0;
+    }
+    _currentAmplitude = 0.0;
   }
 
   void _showError(String message) {
@@ -954,8 +995,9 @@ class WaveformRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(WaveformRingPainter oldDelegate) {
-    return oldDelegate.amplitudes != amplitudes ||
-        oldDelegate.color != color ||
+    // Always repaint when recording - amplitudes change every frame
+    if (isRecording) return true;
+    return oldDelegate.color != color ||
         oldDelegate.isRecording != isRecording;
   }
 }

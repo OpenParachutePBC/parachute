@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
-import 'package:app/features/files/providers/local_file_browser_provider.dart';
+import 'package:app/core/providers/file_system_provider.dart';
 
 /// Welcome step - introduces Parachute with brand styling
 ///

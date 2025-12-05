@@ -4,7 +4,6 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_linux
-  git2dart_binaries
   gtk
   record_linux
   sentry_flutter

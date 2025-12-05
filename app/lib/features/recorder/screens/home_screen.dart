@@ -12,7 +12,6 @@ import 'package:app/features/recorder/utils/platform_utils.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/recorder/widgets/recording_card.dart';
 import 'package:app/features/recorder/widgets/model_download_banner.dart';
-import 'package:app/core/widgets/git_sync_status_indicator.dart';
 
 /// Home screen for Parachute - voice capture hub
 ///
@@ -265,8 +264,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
             ],
           ),
-          // Git sync status
-          const GitSyncStatusIndicator(),
           // Omi indicator
           if (PlatformUtils.shouldShowOmiFeatures && omiEnabled) ...[
             _buildOmiConnectionIndicator(),

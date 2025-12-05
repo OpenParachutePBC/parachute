@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app/core/theme/design_tokens.dart';
-import 'package:app/features/files/providers/local_file_browser_provider.dart';
+import 'package:app/core/providers/file_system_provider.dart';
 import './settings_section_header.dart';
 
 /// Storage settings section (Parachute folder and subfolder names)
@@ -17,10 +17,7 @@ class StorageSection extends ConsumerStatefulWidget {
 class _StorageSectionState extends ConsumerState<StorageSection> {
   String _syncFolderPath = '';
   String _capturesFolderName = 'captures';
-  String _spacesFolderName = 'spaces';
   final TextEditingController _capturesFolderNameController =
-      TextEditingController();
-  final TextEditingController _spacesFolderNameController =
       TextEditingController();
   bool _isLoading = true;
 
@@ -33,7 +30,6 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
   @override
   void dispose() {
     _capturesFolderNameController.dispose();
-    _spacesFolderNameController.dispose();
     super.dispose();
   }
 
@@ -42,9 +38,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     await fileSystemService.initialize();
     _syncFolderPath = await fileSystemService.getRootPathDisplay();
     _capturesFolderName = fileSystemService.getCapturesFolderName();
-    _spacesFolderName = fileSystemService.getSpacesFolderName();
     _capturesFolderNameController.text = _capturesFolderName;
-    _spacesFolderNameController.text = _spacesFolderName;
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -88,7 +82,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       builder: (context) => AlertDialog(
         title: const Text('Change Parachute Folder'),
         content: const Text(
-          'This will copy all your recordings, transcripts, and spheres to the new location. '
+          'This will copy all your recordings and transcripts to the new location. '
           'This may take a while depending on how much data you have.\n\n'
           'Your original files will remain in the old location until you manually delete them.\n\n'
           'Make sure you have enough space in the new location.',
@@ -196,33 +190,22 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
   Future<void> _saveSubfolderNames() async {
     final newCapturesName = _capturesFolderNameController.text.trim();
-    final newSpacesName = _spacesFolderNameController.text.trim();
 
-    // Validate folder names
-    if (newCapturesName.isEmpty || newSpacesName.isEmpty) {
+    // Validate folder name
+    if (newCapturesName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Folder names cannot be empty'),
+          content: const Text('Folder name cannot be empty'),
           backgroundColor: BrandColors.error,
         ),
       );
       return;
     }
 
-    if (newCapturesName.contains('/') || newSpacesName.contains('/')) {
+    if (newCapturesName.contains('/')) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Folder names cannot contain slashes'),
-          backgroundColor: BrandColors.error,
-        ),
-      );
-      return;
-    }
-
-    if (newCapturesName == newSpacesName) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Folder names must be different'),
+          content: const Text('Folder name cannot contain slashes'),
           backgroundColor: BrandColors.error,
         ),
       );
@@ -233,25 +216,23 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       final fileSystemService = ref.read(fileSystemServiceProvider);
       final success = await fileSystemService.setSubfolderNames(
         capturesFolderName: newCapturesName,
-        spacesFolderName: newSpacesName,
       );
 
       if (success && mounted) {
         setState(() {
           _capturesFolderName = newCapturesName;
-          _spacesFolderName = newSpacesName;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Subfolder names updated successfully!'),
+            content: const Text('Folder name updated successfully!'),
             backgroundColor: BrandColors.success,
           ),
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to update subfolder names'),
+            content: const Text('Failed to update folder name'),
             backgroundColor: BrandColors.error,
           ),
         );
@@ -472,48 +453,13 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
               Row(
                 children: [
-                  Icon(
-                    Icons.bubble_chart_outlined,
-                    color: isDark
-                        ? BrandColors.nightTextSecondary
-                        : BrandColors.driftwood,
-                  ),
-                  SizedBox(width: Spacing.sm),
-                  Text(
-                    'Spheres folder name',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? BrandColors.nightText : BrandColors.charcoal,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: Spacing.sm),
-              TextField(
-                controller: _spacesFolderNameController,
-                decoration: InputDecoration(
-                  hintText: 'e.g., spheres, spaces, topics',
-                  border: const OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: Spacing.md,
-                    vertical: Spacing.sm,
-                  ),
-                  prefixIcon: const Icon(Icons.bubble_chart, size: 18),
-                ),
-              ),
-
-              SizedBox(height: Spacing.lg),
-
-              Row(
-                children: [
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () {
                         _capturesFolderNameController.text = 'captures';
-                        _spacesFolderNameController.text = 'spaces';
                       },
                       icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Reset to Defaults'),
+                      label: const Text('Reset to Default'),
                     ),
                   ),
                   SizedBox(width: Spacing.sm),
@@ -521,7 +467,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                     child: FilledButton.icon(
                       onPressed: _saveSubfolderNames,
                       icon: const Icon(Icons.save, size: 18),
-                      label: const Text('Save Names'),
+                      label: const Text('Save Name'),
                       style: FilledButton.styleFrom(
                         backgroundColor: BrandColors.success,
                       ),
@@ -534,7 +480,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
               SettingsInfoBanner(
                 message:
-                    'Example: Use "Parachute Captures" and "Parachute Spheres" '
+                    'Use a custom name like "Parachute Captures" '
                     'to avoid conflicts with your existing note folders',
                 color: BrandColors.turquoise,
               ),

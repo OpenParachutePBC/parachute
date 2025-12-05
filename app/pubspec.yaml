@@ -36,10 +36,6 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.0.0
 
-  # Git Integration (GitHub with Android support)
-  git2dart: ^0.4.0
-  git2dart_binaries: ^1.10.3
-
   # GitHub OAuth & API
   oauth2: ^2.0.2
   app_links: ^6.3.2

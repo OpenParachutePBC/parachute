@@ -33,6 +33,9 @@ class AudioService {
   bool get isPlaying => _player.playing;
   bool get isInitialized => _isInitialized;
 
+  /// Access the recorder for amplitude monitoring
+  AudioRecorder get recorder => _recorder;
+
   /// Wait for initialization to complete.
   /// Safe to call multiple times - will return immediately if already initialized.
   Future<void> ensureInitialized() async {
