@@ -20,6 +20,7 @@ import fsSync from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { generateSessionTitle } from './title-generator.js';
+import { ParaIdService, ParaIdType, getParaIdService } from './para-id-service.js';
 
 /**
  * Session resumption info returned to caller for debugging/visibility
@@ -81,6 +82,9 @@ export class SessionManager {
     // Active SDK session objects
     this.activeSessions = new Map();
 
+    // Para ID service for generating unique message IDs
+    this.paraIdService = getParaIdService(vaultPath);
+
     // Cache settings
     this.cacheMaxAge = 30 * 60 * 1000; // 30 minutes
     this.contextTokenBudget = 50000;   // ~50k tokens for context injection
@@ -92,6 +96,9 @@ export class SessionManager {
   async initialize() {
     // Ensure new directory exists
     await fs.mkdir(this.sessionsPath, { recursive: true });
+
+    // Initialize para ID service
+    await this.paraIdService.initialize();
 
     // Build lightweight index from files (including legacy paths for migration)
     await this.buildSessionIndex();
@@ -290,18 +297,28 @@ export class SessionManager {
 
   /**
    * Parse messages from markdown body
+   * Supports both formats:
+   * - New: ### para:abc123def456 User | 2025-12-20T10:30:00Z
+   * - Legacy: ### User | 10:30 AM
    */
   parseMessages(body) {
     const messages = [];
-    // Match timestamps with or without milliseconds (e.g., 2025-12-07T04:39:47.485Z or 2025-12-07T04:39:47Z)
-    const regex = /### (User|Assistant|System) \| (\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\n\n([\s\S]*?)(?=\n### |\n---|\n## |$)/g;
+    // Match both formats:
+    // - ### para:xxxxxxxxxxxx Role | timestamp
+    // - ### Role | timestamp
+    const regex = /### (para:[a-z0-9]+\s+)?(User|Assistant|System) \| (\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\n\n([\s\S]*?)(?=\n### |\n---|\n## |$)/g;
 
     let match;
     while ((match = regex.exec(body)) !== null) {
+      // Extract para ID if present
+      const headerLine = `### ${match[1] || ''}${match[2]} | ${match[3]}`;
+      const paraId = ParaIdService.parseFromH3(headerLine);
+
       messages.push({
-        role: match[1].toLowerCase(),
-        timestamp: match[2],
-        content: match[3].trim()
+        role: match[2].toLowerCase(),
+        timestamp: match[3],
+        content: match[4].trim(),
+        paraId: paraId || null
       });
     }
 
@@ -636,7 +653,13 @@ ${contextYaml}
     for (const msg of session.messages) {
       const role = msg.role.charAt(0).toUpperCase() + msg.role.slice(1);
       const timestamp = msg.timestamp || new Date().toISOString();
-      md += `### ${role} | ${timestamp}\n\n${msg.content}\n\n`;
+
+      // Use para ID if available, otherwise legacy format
+      if (msg.paraId) {
+        md += `### para:${msg.paraId} ${role} | ${timestamp}\n\n${msg.content}\n\n`;
+      } else {
+        md += `### ${role} | ${timestamp}\n\n${msg.content}\n\n`;
+      }
     }
 
     return md;
@@ -662,14 +685,18 @@ ${contextYaml}
   async addMessage(sessionKey, role, content) {
     const session = this.loadedSessions.get(sessionKey);
     if (session) {
+      // Generate para ID for the message
+      const paraId = await this.paraIdService.generate(ParaIdType.MESSAGE, session.filePath);
+
       session.messages.push({
         role,
         content,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        paraId
       });
       session.lastAccessed = new Date().toISOString();
       await this.saveSession(session);
-      console.log(`[SessionManager] Added ${role} message to session ${sessionKey} (now ${session.messages.length} messages)`);
+      console.log(`[SessionManager] Added ${role} message to session ${sessionKey} (para:${paraId}, now ${session.messages.length} messages)`);
     } else {
       console.error(`[SessionManager] Cannot add message - session not found: ${sessionKey}`);
     }

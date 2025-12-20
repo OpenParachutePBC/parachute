@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import '../models/chat_session.dart';
 import '../models/chat_message.dart';
 import 'package:app/core/services/file_system_service.dart';
+import 'package:app/features/journal/services/para_id_service.dart';
 
 /// Reads chat sessions directly from local vault markdown files.
 ///
@@ -222,16 +223,26 @@ class LocalSessionReader {
   }
 
   /// Parse messages from markdown format
-  /// Format: ### User | 10:30 AM\nMessage content\n\n### Assistant | 10:30 AM\nResponse
+  /// Supports both formats:
+  /// - New: ### para:abc123def456 User | 2025-12-20T10:30:00Z
+  /// - Legacy: ### User | 10:30 AM
   List<ChatMessage> _parseMessages(String content, String sessionId) {
     final messages = <ChatMessage>[];
-    final regex = RegExp(r'### (User|Assistant) \| ([^\n]+)\n');
+
+    // Match both formats:
+    // - ### para:xxxxxxxxxxxx Role | timestamp
+    // - ### Role | timestamp
+    final regex = RegExp(r'### (para:[a-z0-9]+\s+)?(User|Assistant) \| ([^\n]+)\n');
     final matches = regex.allMatches(content).toList();
 
     for (var i = 0; i < matches.length; i++) {
       final match = matches[i];
-      final role = match.group(1)!.toLowerCase();
-      final timestamp = match.group(2)!;
+      final headerLine = content.substring(match.start, match.end - 1); // Remove trailing \n
+      final role = match.group(2)!.toLowerCase();
+      final timestampStr = match.group(3)!;
+
+      // Extract para ID using ParaIdService
+      final paraId = ParaIdService.parseFromH3(headerLine);
 
       // Get message content (from after this header to next header or end)
       final startIndex = match.end;
@@ -239,12 +250,12 @@ class LocalSessionReader {
       final messageContent = content.substring(startIndex, endIndex).trim();
 
       if (messageContent.isNotEmpty) {
-        messages.add(ChatMessage(
-          id: '${sessionId}_$i',
+        messages.add(ChatMessage.fromMarkdown(
           sessionId: sessionId,
           role: role == 'user' ? MessageRole.user : MessageRole.assistant,
-          content: [MessageContent.text(messageContent)],
-          timestamp: _parseTimestamp(timestamp) ?? DateTime.now(),
+          text: messageContent,
+          timestamp: _parseTimestamp(timestampStr) ?? DateTime.now(),
+          paraId: paraId,
         ));
       }
     }

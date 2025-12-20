@@ -87,7 +87,14 @@ class MessageContent {
 
 /// A chat message with ordered content (text and tool calls interleaved)
 class ChatMessage {
+  /// Internal message ID (used for streaming, UI state, etc.)
   final String id;
+
+  /// Persistent para:uuid identifier (stored in markdown)
+  /// Format: 12-char alphanumeric, e.g., "abc123def456"
+  /// Null for messages that haven't been persisted yet
+  final String? paraId;
+
   final String sessionId;
   final MessageRole role;
   final List<MessageContent> content;
@@ -96,6 +103,7 @@ class ChatMessage {
 
   const ChatMessage({
     required this.id,
+    this.paraId,
     required this.sessionId,
     required this.role,
     required this.content,
@@ -143,6 +151,7 @@ class ChatMessage {
 
     return ChatMessage(
       id: json['id'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      paraId: json['paraId'] as String?,
       sessionId: json['sessionId'] as String? ?? '',
       role: role,
       content: content,
@@ -153,8 +162,18 @@ class ChatMessage {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    if (paraId != null) 'paraId': paraId,
+    'sessionId': sessionId,
+    'role': role == MessageRole.user ? 'user' : 'assistant',
+    'content': textContent,
+    'timestamp': timestamp.toIso8601String(),
+  };
+
   ChatMessage copyWith({
     String? id,
+    String? paraId,
     String? sessionId,
     MessageRole? role,
     List<MessageContent>? content,
@@ -163,6 +182,7 @@ class ChatMessage {
   }) {
     return ChatMessage(
       id: id ?? this.id,
+      paraId: paraId ?? this.paraId,
       sessionId: sessionId ?? this.sessionId,
       role: role ?? this.role,
       content: content ?? this.content,
@@ -175,9 +195,11 @@ class ChatMessage {
   factory ChatMessage.user({
     required String sessionId,
     required String text,
+    String? paraId,
   }) {
     return ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
+      paraId: paraId,
       sessionId: sessionId,
       role: MessageRole.user,
       content: [MessageContent.text(text)],
@@ -191,11 +213,30 @@ class ChatMessage {
   }) {
     return ChatMessage(
       id: 'streaming-${DateTime.now().millisecondsSinceEpoch}',
+      paraId: null, // Will be assigned when persisted
       sessionId: sessionId,
       role: MessageRole.assistant,
       content: [],
       timestamp: DateTime.now(),
       isStreaming: true,
+    );
+  }
+
+  /// Create a message from parsed markdown (with para ID)
+  factory ChatMessage.fromMarkdown({
+    required String sessionId,
+    required MessageRole role,
+    required String text,
+    required DateTime timestamp,
+    String? paraId,
+  }) {
+    return ChatMessage(
+      id: paraId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      paraId: paraId,
+      sessionId: sessionId,
+      role: role,
+      content: [MessageContent.text(text)],
+      timestamp: timestamp,
     );
   }
 }
