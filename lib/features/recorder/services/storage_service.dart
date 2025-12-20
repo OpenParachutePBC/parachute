@@ -791,9 +791,9 @@ class StorageService {
   /// Save a recording - LOCAL-FIRST
   /// Returns the recording ID (timestamp-based for local files)
   ///
-  /// All recordings are saved to ~/Parachute/captures/YYYY-MM/ as:
-  /// - Markdown file (.md) in month folder
-  /// - Audio file (.wav) in month/_audio/ subfolder
+  /// All recordings are saved as:
+  /// - Markdown file (.md) in captures/YYYY-MM/
+  /// - Audio file (.wav) in assets/YYYY-MM/ (unified asset storage)
   Future<String?> saveRecording(Recording recording) async {
     if (!_isInitialized && _initializationFuture == null) {
       await initialize();
@@ -809,32 +809,44 @@ class StorageService {
         return null;
       }
 
-      // Ensure month folders exist
-      await _fileSystem.ensureMonthFoldersExist(recording.timestamp);
-
       final timestamp = FileSystemService.formatTimestampForFilename(
         recording.timestamp,
       );
 
-      // Save markdown file to month folder
-      final monthPath = await _fileSystem.getCapturesMonthPath(recording.timestamp);
-      final mdPath = p.join(monthPath, '$timestamp.md');
-      final mdFile = File(mdPath);
-
-      if (!await mdFile.exists()) {
-        final markdown = _generateMarkdown(recording);
-        await mdFile.writeAsString(markdown);
-        debugPrint('[StorageService] Saved recording locally: $mdPath');
+      // Ensure captures month folder exists
+      final capturesMonthPath = await _fileSystem.getCapturesMonthPath(recording.timestamp);
+      final capturesMonthDir = Directory(capturesMonthPath);
+      if (!await capturesMonthDir.exists()) {
+        await capturesMonthDir.create(recursive: true);
       }
 
-      // Copy audio file to _audio/ subfolder
-      // Use .wav extension (opus removed)
-      final audioFolderPath = await _fileSystem.getAudioFolderPath(recording.timestamp);
-      final audioDestPath = p.join(audioFolderPath, '$timestamp.wav');
+      // Copy audio file to assets/YYYY-MM/ folder
+      final audioDestPath = await _fileSystem.getNewAssetPath(
+        recording.timestamp,
+        'audio',
+        'wav',
+      );
+      final audioFilename = p.basename(audioDestPath);
+
       if (recording.filePath != audioDestPath &&
           !await File(audioDestPath).exists()) {
         await audioFile.copy(audioDestPath);
         debugPrint('[StorageService] Copied audio to: $audioDestPath');
+      }
+
+      // Save markdown file to captures month folder
+      // Include relative path to audio in assets folder
+      final mdPath = p.join(capturesMonthPath, '$timestamp.md');
+      final mdFile = File(mdPath);
+
+      if (!await mdFile.exists()) {
+        final audioRelativePath = _fileSystem.getAssetRelativePath(
+          recording.timestamp,
+          audioFilename,
+        );
+        final markdown = _generateMarkdown(recording, audioRelativePath: audioRelativePath);
+        await mdFile.writeAsString(markdown);
+        debugPrint('[StorageService] Saved recording locally: $mdPath');
       }
 
       debugPrint('[StorageService] ✅ Recording saved locally');
@@ -850,7 +862,8 @@ class StorageService {
   }
 
   /// Generate markdown content from recording
-  String _generateMarkdown(Recording recording) {
+  /// [audioRelativePath] - Optional relative path to the audio file in assets folder
+  String _generateMarkdown(Recording recording, {String? audioRelativePath}) {
     final buffer = StringBuffer();
 
     // Frontmatter
@@ -861,6 +874,11 @@ class StorageService {
     buffer.writeln('duration: ${recording.duration.inSeconds}');
     buffer.writeln('fileSize: ${recording.fileSizeKB}');
     buffer.writeln('source: ${recording.source}');
+
+    // Audio file path (relative to vault root)
+    if (audioRelativePath != null) {
+      buffer.writeln('audio: $audioRelativePath');
+    }
 
     if (recording.deviceId != null) {
       buffer.writeln('deviceId: ${recording.deviceId}');

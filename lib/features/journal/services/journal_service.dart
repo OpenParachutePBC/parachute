@@ -187,14 +187,10 @@ class JournalService {
     final now = DateTime.now();
     final defaultTitle = _formatTime(now);
 
-    // Ensure assets directory exists
-    final assetsPath = '$journalsPath/assets';
-    await _fileSystemService.ensureDirectoryExists(assetsPath);
-
-    // Generate filename based on timestamp
-    final audioFilename = '${_formatDate(now)}_${_formatTime(now).replaceAll(':', '-')}.wav';
-    final destPath = '$assetsPath/$audioFilename';
-    final relativePath = '$_journalFolderName/assets/$audioFilename';
+    // Get path in unified assets folder (assets/YYYY-MM/)
+    final destPath = await _fileSystemService.getNewAssetPath(now, 'audio', 'wav');
+    final audioFilename = destPath.split('/').last;
+    final relativePath = _fileSystemService.getAssetRelativePath(now, audioFilename);
 
     // Copy the audio file
     final sourceFile = File(audioPath);

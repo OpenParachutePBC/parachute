@@ -9,7 +9,10 @@ import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
 /// Unified file system service for Parachute
 ///
 /// Manages the ~/Parachute/ folder structure:
-/// - captures/     - Voice recordings and transcripts
+/// - assets/       - All media files (audio, images) organized by YYYY-MM
+/// - captures/     - Voice recording transcripts (markdown)
+/// - Daily/        - Daily journal entries
+/// - agent-sessions/ - AI chat sessions
 ///
 /// Also manages temporary audio files:
 /// - Temp folder for WAV files during recording/playback
@@ -24,11 +27,15 @@ class FileSystemService {
   static const String _rootFolderPathKey = 'parachute_root_folder_path';
   static const String _capturesFolderNameKey = 'parachute_captures_folder_name';
   static const String _journalFolderNameKey = 'parachute_journal_folder_name';
+  static const String _assetsFolderNameKey = 'parachute_assets_folder_name';
+  static const String _sessionsFolderNameKey = 'parachute_sessions_folder_name';
   static const String _secureBookmarkKey = 'parachute_secure_bookmark';
 
   // Default subfolder names
   static const String _defaultCapturesFolderName = 'captures';
   static const String _defaultJournalFolderName = 'Daily';
+  static const String _defaultAssetsFolderName = 'assets';
+  static const String _defaultSessionsFolderName = 'agent-sessions';
   static const String _tempAudioFolderName = 'parachute_audio_temp';
 
   // Temp subfolder names with different retention policies
@@ -45,6 +52,8 @@ class FileSystemService {
   String? _tempAudioPath;
   String _capturesFolderName = _defaultCapturesFolderName;
   String _journalFolderName = _defaultJournalFolderName;
+  String _assetsFolderName = _defaultAssetsFolderName;
+  String _sessionsFolderName = _defaultSessionsFolderName;
   bool _isInitialized = false;
   Future<void>? _initializationFuture;
 
@@ -128,6 +137,83 @@ class FileSystemService {
     final root = await getRootPath();
     return '$root/$_journalFolderName';
   }
+
+  // ============================================================
+  // Assets Folder (unified media storage)
+  // ============================================================
+
+  /// Get the assets folder name
+  String getAssetsFolderName() {
+    return _assetsFolderName;
+  }
+
+  /// Get the assets folder path
+  Future<String> getAssetsPath() async {
+    final root = await getRootPath();
+    return '$root/$_assetsFolderName';
+  }
+
+  // ============================================================
+  // Sessions Folder (AI chat sessions)
+  // ============================================================
+
+  /// Get the sessions folder name
+  String getSessionsFolderName() {
+    return _sessionsFolderName;
+  }
+
+  /// Get the sessions folder path
+  Future<String> getSessionsPath() async {
+    final root = await getRootPath();
+    return '$root/$_sessionsFolderName';
+  }
+
+  /// Get the month folder path for assets
+  /// Returns path like: ~/Parachute/assets/2025-12
+  Future<String> getAssetsMonthPath(DateTime timestamp) async {
+    final assetsPath = await getAssetsPath();
+    final month = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}';
+    return '$assetsPath/$month';
+  }
+
+  /// Ensure assets month folder exists
+  Future<String> ensureAssetsMonthFolderExists(DateTime timestamp) async {
+    final monthPath = await getAssetsMonthPath(timestamp);
+    final monthDir = Directory(monthPath);
+    if (!await monthDir.exists()) {
+      await monthDir.create(recursive: true);
+      debugPrint('[FileSystemService] Created assets folder: $monthPath');
+    }
+    return monthPath;
+  }
+
+  /// Generate a unique asset filename with timestamp
+  /// Format: YYYY-MM-DD_HHMMSS_{type}.{ext}
+  /// e.g., 2025-12-20_143022_audio.wav
+  String generateAssetFilename(DateTime timestamp, String type, String extension) {
+    final date = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}-${timestamp.day.toString().padLeft(2, '0')}';
+    final time = '${timestamp.hour.toString().padLeft(2, '0')}${timestamp.minute.toString().padLeft(2, '0')}${timestamp.second.toString().padLeft(2, '0')}';
+    return '${date}_${time}_$type.$extension';
+  }
+
+  /// Get full path for a new asset file
+  /// Creates the month folder if needed
+  Future<String> getNewAssetPath(DateTime timestamp, String type, String extension) async {
+    final monthPath = await ensureAssetsMonthFolderExists(timestamp);
+    final filename = generateAssetFilename(timestamp, type, extension);
+    return '$monthPath/$filename';
+  }
+
+  /// Get relative path from vault root to an asset
+  /// e.g., "assets/2025-12/2025-12-20_143022_audio.wav"
+  String getAssetRelativePath(DateTime timestamp, String filename) {
+    final month = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}';
+    return '$_assetsFolderName/$month/$filename';
+  }
+
+  // ============================================================
+  // Legacy Captures Folder Methods (kept for compatibility)
+  // ============================================================
 
   /// Get the month folder path for a timestamp
   /// Returns path like: ~/Parachute/captures/2025-12
@@ -430,6 +516,8 @@ class FileSystemService {
   Future<bool> setSubfolderNames({
     String? capturesFolderName,
     String? journalFolderName,
+    String? assetsFolderName,
+    String? sessionsFolderName,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -442,6 +530,16 @@ class FileSystemService {
       if (journalFolderName != null && journalFolderName.isNotEmpty) {
         _journalFolderName = journalFolderName;
         await prefs.setString(_journalFolderNameKey, journalFolderName);
+      }
+
+      if (assetsFolderName != null && assetsFolderName.isNotEmpty) {
+        _assetsFolderName = assetsFolderName;
+        await prefs.setString(_assetsFolderNameKey, assetsFolderName);
+      }
+
+      if (sessionsFolderName != null && sessionsFolderName.isNotEmpty) {
+        _sessionsFolderName = sessionsFolderName;
+        await prefs.setString(_sessionsFolderNameKey, sessionsFolderName);
       }
 
       // Recreate folder structure with new names
@@ -542,9 +640,15 @@ class FileSystemService {
           prefs.getString(_capturesFolderNameKey) ?? _defaultCapturesFolderName;
       _journalFolderName =
           prefs.getString(_journalFolderNameKey) ?? _defaultJournalFolderName;
+      _assetsFolderName =
+          prefs.getString(_assetsFolderNameKey) ?? _defaultAssetsFolderName;
+      _sessionsFolderName =
+          prefs.getString(_sessionsFolderNameKey) ?? _defaultSessionsFolderName;
 
       debugPrint('[FileSystemService] Captures folder: $_capturesFolderName');
       debugPrint('[FileSystemService] Journal folder: $_journalFolderName');
+      debugPrint('[FileSystemService] Assets folder: $_assetsFolderName');
+      debugPrint('[FileSystemService] Sessions folder: $_sessionsFolderName');
 
       // Ensure folder structure exists
       await _ensureFolderStructure();

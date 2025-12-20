@@ -9,6 +9,9 @@ class ChatSession {
   final int messageCount;
   final bool archived;
 
+  /// Whether this session was loaded from local files (vs from server API)
+  final bool isLocal;
+
   const ChatSession({
     required this.id,
     this.agentPath,
@@ -18,7 +21,11 @@ class ChatSession {
     this.updatedAt,
     this.messageCount = 0,
     this.archived = false,
+    this.isLocal = false,
   });
+
+  /// Alias for archived (for consistency with local session reader)
+  bool get isArchived => archived;
 
   factory ChatSession.fromJson(Map<String, dynamic> json) {
     // Handle both 'updatedAt' and 'lastAccessed' field names from backend
@@ -66,6 +73,7 @@ class ChatSession {
     DateTime? updatedAt,
     int? messageCount,
     bool? archived,
+    bool? isLocal,
   }) {
     return ChatSession(
       id: id ?? this.id,
@@ -76,6 +84,7 @@ class ChatSession {
       updatedAt: updatedAt ?? this.updatedAt,
       messageCount: messageCount ?? this.messageCount,
       archived: archived ?? this.archived,
+      isLocal: isLocal ?? this.isLocal,
     );
   }
 }

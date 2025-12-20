@@ -35,9 +35,7 @@ class BackendHealthService {
           debugPrint(
             '[BackendHealth] ✅ Server healthy - version: $version, ACP: $acpEnabled',
           );
-          return ServerHealthStatus(
-            isHealthy: true,
-            message: 'Connected',
+          return ServerHealthStatus.connected(
             version: version,
             acpEnabled: acpEnabled,
           );
@@ -50,40 +48,59 @@ class BackendHealthService {
       return ServerHealthStatus(
         isHealthy: false,
         message: 'Server responded with status ${response.statusCode}',
+        connectionState: ServerConnectionState.error,
       );
     } on DioException catch (e) {
       debugPrint(
         '[BackendHealth] ❌ Connection failed: ${e.type} - ${e.message}',
       );
 
-      String message;
+      // Differentiate between timeout, network error, and server offline
       switch (e.type) {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.sendTimeout:
         case DioExceptionType.receiveTimeout:
-          message = 'Connection timeout';
-          break;
-        case DioExceptionType.connectionError:
-          message = 'Cannot reach server';
-          break;
-        default:
-          message = 'Connection error: ${e.message}';
-      }
+          return ServerHealthStatus.timeout();
 
-      return ServerHealthStatus(
-        isHealthy: false,
-        message: message,
-        error: e.toString(),
-      );
+        case DioExceptionType.connectionError:
+          // Check if it's a network issue vs server just not running
+          final errorMessage = e.message?.toLowerCase() ?? '';
+          if (errorMessage.contains('no internet') ||
+              errorMessage.contains('network is unreachable') ||
+              errorMessage.contains('no route to host')) {
+            return ServerHealthStatus.networkError();
+          }
+          // Server is likely just not running (connection refused)
+          return ServerHealthStatus.serverOffline(serverUrl);
+
+        default:
+          return ServerHealthStatus(
+            isHealthy: false,
+            message: 'Connection error',
+            error: e.message,
+            connectionState: ServerConnectionState.error,
+          );
+      }
     } catch (e) {
       debugPrint('[BackendHealth] ❌ Unexpected error: $e');
       return ServerHealthStatus(
         isHealthy: false,
         message: 'Unexpected error',
         error: e.toString(),
+        connectionState: ServerConnectionState.error,
       );
     }
   }
+}
+
+/// Connection state types for better UI feedback
+enum ServerConnectionState {
+  connected,      // Server is healthy and reachable
+  connecting,     // Currently checking connection
+  serverOffline,  // Can reach network but server not responding
+  networkError,   // Cannot establish network connection at all
+  timeout,        // Connection timed out
+  error,          // Other error
 }
 
 /// Health status of the backend server
@@ -93,6 +110,7 @@ class ServerHealthStatus {
   final String? version;
   final bool? acpEnabled;
   final String? error;
+  final ServerConnectionState connectionState;
 
   ServerHealthStatus({
     required this.isHealthy,
@@ -100,7 +118,50 @@ class ServerHealthStatus {
     this.version,
     this.acpEnabled,
     this.error,
+    this.connectionState = ServerConnectionState.error,
   });
+
+  /// Factory for a healthy connection
+  factory ServerHealthStatus.connected({
+    String? version,
+    bool acpEnabled = false,
+  }) {
+    return ServerHealthStatus(
+      isHealthy: true,
+      message: 'Connected',
+      version: version,
+      acpEnabled: acpEnabled,
+      connectionState: ServerConnectionState.connected,
+    );
+  }
+
+  /// Factory for server offline
+  factory ServerHealthStatus.serverOffline(String serverUrl) {
+    return ServerHealthStatus(
+      isHealthy: false,
+      message: 'Server not responding',
+      connectionState: ServerConnectionState.serverOffline,
+      error: 'Cannot reach $serverUrl',
+    );
+  }
+
+  /// Factory for network error
+  factory ServerHealthStatus.networkError() {
+    return ServerHealthStatus(
+      isHealthy: false,
+      message: 'No network connection',
+      connectionState: ServerConnectionState.networkError,
+    );
+  }
+
+  /// Factory for timeout
+  factory ServerHealthStatus.timeout() {
+    return ServerHealthStatus(
+      isHealthy: false,
+      message: 'Connection timed out',
+      connectionState: ServerConnectionState.timeout,
+    );
+  }
 
   String get displayMessage {
     if (isHealthy) {
@@ -109,5 +170,23 @@ class ServerHealthStatus {
       return 'Connected$versionInfo$acpInfo';
     }
     return message;
+  }
+
+  /// User-friendly help text based on connection state
+  String get helpText {
+    switch (connectionState) {
+      case ServerConnectionState.connected:
+        return '';
+      case ServerConnectionState.connecting:
+        return 'Checking server connection...';
+      case ServerConnectionState.serverOffline:
+        return 'Make sure the agent server is running (npm start in agent/)';
+      case ServerConnectionState.networkError:
+        return 'Check your network connection';
+      case ServerConnectionState.timeout:
+        return 'Server is slow to respond - check if it\'s overloaded';
+      case ServerConnectionState.error:
+        return error ?? 'An unexpected error occurred';
+    }
   }
 }

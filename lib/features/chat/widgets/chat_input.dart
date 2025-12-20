@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app/core/theme/design_tokens.dart';
+import 'voice_input_button.dart';
 
-/// Text input field for chat messages
+/// Text input field for chat messages with optional voice input
 class ChatInput extends StatefulWidget {
   final Function(String) onSend;
   final bool enabled;
   final String? initialText;
   final String hintText;
+
+  /// Whether to show the voice input button
+  final bool showVoiceInput;
 
   const ChatInput({
     super.key,
@@ -15,6 +19,7 @@ class ChatInput extends StatefulWidget {
     this.enabled = true,
     this.initialText,
     this.hintText = 'Message your vault...',
+    this.showVoiceInput = true,
   });
 
   @override
@@ -81,6 +86,27 @@ class _ChatInputState extends State<ChatInput> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            // Voice input button
+            if (widget.showVoiceInput)
+              Padding(
+                padding: const EdgeInsets.only(right: Spacing.sm),
+                child: VoiceInputButton(
+                  enabled: widget.enabled,
+                  onTranscription: (text) {
+                    // Append transcribed text to the text field
+                    final currentText = _controller.text;
+                    final newText = currentText.isEmpty
+                        ? text
+                        : '$currentText $text';
+                    _controller.text = newText;
+                    _controller.selection = TextSelection.fromPosition(
+                      TextPosition(offset: newText.length),
+                    );
+                    _focusNode.requestFocus();
+                  },
+                ),
+              ),
+
             // Text field
             Expanded(
               child: Container(

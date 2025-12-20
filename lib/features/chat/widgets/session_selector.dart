@@ -100,16 +100,19 @@ class SessionSelector extends ConsumerWidget {
                     return _SessionTile(
                       session: session,
                       isSelected: isSelected,
+                      isLocal: session.isLocal,
                       onTap: () {
                         ref.read(switchSessionProvider)(session.id);
                         Navigator.pop(context);
                       },
-                      onDelete: () async {
-                        final confirmed = await _confirmDelete(context, isDark);
-                        if (confirmed == true) {
-                          await ref.read(deleteSessionProvider)(session.id);
-                        }
-                      },
+                      onDelete: session.isLocal
+                          ? null // Can't delete local-only sessions via API
+                          : () async {
+                              final confirmed = await _confirmDelete(context, isDark);
+                              if (confirmed == true) {
+                                await ref.read(deleteSessionProvider)(session.id);
+                              }
+                            },
                     );
                   },
                 );
@@ -230,14 +233,16 @@ class SessionSelector extends ConsumerWidget {
 class _SessionTile extends StatelessWidget {
   final ChatSession session;
   final bool isSelected;
+  final bool isLocal;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
 
   const _SessionTile({
     required this.session,
     required this.isSelected,
+    this.isLocal = false,
     required this.onTap,
-    required this.onDelete,
+    this.onDelete,
   });
 
   @override
@@ -245,70 +250,105 @@ class _SessionTile extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return Dismissible(
-      key: Key(session.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: Spacing.lg),
-        color: BrandColors.error,
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      confirmDismiss: (_) async {
-        onDelete();
-        return false; // We handle deletion in onDelete
-      },
-      child: ListTile(
-        onTap: onTap,
-        selected: isSelected,
-        selectedTileColor: isDark
-            ? BrandColors.nightForest.withValues(alpha: 0.1)
-            : BrandColors.forestMist.withValues(alpha: 0.5),
-        leading: CircleAvatar(
-          backgroundColor: isSelected
-              ? (isDark ? BrandColors.nightForest : BrandColors.forest)
+    // Build the tile content
+    final tile = ListTile(
+      onTap: onTap,
+      selected: isSelected,
+      selectedTileColor: isDark
+          ? BrandColors.nightForest.withValues(alpha: 0.1)
+          : BrandColors.forestMist.withValues(alpha: 0.5),
+      leading: CircleAvatar(
+        backgroundColor: isSelected
+            ? (isDark ? BrandColors.nightForest : BrandColors.forest)
+            : (isDark
+                ? BrandColors.nightSurfaceElevated
+                : BrandColors.stone),
+        child: Icon(
+          session.agentPath != null
+              ? Icons.smart_toy_outlined
+              : Icons.chat_bubble_outline,
+          size: 18,
+          color: isSelected
+              ? Colors.white
               : (isDark
-                  ? BrandColors.nightSurfaceElevated
-                  : BrandColors.stone),
-          child: Icon(
-            session.agentPath != null
-                ? Icons.smart_toy_outlined
-                : Icons.chat_bubble_outline,
-            size: 18,
-            color: isSelected
-                ? Colors.white
-                : (isDark
-                    ? BrandColors.nightTextSecondary
-                    : BrandColors.driftwood),
-          ),
+                  ? BrandColors.nightTextSecondary
+                  : BrandColors.driftwood),
         ),
-        title: Text(
-          session.displayTitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            color: isDark ? BrandColors.nightText : BrandColors.charcoal,
-          ),
-        ),
-        subtitle: Text(
-          _formatDate(session.updatedAt ?? session.createdAt),
-          style: TextStyle(
-            fontSize: TypographyTokens.labelSmall,
-            color: isDark
-                ? BrandColors.nightTextSecondary
-                : BrandColors.driftwood,
-          ),
-        ),
-        trailing: isSelected
-            ? Icon(
-                Icons.check_circle,
-                color: isDark ? BrandColors.nightForest : BrandColors.forest,
-                size: 20,
-              )
-            : null,
       ),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              session.displayTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+              ),
+            ),
+          ),
+          // Local indicator
+          if (isLocal)
+            Container(
+              margin: const EdgeInsets.only(left: Spacing.xs),
+              padding: const EdgeInsets.symmetric(
+                horizontal: Spacing.xs,
+                vertical: 2,
+              ),
+              decoration: BoxDecoration(
+                color: BrandColors.warning.withValues(alpha: 0.2),
+                borderRadius: Radii.badge,
+              ),
+              child: Text(
+                'Local',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: BrandColors.warning,
+                ),
+              ),
+            ),
+        ],
+      ),
+      subtitle: Text(
+        _formatDate(session.updatedAt ?? session.createdAt),
+        style: TextStyle(
+          fontSize: TypographyTokens.labelSmall,
+          color: isDark
+              ? BrandColors.nightTextSecondary
+              : BrandColors.driftwood,
+        ),
+      ),
+      trailing: isSelected
+          ? Icon(
+              Icons.check_circle,
+              color: isDark ? BrandColors.nightForest : BrandColors.forest,
+              size: 20,
+            )
+          : null,
     );
+
+    // Only wrap in Dismissible if onDelete is provided
+    if (onDelete != null) {
+      return Dismissible(
+        key: Key(session.id),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: Spacing.lg),
+          color: BrandColors.error,
+          child: const Icon(Icons.delete, color: Colors.white),
+        ),
+        confirmDismiss: (_) async {
+          onDelete!();
+          return false; // We handle deletion in onDelete
+        },
+        child: tile,
+      );
+    }
+
+    return tile;
   }
 
   String _formatDate(DateTime date) {

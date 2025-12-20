@@ -69,10 +69,14 @@ class _AiChatSectionState extends ConsumerState<AiChatSection> {
     await featureFlagsService.setAiServerUrl(url);
     setState(() => _aiServerUrl = url);
 
+    // Clear the cached URL and invalidate the provider so ChatService rebuilds
+    featureFlagsService.clearCache();
+    ref.invalidate(aiServerUrlProvider);
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('AI server URL updated'),
+          content: const Text('AI server URL updated - takes effect immediately'),
           backgroundColor: BrandColors.success,
         ),
       );

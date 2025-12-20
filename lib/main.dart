@@ -11,6 +11,8 @@ import 'package:opus_flutter/opus_flutter.dart' as opus_flutter;
 import 'core/theme/app_theme.dart';
 import 'core/theme/design_tokens.dart';
 import 'core/services/logging_service.dart';
+import 'core/services/file_system_service.dart';
+import 'core/services/asset_migration_service.dart';
 import 'core/providers/feature_flags_provider.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
@@ -156,6 +158,24 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     _checkWelcomeScreen();
     _setupTranscriptionCallbacks();
     _preInitializeTranscription();
+    _runAssetMigration();
+  }
+
+  /// Run asset migration if needed (moves audio files to unified assets/ folder)
+  void _runAssetMigration() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final fileSystem = FileSystemService();
+        await fileSystem.initialize();
+        final migration = AssetMigrationService(fileSystem);
+        final migrated = await migration.runMigrationIfNeeded();
+        if (migrated > 0) {
+          debugPrint('[Main] Migrated $migrated audio files to unified assets folder');
+        }
+      } catch (e) {
+        debugPrint('[Main] Asset migration error (non-fatal): $e');
+      }
+    });
   }
 
   /// Pre-initialize transcription model after first frame to avoid UI freeze during recording

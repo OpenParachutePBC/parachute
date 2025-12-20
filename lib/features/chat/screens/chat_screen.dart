@@ -9,6 +9,7 @@ import '../providers/chat_providers.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/chat_input.dart';
 import '../widgets/session_selector.dart';
+import '../widgets/connection_status_banner.dart';
 
 /// Main chat screen for AI conversations
 ///
@@ -186,6 +187,14 @@ If you have suggestions, show me the specific edits you'd recommend.''';
       ),
       body: Column(
         children: [
+          // Connection status banner (shows when server unreachable)
+          ConnectionStatusBanner(
+            onSettings: () {
+              // Navigate to settings
+              Navigator.of(context).pushNamed('/settings');
+            },
+          ),
+
           // Context banner (if initial context provided)
           if (_pendingInitialContext != null)
             _buildContextBanner(context, isDark),

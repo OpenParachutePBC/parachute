@@ -6,23 +6,23 @@ import '../models/chat_message.dart';
 import '../models/agent.dart';
 import '../models/stream_event.dart';
 import '../services/chat_service.dart';
-import 'package:app/core/services/feature_flags_service.dart';
+import '../services/local_session_reader.dart';
+import 'package:app/core/providers/feature_flags_provider.dart';
+import 'package:app/core/services/file_system_service.dart';
 
 // ============================================================
 // Service Provider
 // ============================================================
 
-/// Provider for the AI server URL
-final aiServerUrlProvider = FutureProvider<String>((ref) async {
-  return await FeatureFlagsService().getAiServerUrl();
-});
+// Note: aiServerUrlProvider is imported from feature_flags_provider.dart
+// Do NOT redefine it here - that was causing the URL not to update bug!
 
 /// Provider for ChatService
 ///
 /// Creates a new ChatService instance with the configured server URL.
 /// The service handles all communication with the parachute-agent backend.
 final chatServiceProvider = Provider<ChatService>((ref) {
-  // Use a default URL initially, will be updated when settings load
+  // Watch the server URL - this will rebuild ChatService when URL changes
   final urlAsync = ref.watch(aiServerUrlProvider);
   final baseUrl = urlAsync.valueOrNull ?? 'http://localhost:3333';
 
@@ -35,18 +35,40 @@ final chatServiceProvider = Provider<ChatService>((ref) {
   return service;
 });
 
+/// Provider for the local session reader (reads from vault markdown files)
+final localSessionReaderProvider = Provider<LocalSessionReader>((ref) {
+  return LocalSessionReader(FileSystemService());
+});
+
 // ============================================================
 // Session Providers
 // ============================================================
 
 /// Provider for fetching all chat sessions
+///
+/// Tries to fetch from the server first. If server is unavailable,
+/// falls back to reading local session files from the vault.
 final chatSessionsProvider = FutureProvider<List<ChatSession>>((ref) async {
   final service = ref.watch(chatServiceProvider);
+  final localReader = ref.watch(localSessionReaderProvider);
+
   try {
-    return await service.getSessions();
+    // Try server first
+    final serverSessions = await service.getSessions();
+    debugPrint('[ChatProviders] Loaded ${serverSessions.length} sessions from server');
+    return serverSessions;
   } catch (e) {
-    debugPrint('[ChatProviders] Error fetching sessions: $e');
-    return [];
+    debugPrint('[ChatProviders] Server unavailable, falling back to local sessions: $e');
+
+    // Fall back to local sessions
+    try {
+      final localSessions = await localReader.getLocalSessions();
+      debugPrint('[ChatProviders] Loaded ${localSessions.length} local sessions');
+      return localSessions;
+    } catch (localError) {
+      debugPrint('[ChatProviders] Error loading local sessions: $localError');
+      return [];
+    }
   }
 });
 

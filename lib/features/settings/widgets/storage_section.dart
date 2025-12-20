@@ -19,11 +19,14 @@ class StorageSection extends ConsumerStatefulWidget {
 
 class _StorageSectionState extends ConsumerState<StorageSection> {
   String _syncFolderPath = '';
-  String _capturesFolderName = 'captures';
   String _journalFolderName = 'Daily';
-  final TextEditingController _capturesFolderNameController =
-      TextEditingController();
+  String _assetsFolderName = 'assets';
+  String _sessionsFolderName = 'agent-sessions';
   final TextEditingController _journalFolderNameController =
+      TextEditingController();
+  final TextEditingController _assetsFolderNameController =
+      TextEditingController();
+  final TextEditingController _sessionsFolderNameController =
       TextEditingController();
   bool _isLoading = true;
 
@@ -35,8 +38,9 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
   @override
   void dispose() {
-    _capturesFolderNameController.dispose();
     _journalFolderNameController.dispose();
+    _assetsFolderNameController.dispose();
+    _sessionsFolderNameController.dispose();
     super.dispose();
   }
 
@@ -44,10 +48,12 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     final fileSystemService = ref.read(fileSystemServiceProvider);
     await fileSystemService.initialize();
     _syncFolderPath = await fileSystemService.getRootPathDisplay();
-    _capturesFolderName = fileSystemService.getCapturesFolderName();
     _journalFolderName = fileSystemService.getJournalFolderName();
-    _capturesFolderNameController.text = _capturesFolderName;
+    _assetsFolderName = fileSystemService.getAssetsFolderName();
+    _sessionsFolderName = fileSystemService.getSessionsFolderName();
     _journalFolderNameController.text = _journalFolderName;
+    _assetsFolderNameController.text = _assetsFolderName;
+    _sessionsFolderNameController.text = _sessionsFolderName;
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -272,11 +278,12 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
   }
 
   Future<void> _saveSubfolderNames() async {
-    final newCapturesName = _capturesFolderNameController.text.trim();
     final newJournalName = _journalFolderNameController.text.trim();
+    final newAssetsName = _assetsFolderNameController.text.trim();
+    final newSessionsName = _sessionsFolderNameController.text.trim();
 
     // Validate folder names
-    if (newCapturesName.isEmpty || newJournalName.isEmpty) {
+    if (newJournalName.isEmpty || newAssetsName.isEmpty || newSessionsName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Folder names cannot be empty'),
@@ -286,7 +293,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       return;
     }
 
-    if (newCapturesName.contains('/') || newJournalName.contains('/')) {
+    if (newJournalName.contains('/') || newAssetsName.contains('/') || newSessionsName.contains('/')) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Folder names cannot contain slashes'),
@@ -299,14 +306,16 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     try {
       final fileSystemService = ref.read(fileSystemServiceProvider);
       final success = await fileSystemService.setSubfolderNames(
-        capturesFolderName: newCapturesName,
         journalFolderName: newJournalName,
+        assetsFolderName: newAssetsName,
+        sessionsFolderName: newSessionsName,
       );
 
       if (success && mounted) {
         setState(() {
-          _capturesFolderName = newCapturesName;
           _journalFolderName = newJournalName;
+          _assetsFolderName = newAssetsName;
+          _sessionsFolderName = newSessionsName;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -503,40 +512,6 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.folder_special,
-                    color: isDark
-                        ? BrandColors.nightTextSecondary
-                        : BrandColors.driftwood,
-                  ),
-                  SizedBox(width: Spacing.sm),
-                  Text(
-                    'Recordings folder name',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? BrandColors.nightText : BrandColors.charcoal,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: Spacing.sm),
-              TextField(
-                controller: _capturesFolderNameController,
-                decoration: InputDecoration(
-                  hintText: 'e.g., captures, notes, recordings',
-                  border: const OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: Spacing.md,
-                    vertical: Spacing.sm,
-                  ),
-                  prefixIcon: const Icon(Icons.mic, size: 18),
-                ),
-              ),
-
-              SizedBox(height: Spacing.xl),
-
               // Journal folder name
               Row(
                 children: [
@@ -548,7 +523,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                   ),
                   SizedBox(width: Spacing.sm),
                   Text(
-                    'Daily journal folder name',
+                    'Daily journal folder',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: isDark ? BrandColors.nightText : BrandColors.charcoal,
@@ -570,6 +545,76 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                 ),
               ),
 
+              SizedBox(height: Spacing.xl),
+
+              // Assets folder name
+              Row(
+                children: [
+                  Icon(
+                    Icons.perm_media,
+                    color: isDark
+                        ? BrandColors.nightTextSecondary
+                        : BrandColors.driftwood,
+                  ),
+                  SizedBox(width: Spacing.sm),
+                  Text(
+                    'Media assets folder',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: Spacing.sm),
+              TextField(
+                controller: _assetsFolderNameController,
+                decoration: InputDecoration(
+                  hintText: 'e.g., assets, media, attachments',
+                  border: const OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: Spacing.md,
+                    vertical: Spacing.sm,
+                  ),
+                  prefixIcon: const Icon(Icons.perm_media, size: 18),
+                ),
+              ),
+
+              SizedBox(height: Spacing.xl),
+
+              // Sessions folder name
+              Row(
+                children: [
+                  Icon(
+                    Icons.chat,
+                    color: isDark
+                        ? BrandColors.nightTextSecondary
+                        : BrandColors.driftwood,
+                  ),
+                  SizedBox(width: Spacing.sm),
+                  Text(
+                    'AI chat sessions folder',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: Spacing.sm),
+              TextField(
+                controller: _sessionsFolderNameController,
+                decoration: InputDecoration(
+                  hintText: 'e.g., agent-sessions, chats, conversations',
+                  border: const OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: Spacing.md,
+                    vertical: Spacing.sm,
+                  ),
+                  prefixIcon: const Icon(Icons.chat, size: 18),
+                ),
+              ),
+
               SizedBox(height: Spacing.lg),
 
               Row(
@@ -577,8 +622,9 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        _capturesFolderNameController.text = 'captures';
                         _journalFolderNameController.text = 'Daily';
+                        _assetsFolderNameController.text = 'assets';
+                        _sessionsFolderNameController.text = 'agent-sessions';
                       },
                       icon: const Icon(Icons.refresh, size: 18),
                       label: const Text('Reset to Default'),
@@ -602,8 +648,8 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
               SettingsInfoBanner(
                 message:
-                    'The journal folder is where your daily notes are stored. '
-                    'Set this to match your existing Obsidian/Logseq daily notes folder (e.g., "Daily" or "journals").',
+                    'These folders store your daily notes, audio/images, and AI chat history. '
+                    'Customize them to match your existing Obsidian/Logseq setup.',
                 color: BrandColors.turquoise,
               ),
             ],
