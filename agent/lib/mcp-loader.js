@@ -1,0 +1,220 @@
+/**
+ * MCP Server Loader
+ *
+ * Loads MCP server definitions from .mcp.json in the vault root.
+ * Provides resolution of server references in agent configs.
+ */
+
+import fs from 'fs/promises';
+import path from 'path';
+
+/**
+ * MCP Server configuration cache
+ */
+let mcpServersCache = null;
+let mcpServersPath = null;
+
+/**
+ * Load MCP servers from .mcp.json
+ *
+ * @param {string} vaultPath - Path to the vault
+ * @param {boolean} forceReload - Force reload from disk
+ * @returns {Promise<object>} Map of server name -> config
+ */
+export async function loadMcpServers(vaultPath, forceReload = false) {
+  const configPath = path.join(vaultPath, '.mcp.json');
+
+  // Return cached if available and path matches
+  if (!forceReload && mcpServersCache && mcpServersPath === configPath) {
+    return mcpServersCache;
+  }
+
+  try {
+    const content = await fs.readFile(configPath, 'utf-8');
+    const config = JSON.parse(content);
+
+    // Validate structure
+    if (typeof config !== 'object' || config === null) {
+      console.warn('[MCP] Invalid .mcp.json structure - expected object');
+      return {};
+    }
+
+    // Cache and return
+    mcpServersCache = config;
+    mcpServersPath = configPath;
+
+    const serverNames = Object.keys(config);
+    if (serverNames.length > 0) {
+      console.log(`[MCP] Loaded ${serverNames.length} server(s): ${serverNames.join(', ')}`);
+    }
+
+    return config;
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      // File doesn't exist - that's fine
+      mcpServersCache = {};
+      mcpServersPath = configPath;
+      return {};
+    }
+    console.error('[MCP] Error loading .mcp.json:', e.message);
+    return {};
+  }
+}
+
+/**
+ * Resolve MCP server references in an agent config
+ *
+ * Agent can specify mcpServers as:
+ * - 'all': Load all servers from .mcp.json
+ * - Array of strings (references): ["browser", "filesystem"]
+ * - Object with inline configs: { browser: { command: "npx", args: [...] } }
+ * - Mixed: ["browser", { custom: { command: "..." } }]
+ *
+ * @param {object|array|string|null} agentMcpServers - Agent's mcpServers config
+ * @param {object} globalServers - Global server definitions from .mcp.json
+ * @returns {object|null} Resolved server configs ready for SDK
+ */
+export function resolveMcpServers(agentMcpServers, globalServers) {
+  if (!agentMcpServers) {
+    return null;
+  }
+
+  // Handle 'all' - load everything from .mcp.json
+  if (agentMcpServers === 'all') {
+    if (globalServers && Object.keys(globalServers).length > 0) {
+      console.log(`[MCP] Loading all servers: ${Object.keys(globalServers).join(', ')}`);
+      return { ...globalServers };
+    }
+    return null;
+  }
+
+  const resolved = {};
+
+  // Handle array format: ["browser", "filesystem"] or mixed
+  if (Array.isArray(agentMcpServers)) {
+    for (const item of agentMcpServers) {
+      if (typeof item === 'string') {
+        // Reference to global server
+        if (globalServers[item]) {
+          resolved[item] = globalServers[item];
+        } else {
+          console.warn(`[MCP] Unknown server reference: "${item}" - not found in .mcp.json`);
+        }
+      } else if (typeof item === 'object' && item !== null) {
+        // Inline config: { serverName: { config } }
+        for (const [name, config] of Object.entries(item)) {
+          resolved[name] = config;
+        }
+      }
+    }
+  }
+  // Handle object format: { browser: { command: "npx", ... } }
+  else if (typeof agentMcpServers === 'object') {
+    for (const [name, config] of Object.entries(agentMcpServers)) {
+      if (typeof config === 'string') {
+        // Reference by value: { browser: "browser" } (unusual but support it)
+        if (globalServers[config]) {
+          resolved[name] = globalServers[config];
+        } else {
+          console.warn(`[MCP] Unknown server reference: "${config}"`);
+        }
+      } else if (config && typeof config === 'object') {
+        // Inline config
+        resolved[name] = config;
+      }
+    }
+  }
+
+  return Object.keys(resolved).length > 0 ? resolved : null;
+}
+
+/**
+ * Save MCP servers to .mcp.json
+ *
+ * @param {string} vaultPath - Path to the vault
+ * @param {object} servers - Server configurations
+ * @returns {Promise<void>}
+ */
+export async function saveMcpServers(vaultPath, servers) {
+  const configPath = path.join(vaultPath, '.mcp.json');
+
+  try {
+    const content = JSON.stringify(servers, null, 2);
+    await fs.writeFile(configPath, content, 'utf-8');
+
+    // Update cache
+    mcpServersCache = servers;
+    mcpServersPath = configPath;
+
+    console.log(`[MCP] Saved ${Object.keys(servers).length} server(s) to .mcp.json`);
+  } catch (e) {
+    console.error('[MCP] Error saving .mcp.json:', e.message);
+    throw e;
+  }
+}
+
+/**
+ * Add or update a single MCP server
+ *
+ * @param {string} vaultPath - Path to the vault
+ * @param {string} name - Server name
+ * @param {object} config - Server configuration
+ * @returns {Promise<object>} Updated servers
+ */
+export async function addMcpServer(vaultPath, name, config) {
+  const servers = await loadMcpServers(vaultPath);
+  servers[name] = config;
+  await saveMcpServers(vaultPath, servers);
+  return servers;
+}
+
+/**
+ * Remove an MCP server
+ *
+ * @param {string} vaultPath - Path to the vault
+ * @param {string} name - Server name
+ * @returns {Promise<object>} Updated servers
+ */
+export async function removeMcpServer(vaultPath, name) {
+  const servers = await loadMcpServers(vaultPath);
+  delete servers[name];
+  await saveMcpServers(vaultPath, servers);
+  return servers;
+}
+
+/**
+ * Get list of available MCP servers
+ *
+ * @param {string} vaultPath - Path to the vault
+ * @returns {Promise<array>} Array of { name, config } objects
+ */
+export async function listMcpServers(vaultPath) {
+  const servers = await loadMcpServers(vaultPath);
+  return Object.entries(servers).map(([name, config]) => ({
+    name,
+    ...config,
+    // Add display info
+    displayType: config.command ? 'stdio' : config.type || 'unknown',
+    displayCommand: config.command
+      ? `${config.command} ${(config.args || []).join(' ')}`
+      : config.url || 'N/A'
+  }));
+}
+
+/**
+ * Clear the cache (useful for testing or after external changes)
+ */
+export function clearMcpCache() {
+  mcpServersCache = null;
+  mcpServersPath = null;
+}
+
+export default {
+  loadMcpServers,
+  resolveMcpServers,
+  saveMcpServers,
+  addMcpServer,
+  removeMcpServer,
+  listMcpServers,
+  clearMcpCache
+};

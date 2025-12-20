@@ -1,0 +1,37 @@
+{
+  "name": "parachute-agent",
+  "version": "0.1.0",
+  "description": "AI agent backend for Parachute - markdown-defined agents powered by Claude",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test lib/*.test.js",
+    "install-service": "bash deploy/install.sh",
+    "uninstall-service": "launchctl unload ~/Library/LaunchAgents/xyz.openparachute.agent.plist",
+    "logs": "tail -f logs/stdout.log",
+    "logs:error": "tail -f logs/stderr.log"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "claude",
+    "anthropic",
+    "markdown",
+    "obsidian"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "express": "^4.21.0",
+    "glob": "^13.0.0",
+    "gray-matter": "^4.0.3",
+    "marked": "^15.0.0",
+    "zod": "^3.24.1"
+  }
+}

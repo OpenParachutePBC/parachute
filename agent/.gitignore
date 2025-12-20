@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Runtime data
+sample-vault/.queue/
+sample-vault/.sessions/
+sample-vault/agent-chats/
+sample-vault/agent-logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Obsidian plugin build
+obsidian-plugin/main.js
+obsidian-plugin/main.js.map
