@@ -1,0 +1,150 @@
+# Example PARACHUTE.md
+
+This is an example PARACHUTE.md file that you can place at `~/Parachute/PARACHUTE.md` to customize how Parachute behaves globally across all spaces.
+
+**What is PARACHUTE.md?**
+- Global customization file for Parachute's AI behavior
+- Optional - Parachute works great without it
+- Append your preferences to Parachute's base prompt
+- Changes take effect on next conversation
+
+**Location**: `~/Parachute/PARACHUTE.md`
+
+---
+
+## My Personal Preferences
+
+### Communication Style
+
+- Keep responses concise unless I ask for detail
+- Use analogies from systems thinking when explaining concepts  
+- Prefer bullet points over long paragraphs for lists
+- Don't use emojis unless I specifically request them
+
+### Domain Context
+
+I'm a researcher focusing on:
+- Regenerative agriculture
+- Complex adaptive systems
+- Community organizing and facilitation
+- Ecological restoration
+
+When I mention these topics, you can assume familiarity with core concepts and terminology in these fields.
+
+### My Thinking Process
+
+**When I'm brainstorming**:
+- Prioritize divergent thinking and idea generation over organization
+- Help me see unexpected connections
+- Ask questions that open new directions rather than closing on solutions
+
+**When I'm synthesizing**:
+- Focus on finding patterns and themes
+- Help me identify gaps or tensions in my thinking
+- Suggest frameworks that might clarify relationships
+
+**When I'm planning**:
+- Keep things practical and action-oriented
+- Help me break complex ideas into concrete next steps
+- Remind me of constraints I might be forgetting
+
+### Workflow Preferences
+
+- When suggesting tags, base them on my existing taxonomy (see below)
+- When I upload recordings about field visits, automatically suggest linking to my "Field Notes" space
+- If I mention reading something, ask if I want to add it to my "Reading" space
+
+### My Existing Tag Taxonomy
+
+**Core themes**: #regeneration #farming #systems-thinking #community #research #personal #reading #field-notes
+
+**Project tags**: #project-watershed #project-food-forest #project-compost
+
+**Status tags**: #active #paused #completed #idea
+
+**Note types**: #insight #question #reference #observation
+
+---
+
+## Example Use Cases
+
+**For a user focused on creative writing**:
+```markdown
+# My Preferences
+
+- Engage with story ideas as creative possibilities, not problems to solve
+- Ask about character motivations and emotional arcs
+- Help me notice themes and patterns across different stories
+- Don't suggest "fixes" unless I explicitly ask for feedback
+```
+
+**For a user managing projects**:
+```markdown
+# My Preferences
+
+- Keep things action-oriented
+- When I describe problems, help me identify concrete next steps
+- Suggest relevant past notes that might inform current challenges
+- Use project management terminology (blockers, dependencies, etc.)
+```
+
+**For a student**:
+```markdown  
+# My Preferences
+
+- Help me understand concepts by connecting them to things I already know
+- When I'm confused, break things down step-by-step
+- Ask questions that help me articulate my understanding
+- Suggest connections to other courses/topics I'm studying
+```
+
+---
+
+## Tips for Writing Your Own
+
+1. **Start small**: Add one or two preferences and see how it feels
+2. **Be specific**: "Keep responses concise" is clearer than "be brief"
+3. **Iterate**: Update PARACHUTE.md as you discover what works
+4. **Test it**: Have a conversation and see if Parachute follows your preferences
+5. **Don't overthink**: This is for you - write naturally, not formally
+
+---
+
+## What NOT to Put Here
+
+**Don't include**:
+- Space-specific context (that goes in each space's SPACE.md)
+- Detailed project information (use space databases for that)
+- Long lists of facts (Parachute won't remember everything)
+- Instructions for specific one-time tasks
+
+**Do include**:
+- Your communication preferences
+- Domain knowledge assumptions
+- Thinking/working style preferences  
+- Tag taxonomies and organization patterns
+- Workflow preferences that apply everywhere
+
+---
+
+## How It Works
+
+**Layer 1**: Parachute's base prompt (thinking companion identity)  
+**Layer 2**: Your PARACHUTE.md (this file) ← **You are here**  
+**Layer 3**: Space SPACE.md (space-specific context)  
+**Layer 4**: Relevant notes (auto-loaded based on conversation)
+
+These layers combine to give Parachute both its core identity and your personal customizations.
+
+---
+
+**Ready to create your own?**
+
+1. Copy this file to `~/Parachute/PARACHUTE.md`
+2. Edit it with your preferences
+3. Delete these example sections
+4. Start a new conversation - your changes will be active!
+
+---
+
+*For more information, see the Parachute documentation.*

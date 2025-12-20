@@ -1,0 +1,71 @@
+# Build artifacts
+**/bin/
+**/build/
+**/.dart_tool/
+**/node_modules/
+
+# Dependencies
+**/vendor/
+**/Pods/
+**/Podfile.lock
+**/go.sum
+
+# Generated code
+**/*.g.dart
+**/*.freezed.dart
+**/*.gen.dart
+**/*.mocks.dart
+
+# Databases and data
+**/data/*.db
+**/data/*.db-*
+**/data/*.db-journal
+**/data/*.db-shm
+**/data/*.db-wal
+
+# Test artifacts
+**/coverage/
+**/.test_coverage/
+**/test_results/
+
+# OS files
+**/.DS_Store
+**/Thumbs.db
+**/*.swp
+**/*.swo
+
+# IDE
+**/.vscode/
+**/.idea/
+**/*.iml
+**/.fleet/
+
+# Logs
+**/*.log
+
+# Flutter/Dart specific
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/pubspec.lock
+
+# iOS/macOS
+**/Pods/
+**/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+**/DerivedData/
+
+# Android
+**/.gradle/
+**/local.properties
+**/*.iml
+**/.externalNativeBuild/
+**/.cxx/
+**/captures/
+
+# Temporary and debug files
+**/TEST-NOW.md
+**/STREAMING-IMPLEMENTATION-SUMMARY.md
+**/TEST_RESULTS.md
+**/E2E-TEST-RESULTS.md
