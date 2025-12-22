@@ -37,6 +37,7 @@ class FileSystemService {
   static const String _defaultAssetsFolderName = 'assets';
   static const String _defaultSessionsFolderName = 'agent-sessions';
   static const String _importsFolderName = 'imports';
+  static const String _contextsFolderName = 'contexts';
   static const String _tempAudioFolderName = 'parachute_audio_temp';
 
   // Temp subfolder names with different retention policies
@@ -196,6 +197,38 @@ class FileSystemService {
     final dir = Directory(path);
     if (!await dir.exists()) {
       await dir.create(recursive: true);
+    }
+    return path;
+  }
+
+  // ============================================================
+  // Contexts Folder (project context files from imports)
+  // ============================================================
+
+  /// Get the contexts folder name
+  String getContextsFolderName() {
+    return _contextsFolderName;
+  }
+
+  /// Get the contexts folder path
+  Future<String> getContextsPath() async {
+    final root = await getRootPath();
+    return '$root/$_contextsFolderName';
+  }
+
+  /// Check if the contexts folder exists
+  Future<bool> hasContextsFolder() async {
+    final path = await getContextsPath();
+    return Directory(path).exists();
+  }
+
+  /// Ensure contexts folder exists
+  Future<String> ensureContextsFolderExists() async {
+    final path = await getContextsPath();
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+      debugPrint('[FileSystemService] Created contexts folder: $path');
     }
     return path;
   }

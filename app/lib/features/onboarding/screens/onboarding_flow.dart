@@ -5,6 +5,7 @@ import 'package:app/core/theme/design_tokens.dart';
 
 import 'steps/welcome_step.dart';
 import 'steps/vault_picker_step.dart';
+import 'steps/import_step.dart';
 import 'steps/transcription_setup_step.dart';
 import 'steps/gemma_setup_step.dart';
 
@@ -42,6 +43,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
   final List<OnboardingStepData> _steps = [
     OnboardingStepData(title: 'Welcome', icon: Icons.waving_hand),
     OnboardingStepData(title: 'Vault', icon: Icons.folder_open),
+    OnboardingStepData(title: 'Import', icon: Icons.download_outlined),
     OnboardingStepData(title: 'Transcription', icon: Icons.record_voice_over),
     OnboardingStepData(title: 'Get Started', icon: Icons.rocket_launch),
   ];
@@ -114,6 +116,11 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
                       onNext: _nextStep,
                       onBack: _previousStep,
                       onSkip: _skipToEnd,
+                    ),
+                    ImportStep(
+                      onNext: _nextStep,
+                      onBack: _previousStep,
+                      onSkip: _nextStep, // Skip just moves to next step
                     ),
                     TranscriptionSetupStep(
                       onNext: _nextStep,

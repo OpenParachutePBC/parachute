@@ -7,8 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/core/services/export_detection_service.dart';
+import 'package:app/core/services/conversation_import_service.dart';
 import 'package:app/features/chat/providers/chat_providers.dart';
-import 'package:app/features/chat/services/chat_import_service.dart';
 import 'package:app/features/context/providers/context_providers.dart';
 import './settings_section_header.dart';
 
@@ -31,6 +31,8 @@ class _ChatImportSectionState extends ConsumerState<ChatImportSection> {
   bool _isProcessing = false;
   String? _statusMessage;
   DetectedExport? _detectedExport;
+  bool _vaultSetupDone = false;
+  bool _conversationsImported = false;
 
   Future<void> _pickZipFile() async {
     try {
@@ -189,22 +191,32 @@ class _ChatImportSectionState extends ConsumerState<ChatImportSection> {
 
     try {
       final exportService = ref.read(exportDetectionServiceProvider);
-      final memoriesContext = await exportService.formatClaudeMemoriesAsContext(
+
+      // Create context files (general + per-project)
+      final contextFiles = await exportService.createAllContextFilesFromClaudeExport(
         _detectedExport!.path,
       );
 
+      // Also initialize vault with memories for AGENTS.md
+      final memoriesContext = await exportService.formatClaudeMemoriesAsContext(
+        _detectedExport!.path,
+      );
       await ref.read(initializeVaultWithMemoriesProvider)(memoriesContext);
 
       if (mounted) {
+        final message = contextFiles.isEmpty
+            ? 'Vault initialized (context files already exist)'
+            : 'Created ${contextFiles.length} context file${contextFiles.length > 1 ? 's' : ''}';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Vault initialized with your Claude context!'),
+            content: Text(message),
             backgroundColor: BrandColors.success,
           ),
         );
+        // Don't clear _detectedExport - let user do other actions too
         setState(() {
-          _detectedExport = null;
           _statusMessage = null;
+          _vaultSetupDone = true;
         });
       }
     } catch (e) {
@@ -225,37 +237,57 @@ class _ChatImportSectionState extends ConsumerState<ChatImportSection> {
     });
 
     try {
-      final conversationsPath = p.join(_detectedExport!.path, 'conversations.json');
-      final file = File(conversationsPath);
-      final content = await file.readAsString();
+      final convImportService = ref.read(conversationImportServiceProvider);
 
-      final importService = ref.read(chatImportServiceProvider);
-      List<ImportedConversation> conversations;
+      int importedCount = 0;
+      int skippedCount = 0;
 
+      // Use the new streaming import service
+      Stream<ImportProgress> progressStream;
       if (_detectedExport!.type == ExportType.chatgpt) {
-        conversations = await importService.parseChatGPTExport(content);
+        progressStream = convImportService.importChatGPTConversations(_detectedExport!.path);
       } else {
-        conversations = await importService.parseClaudeExport(content);
+        progressStream = convImportService.importClaudeConversations(_detectedExport!.path);
       }
 
-      final result = await importService.importConversations(
-        conversations,
-        archiveImports: true,
-      );
+      await for (final progress in progressStream) {
+        if (mounted) {
+          setState(() {
+            _statusMessage = 'Importing: ${progress.currentTitle}';
+          });
+        }
+
+        if (progress.isComplete) {
+          importedCount = progress.processed;
+          // Calculate skipped based on total vs what we expected
+          final expectedTotal = _detectedExport!.conversationCount ?? progress.total;
+          skippedCount = expectedTotal - importedCount;
+        }
+      }
 
       // Refresh chat sessions list
       ref.invalidate(chatSessionsProvider);
 
       if (mounted) {
+        String message;
+        if (importedCount == 0 && skippedCount > 0) {
+          message = 'All $skippedCount conversations already imported';
+        } else if (skippedCount > 0) {
+          message = 'Imported $importedCount new, skipped $skippedCount existing';
+        } else {
+          message = 'Imported $importedCount conversations';
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Imported ${result.importedCount} conversations'),
+            content: Text(message),
             backgroundColor: BrandColors.success,
           ),
         );
+        // Don't clear _detectedExport - let user do other actions too
         setState(() {
-          _detectedExport = null;
           _statusMessage = null;
+          _conversationsImported = true;
         });
       }
     } catch (e) {
@@ -282,7 +314,11 @@ class _ChatImportSectionState extends ConsumerState<ChatImportSection> {
   }
 
   void _clearDetected() {
-    setState(() => _detectedExport = null);
+    setState(() {
+      _detectedExport = null;
+      _vaultSetupDone = false;
+      _conversationsImported = false;
+    });
   }
 
   @override
@@ -515,26 +551,30 @@ class _ChatImportSectionState extends ConsumerState<ChatImportSection> {
           if (isClaudeWithMemories) ...[
             _buildActionButton(
               isDark: isDark,
-              title: 'Use for vault setup',
-              subtitle: 'Pre-fill AGENTS.md with your Claude context',
-              icon: Icons.auto_awesome,
-              color: BrandColors.forest,
-              onTap: _isProcessing ? null : _useMemoriesForVault,
-              isPrimary: true,
+              title: _vaultSetupDone ? 'Context files created ✓' : 'Create context files',
+              subtitle: _vaultSetupDone
+                  ? 'Your Claude context is saved'
+                  : 'Save memories & project context to vault',
+              icon: _vaultSetupDone ? Icons.check_circle : Icons.auto_awesome,
+              color: _vaultSetupDone ? BrandColors.success : BrandColors.forest,
+              onTap: _isProcessing || _vaultSetupDone ? null : _useMemoriesForVault,
+              isPrimary: !_vaultSetupDone,
             ),
             SizedBox(height: Spacing.sm),
           ],
           if (export.hasConversations)
             _buildActionButton(
               isDark: isDark,
-              title: 'Import conversations',
-              subtitle: export.conversationCount != null
-                  ? 'Add ${export.conversationCount} chats to your library'
-                  : 'Add chats to your library',
-              icon: Icons.chat_bubble_outline,
-              color: BrandColors.turquoise,
-              onTap: _isProcessing ? null : _importConversations,
-              isPrimary: !isClaudeWithMemories,
+              title: _conversationsImported ? 'Conversations imported ✓' : 'Import conversations',
+              subtitle: _conversationsImported
+                  ? 'Available in your chat history'
+                  : export.conversationCount != null
+                      ? 'Add ${export.conversationCount} chats to your library'
+                      : 'Add chats to your library',
+              icon: _conversationsImported ? Icons.check_circle : Icons.chat_bubble_outline,
+              color: _conversationsImported ? BrandColors.success : BrandColors.turquoise,
+              onTap: _isProcessing || _conversationsImported ? null : _importConversations,
+              isPrimary: !isClaudeWithMemories && !_conversationsImported,
             ),
         ],
       ),

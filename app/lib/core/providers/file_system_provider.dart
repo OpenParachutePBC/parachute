@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/export_detection_service.dart';
 import 'package:app/core/services/vault_state_service.dart';
+import 'package:app/core/services/conversation_import_service.dart';
 
 /// Provider for the FileSystemService singleton
 final fileSystemServiceProvider = Provider<FileSystemService>((ref) {
@@ -38,8 +39,9 @@ final vaultStateProvider = FutureProvider<VaultState>((ref) async {
   return service.loadState();
 });
 
-/// Provider to check if vault needs initial setup
-final vaultNeedsSetupProvider = FutureProvider<bool>((ref) async {
+/// Provider to check if vault needs capture phase setup
+/// (Different from vaultNeedsSetupProvider in context_providers which checks AGENTS.md)
+final vaultCaptureNeedsSetupProvider = FutureProvider<bool>((ref) async {
   final state = await ref.watch(vaultStateProvider.future);
   return state.needsSetup;
 });
@@ -48,4 +50,10 @@ final vaultNeedsSetupProvider = FutureProvider<bool>((ref) async {
 final vaultNeedsAgentInitProvider = FutureProvider<bool>((ref) async {
   final state = await ref.watch(vaultStateProvider.future);
   return state.needsAgentInit;
+});
+
+/// Provider for ConversationImportService
+final conversationImportServiceProvider = Provider<ConversationImportService>((ref) {
+  final fileSystem = ref.watch(fileSystemServiceProvider);
+  return ConversationImportService(fileSystem);
 });
