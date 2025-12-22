@@ -10,9 +10,9 @@ import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/core/services/conversation_import_service.dart';
 
-/// Import step for onboarding - guides users through importing AI history
+/// Import step for onboarding - guides users through importing Claude history
 ///
-/// Provides step-by-step instructions for exporting from Claude/ChatGPT
+/// Provides step-by-step instructions for exporting from Claude
 /// and handles the import with streaming progress.
 class ImportStep extends ConsumerStatefulWidget {
   final VoidCallback onNext;
@@ -357,7 +357,7 @@ $memory
         SizedBox(height: Spacing.xxl),
 
         Text(
-          'Bring your AI history',
+          'Import from Claude',
           style: TextStyle(
             fontSize: TypographyTokens.headlineLarge,
             fontWeight: FontWeight.bold,
@@ -367,8 +367,8 @@ $memory
         SizedBox(height: Spacing.md),
 
         Text(
-          'Import your conversations and context from other AI assistants. '
-          'Your history becomes searchable and available to Parachute.',
+          'Bring your Claude conversations, memories, and project context into Parachute. '
+          'Your history becomes searchable and available in all your chats.',
           style: TextStyle(
             fontSize: TypographyTokens.bodyLarge,
             color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
@@ -377,59 +377,91 @@ $memory
         ),
         SizedBox(height: Spacing.xxl),
 
-        // Claude card
+        // Claude card - now the only option
         _buildSourceCard(
           isDark: isDark,
           source: _ImportSource.claude,
-          title: 'Claude',
-          subtitle: 'Import conversations, memories, and projects',
+          title: 'Import Claude Export',
+          subtitle: 'Conversations, memories, and project context',
           icon: Icons.psychology_outlined,
           color: BrandColors.forest,
-        ),
-        SizedBox(height: Spacing.md),
-
-        // ChatGPT card
-        _buildSourceCard(
-          isDark: isDark,
-          source: _ImportSource.chatgpt,
-          title: 'ChatGPT',
-          subtitle: 'Import conversations and memory',
-          icon: Icons.chat_outlined,
-          color: BrandColors.turquoise,
         ),
 
         SizedBox(height: Spacing.xxl),
 
-        // Skip explanation
+        // What gets imported explanation
         Container(
           padding: EdgeInsets.all(Spacing.md),
           decoration: BoxDecoration(
             color: isDark
                 ? BrandColors.nightSurfaceElevated.withValues(alpha: 0.5)
-                : BrandColors.stone.withValues(alpha: 0.3),
+                : BrandColors.forestMist.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(Radii.md),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                Icons.lightbulb_outline,
-                size: 20,
-                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
-              ),
-              SizedBox(width: Spacing.md),
-              Expanded(
-                child: Text(
-                  'You can always import later from Settings. Skip if you want to start fresh.',
-                  style: TextStyle(
-                    fontSize: TypographyTokens.bodySmall,
-                    color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
-                  ),
+              Text(
+                'What gets imported:',
+                style: TextStyle(
+                  fontSize: TypographyTokens.labelMedium,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
                 ),
               ),
+              SizedBox(height: Spacing.sm),
+              _buildImportItem(isDark, 'Conversations', 'Searchable chat history'),
+              _buildImportItem(isDark, 'Memories', 'Context Claude learned about you'),
+              _buildImportItem(isDark, 'Projects', 'Project instructions and context'),
             ],
           ),
         ),
+
+        SizedBox(height: Spacing.lg),
+
+        // Skip note
+        Text(
+          'You can always import later from Settings, or skip to start fresh.',
+          style: TextStyle(
+            fontSize: TypographyTokens.bodySmall,
+            color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+          ),
+          textAlign: TextAlign.center,
+        ),
       ],
+    );
+  }
+
+  Widget _buildImportItem(bool isDark, String title, String description) {
+    return Padding(
+      padding: EdgeInsets.only(top: Spacing.xs),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 16,
+            color: BrandColors.forest,
+          ),
+          SizedBox(width: Spacing.sm),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  fontSize: TypographyTokens.bodySmall,
+                  color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                ),
+                children: [
+                  TextSpan(
+                    text: '$title: ',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  TextSpan(text: description),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

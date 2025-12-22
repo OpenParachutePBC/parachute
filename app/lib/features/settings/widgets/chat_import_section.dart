@@ -12,13 +12,12 @@ import 'package:app/features/chat/providers/chat_providers.dart';
 import 'package:app/features/context/providers/context_providers.dart';
 import './settings_section_header.dart';
 
-/// Chat import section for importing AI exports (ChatGPT/Claude)
+/// Chat import section for importing Claude exports
 ///
 /// Supports:
 /// - Picking zip files or folders
-/// - Auto-detecting export type
 /// - Extracting to imports folder
-/// - Using Claude memories for vault setup
+/// - Using Claude memories for vault context setup
 /// - Importing conversations to view locally
 class ChatImportSection extends ConsumerStatefulWidget {
   const ChatImportSection({super.key});
@@ -329,8 +328,8 @@ class _ChatImportSectionState extends ConsumerState<ChatImportSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SettingsSectionHeader(
-          title: 'Import AI Export',
-          subtitle: 'Bring your data from ChatGPT, Claude, or other assistants',
+          title: 'Import Claude Export',
+          subtitle: 'Bring your conversations, memories, and project context',
           icon: Icons.download_outlined,
         ),
         SizedBox(height: Spacing.lg),
@@ -687,7 +686,6 @@ class _ChatImportSectionState extends ConsumerState<ChatImportSection> {
           ),
           SizedBox(height: Spacing.sm),
           Text(
-            'ChatGPT: Settings > Data Controls > Export Data\n'
             'Claude: Settings > Account > Export Data',
             style: TextStyle(
               fontSize: TypographyTokens.labelSmall,

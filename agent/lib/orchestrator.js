@@ -1280,6 +1280,12 @@ export class Orchestrator extends EventEmitter {
       tools: fullToolSet,
       // Load all MCP servers from .mcp.json by default
       mcpServers: 'all',
+      // Auto-load context files from contexts/ folder
+      // This mirrors Claude's approach of loading project/memory context
+      context: {
+        include: ['contexts/*.md'],
+        max_tokens: 50000
+      },
       permissions: {
         read: ['*'],
         write: ['*'],
@@ -1318,24 +1324,45 @@ export class Orchestrator extends EventEmitter {
   /**
    * Build system prompt for vault agent
    * Uses AGENTS.md if present, otherwise falls back to default prompt
+   * Also loads context files from contexts/ folder
    */
   async buildVaultSystemPrompt(context = {}) {
     // Try to load AGENTS.md first - this is the preferred source
     const agentsMd = await this.loadAgentsMd();
 
+    let prompt;
     if (agentsMd) {
       // AGENTS.md is the system prompt
-      // Optionally append tools context if needed
-      let prompt = agentsMd;
-
-      // Add vault location for context
-      prompt += `\n\n---\n\n## Environment\n\nVault location: ${this.vaultPath}`;
-
-      return prompt;
+      prompt = agentsMd;
+    } else {
+      // Fallback: default prompt when no AGENTS.md exists
+      prompt = await this.buildDefaultVaultPrompt(context);
     }
 
-    // Fallback: default prompt when no AGENTS.md exists
-    return this.buildDefaultVaultPrompt(context);
+    // Load context files from contexts/ folder
+    // This mirrors Claude's approach of loading user context and project memories
+    const vaultAgent = this.createVaultAgent();
+    if (vaultAgent.context && vaultAgent.context.include) {
+      try {
+        const contextResult = await loadAgentContext(vaultAgent.context, this.vaultPath, {
+          max_tokens: vaultAgent.context.max_tokens
+        });
+        if (contextResult.content && contextResult.files.length > 0) {
+          prompt += formatContextForPrompt(contextResult);
+          log.info('Loaded vault context', {
+            files: contextResult.files.length,
+            tokens: contextResult.totalTokens
+          });
+        }
+      } catch (e) {
+        log.warn('Failed to load vault context', { error: e.message });
+      }
+    }
+
+    // Add vault location for context
+    prompt += `\n\n---\n\n## Environment\n\nVault location: ${this.vaultPath}`;
+
+    return prompt;
   }
 
   /**
