@@ -8,6 +8,7 @@ import '../widgets/expandable_settings_section.dart';
 import '../widgets/device_integration_section.dart';
 import '../widgets/ai_chat_section.dart';
 import '../widgets/storage_section.dart';
+import '../widgets/chat_import_section.dart';
 import '../widgets/omi_device_section.dart';
 import '../widgets/transcription_section.dart';
 import '../widgets/title_generation_section.dart';
@@ -179,11 +180,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildAdvancedSection(bool isDark) {
     return ExpandableSettingsSection(
       title: 'Advanced',
-      subtitle: 'AI chat server and privacy settings',
+      subtitle: 'AI chat, import, and privacy settings',
       icon: Icons.tune,
       accentColor: BrandColors.driftwood,
       children: const [
         AiChatSection(),
+        ChatImportSection(),
         PrivacySection(),
       ],
     );

@@ -7,8 +7,11 @@ import '../models/agent.dart';
 import '../models/stream_event.dart';
 import '../services/chat_service.dart';
 import '../services/local_session_reader.dart';
+import '../services/chat_import_service.dart';
 import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/core/services/file_system_service.dart';
+import 'package:app/core/providers/file_system_provider.dart';
+import 'package:app/core/providers/search_providers.dart';
 
 // ============================================================
 // Service Provider
@@ -38,6 +41,14 @@ final chatServiceProvider = Provider<ChatService>((ref) {
 /// Provider for the local session reader (reads from vault markdown files)
 final localSessionReaderProvider = Provider<LocalSessionReader>((ref) {
   return LocalSessionReader(FileSystemService());
+});
+
+/// Provider for the chat import service
+///
+/// Used to import chat history from ChatGPT, Claude, and other sources.
+final chatImportServiceProvider = Provider<ChatImportService>((ref) {
+  final fileSystemService = ref.watch(fileSystemServiceProvider);
+  return ChatImportService(fileSystemService);
 });
 
 // ============================================================
@@ -122,13 +133,31 @@ class ChatMessagesState {
   final String? sessionId;
   final String? sessionTitle;
 
+  /// If this is a continuation, the original session being continued
+  final ChatSession? continuedFromSession;
+
+  /// Messages from the original session (for display in resume marker)
+  final List<ChatMessage> priorMessages;
+
+  /// The session being viewed (for imported sessions that can be continued)
+  final ChatSession? viewingSession;
+
   const ChatMessagesState({
     this.messages = const [],
     this.isStreaming = false,
     this.error,
     this.sessionId,
     this.sessionTitle,
+    this.continuedFromSession,
+    this.priorMessages = const [],
+    this.viewingSession,
   });
+
+  /// Whether this session is continuing from another
+  bool get isContinuation => continuedFromSession != null;
+
+  /// Whether we're viewing an imported session that can be continued
+  bool get isViewingImported => viewingSession?.isImported ?? false;
 
   ChatMessagesState copyWith({
     List<ChatMessage>? messages,
@@ -136,6 +165,9 @@ class ChatMessagesState {
     String? error,
     String? sessionId,
     String? sessionTitle,
+    ChatSession? continuedFromSession,
+    List<ChatMessage>? priorMessages,
+    ChatSession? viewingSession,
   }) {
     return ChatMessagesState(
       messages: messages ?? this.messages,
@@ -143,6 +175,9 @@ class ChatMessagesState {
       error: error,
       sessionId: sessionId ?? this.sessionId,
       sessionTitle: sessionTitle ?? this.sessionTitle,
+      continuedFromSession: continuedFromSession ?? this.continuedFromSession,
+      priorMessages: priorMessages ?? this.priorMessages,
+      viewingSession: viewingSession ?? this.viewingSession,
     );
   }
 }
@@ -156,15 +191,39 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   ChatMessagesNotifier(this._service, this._ref) : super(const ChatMessagesState());
 
   /// Load messages for a session
-  Future<void> loadSession(String sessionId) async {
+  ///
+  /// Tries the server first, falls back to local files for imported/local sessions.
+  Future<void> loadSession(String sessionId, {bool isLocal = false}) async {
     try {
-      final sessionData = await _service.getSession(sessionId);
-      if (sessionData != null) {
+      // Try server first unless we know it's local
+      if (!isLocal) {
+        try {
+          final sessionData = await _service.getSession(sessionId);
+          if (sessionData != null) {
+            state = ChatMessagesState(
+              messages: sessionData.messages,
+              sessionId: sessionId,
+              sessionTitle: sessionData.session.title,
+            );
+            return;
+          }
+        } catch (e) {
+          debugPrint('[ChatMessagesNotifier] Server unavailable, trying local: $e');
+        }
+      }
+
+      // Fall back to local session reader
+      final localReader = _ref.read(localSessionReaderProvider);
+      final localSession = await localReader.getSession(sessionId);
+      if (localSession != null) {
         state = ChatMessagesState(
-          messages: sessionData.messages,
+          messages: localSession.messages,
           sessionId: sessionId,
-          sessionTitle: sessionData.session.title,
+          sessionTitle: localSession.session.title,
+          viewingSession: localSession.session,
         );
+      } else {
+        state = state.copyWith(error: 'Session not found');
       }
     } catch (e) {
       debugPrint('[ChatMessagesNotifier] Error loading session: $e');
@@ -175,6 +234,44 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   /// Clear current session (for new chat)
   void clearSession() {
     state = const ChatMessagesState();
+  }
+
+  /// Set up a continuation from an existing session
+  ///
+  /// This prepares the chat state to continue from an imported or prior session.
+  /// The prior messages are stored for display in the resume marker,
+  /// and will be passed as context with the first message.
+  void setupContinuation({
+    required ChatSession originalSession,
+    required List<ChatMessage> priorMessages,
+  }) {
+    state = ChatMessagesState(
+      continuedFromSession: originalSession,
+      priorMessages: priorMessages,
+    );
+  }
+
+  /// Format prior messages as context for the AI
+  String _formatPriorMessagesAsContext() {
+    if (state.priorMessages.isEmpty) return '';
+
+    final buffer = StringBuffer();
+    buffer.writeln('=== PRIOR CONVERSATION ===');
+    buffer.writeln('This conversation continues from a previous session.');
+    buffer.writeln('Here is the prior conversation history for context:\n');
+
+    for (final msg in state.priorMessages) {
+      final role = msg.role == MessageRole.user ? 'Human' : 'Assistant';
+      final content = msg.textContent;
+      if (content.isNotEmpty) {
+        buffer.writeln('$role: $content\n');
+      }
+    }
+
+    buffer.writeln('=== END PRIOR CONVERSATION ===\n');
+    buffer.writeln('The user is now continuing this conversation with you.');
+
+    return buffer.toString();
   }
 
   /// Send a message and handle streaming response
@@ -210,12 +307,22 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     List<MessageContent> accumulatedContent = [];
     String? actualSessionId;
 
+    // Include prior conversation as context if this is a continuation
+    String? effectiveContext = initialContext;
+    if (state.isContinuation && state.messages.length <= 2) {
+      // Only inject prior context on first message of continuation
+      final priorContext = _formatPriorMessagesAsContext();
+      effectiveContext = initialContext != null
+          ? '$priorContext\n\n$initialContext'
+          : priorContext;
+    }
+
     try {
       await for (final event in _service.streamChat(
         sessionId: sessionId,
         message: message,
         agentPath: agentPath,
-        initialContext: initialContext,
+        initialContext: effectiveContext,
       )) {
         switch (event.type) {
           case StreamEventType.session:
@@ -272,6 +379,9 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             }
             // Refresh sessions list to get updated title
             _ref.invalidate(chatSessionsProvider);
+            // Index the chat session for search (fire-and-forget)
+            final indexSessionId = actualSessionId ?? state.sessionId ?? sessionId;
+            _ref.read(searchIndexServiceProvider).indexChatSessionById(indexSessionId);
             break;
 
           case StreamEventType.error:
@@ -358,9 +468,40 @@ final newChatProvider = Provider<void Function()>((ref) {
 });
 
 /// Provider for switching to a session
-final switchSessionProvider = Provider<Future<void> Function(String)>((ref) {
-  return (String sessionId) async {
+///
+/// Set [isLocal] to true for imported or local-only sessions that don't
+/// need to check the server.
+final switchSessionProvider = Provider<Future<void> Function(String, {bool isLocal})>((ref) {
+  return (String sessionId, {bool isLocal = false}) async {
     ref.read(currentSessionIdProvider.notifier).state = sessionId;
-    await ref.read(chatMessagesProvider.notifier).loadSession(sessionId);
+    await ref.read(chatMessagesProvider.notifier).loadSession(sessionId, isLocal: isLocal);
+  };
+});
+
+/// Provider for continuing an imported session
+///
+/// Creates a new chat that continues from the given session,
+/// passing all prior messages as context for the AI.
+final continueSessionProvider = Provider<Future<void> Function(ChatSession)>((ref) {
+  final service = ref.watch(chatServiceProvider);
+
+  return (ChatSession originalSession) async {
+    try {
+      // Load messages from the original session
+      final sessionData = await service.getSession(originalSession.id);
+      final priorMessages = sessionData?.messages ?? [];
+
+      // Clear current session and set up continuation
+      ref.read(currentSessionIdProvider.notifier).state = null;
+      ref.read(chatMessagesProvider.notifier).setupContinuation(
+        originalSession: originalSession,
+        priorMessages: priorMessages,
+      );
+    } catch (e) {
+      debugPrint('[ChatProviders] Error setting up continuation: $e');
+      // Fall back to just clearing the session
+      ref.read(currentSessionIdProvider.notifier).state = null;
+      ref.read(chatMessagesProvider.notifier).clearSession();
+    }
   };
 });

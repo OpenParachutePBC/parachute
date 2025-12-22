@@ -117,7 +117,27 @@ class SessionListItem extends StatelessWidget {
                       const SizedBox(height: Spacing.xxs),
                       Row(
                         children: [
-                          if (session.agentName != null) ...[
+                          // Show source for imported sessions
+                          if (session.isImported) ...[
+                            Text(
+                              session.source.displayName,
+                              style: TextStyle(
+                                fontSize: TypographyTokens.labelSmall,
+                                color: isDark
+                                    ? BrandColors.nightForest
+                                    : BrandColors.forest,
+                              ),
+                            ),
+                            Text(
+                              ' • ',
+                              style: TextStyle(
+                                fontSize: TypographyTokens.labelSmall,
+                                color: isDark
+                                    ? BrandColors.nightTextSecondary
+                                    : BrandColors.driftwood,
+                              ),
+                            ),
+                          ] else if (session.agentName != null) ...[
                             Text(
                               session.agentName!,
                               style: TextStyle(
@@ -169,23 +189,40 @@ class SessionListItem extends StatelessWidget {
   }
 
   Widget _buildTypeIcon(bool isDark) {
-    // Determine icon based on agent path/type
-    // For now, use chat bubble as default
-    // TODO: Store agent type in session for accurate icon display
+    // Show different icons based on source
+    IconData icon;
+    Color color;
+
+    switch (session.source) {
+      case ChatSource.chatgpt:
+        icon = Icons.auto_awesome;
+        color = BrandColors.turquoise;
+        break;
+      case ChatSource.claude:
+        icon = Icons.psychology_outlined;
+        color = BrandColors.forest;
+        break;
+      case ChatSource.other:
+        icon = Icons.download_outlined;
+        color = BrandColors.driftwood;
+        break;
+      case ChatSource.parachute:
+        icon = Icons.chat_bubble_outline;
+        color = isDark ? BrandColors.nightTurquoise : BrandColors.turquoise;
+        break;
+    }
 
     return Container(
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        color: isDark
-            ? BrandColors.nightTurquoise.withValues(alpha: 0.2)
-            : BrandColors.turquoiseMist,
+        color: color.withValues(alpha: 0.2),
         shape: BoxShape.circle,
       ),
       child: Icon(
-        Icons.chat_bubble_outline,
+        icon,
         size: 18,
-        color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+        color: color,
       ),
     );
   }

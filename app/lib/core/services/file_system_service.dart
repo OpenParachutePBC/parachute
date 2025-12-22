@@ -36,6 +36,7 @@ class FileSystemService {
   static const String _defaultJournalFolderName = 'Daily';
   static const String _defaultAssetsFolderName = 'assets';
   static const String _defaultSessionsFolderName = 'agent-sessions';
+  static const String _importsFolderName = 'imports';
   static const String _tempAudioFolderName = 'parachute_audio_temp';
 
   // Temp subfolder names with different retention policies
@@ -166,6 +167,37 @@ class FileSystemService {
   Future<String> getSessionsPath() async {
     final root = await getRootPath();
     return '$root/$_sessionsFolderName';
+  }
+
+  // ============================================================
+  // Imports Folder (ChatGPT/Claude exports, etc.)
+  // ============================================================
+
+  /// Get the imports folder name
+  String getImportsFolderName() {
+    return _importsFolderName;
+  }
+
+  /// Get the imports folder path
+  Future<String> getImportsPath() async {
+    final root = await getRootPath();
+    return '$root/$_importsFolderName';
+  }
+
+  /// Check if the imports folder exists
+  Future<bool> hasImportsFolder() async {
+    final path = await getImportsPath();
+    return Directory(path).exists();
+  }
+
+  /// Ensure imports folder exists
+  Future<String> ensureImportsFolderExists() async {
+    final path = await getImportsPath();
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return path;
   }
 
   /// Get the month folder path for assets

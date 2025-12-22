@@ -82,6 +82,68 @@ class VaultContextService {
     await _fileSystem.writeFileAsString(path, _defaultAgentsMd);
   }
 
+  /// Create AGENTS.md with context from Claude memories
+  Future<void> createAgentsMdWithClaudeContext(String claudeMemoriesContext) async {
+    final path = await _agentsMdPath;
+    debugPrint('[VaultContextService] Creating AGENTS.md with Claude context');
+
+    final content = '''# Parachute Vault
+
+## Role
+
+You are a thinking companion with access to my personal knowledge vault.
+Your purpose is to help me think, remember, and make connections.
+
+When I ask you something:
+- Consider what I've captured before on this topic
+- Look for connections across my notes
+- Help me think clearly, not just answer quickly
+
+Be direct. I value honest thinking over polite agreement.
+
+## Vault
+
+<!-- How your vault is organized -->
+<!-- Run "Map my vault" to populate this -->
+
+**Structure:**
+<!-- What folders exist and what they contain -->
+
+**Navigation:**
+<!-- How to find things - search patterns, key locations -->
+
+## Me
+
+The following context was imported from your previous AI assistant:
+
+$claudeMemoriesContext
+
+---
+
+**Note:** This is imported context. Run the "Update" prompt to refine this
+based on our actual conversations and your vault contents.
+''';
+
+    await _fileSystem.writeFileAsString(path, content);
+  }
+
+  /// Initialize defaults with optional Claude memories context
+  Future<void> initializeWithClaudeMemories(String? memoriesContext) async {
+    final status = await checkStatus();
+
+    if (!status.agentsMdExists) {
+      if (memoriesContext != null && memoriesContext.isNotEmpty) {
+        await createAgentsMdWithClaudeContext(memoriesContext);
+      } else {
+        await _createDefaultAgentsMd();
+      }
+    }
+
+    if (!status.promptsYamlExists) {
+      await _createDefaultPromptsYaml();
+    }
+  }
+
   // ============================================================
   // prompts.yaml
   // ============================================================

@@ -61,6 +61,18 @@ final initializeVaultContextProvider = Provider<Future<void> Function()>((ref) {
   };
 });
 
+/// Initialize vault context with optional Claude memories
+final initializeVaultWithMemoriesProvider = Provider<Future<void> Function(String?)>((ref) {
+  final service = ref.watch(vaultContextServiceProvider);
+  return (String? memoriesContext) async {
+    await service.initializeWithClaudeMemories(memoriesContext);
+    // Invalidate status and content providers to refresh
+    ref.invalidate(vaultContextStatusProvider);
+    ref.invalidate(agentsMdProvider);
+    ref.invalidate(promptsProvider);
+  };
+});
+
 /// Save updated AGENTS.md content
 final saveAgentsMdProvider = Provider<Future<bool> Function(String)>((ref) {
   final service = ref.watch(vaultContextServiceProvider);

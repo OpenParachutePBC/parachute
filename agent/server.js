@@ -18,6 +18,7 @@ import { listVaultFiles, readDocument, searchVault } from './lib/vault-utils.js'
 import { validateRelativePath, sanitizeFilename } from './lib/path-validator.js';
 import { queryLogs, getLogStats, serverLogger as log } from './lib/logger.js';
 import { initializeUsageTracker, getUsageTracker } from './lib/usage-tracker.js';
+import { getVaultSearchService, ContentType } from './lib/vault-search.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1484,7 +1485,7 @@ app.get('/api/documents/*', async (req, res) => {
 
 /**
  * GET /api/search
- * Search the vault
+ * Search the vault (legacy markdown search)
  */
 app.get('/api/search', async (req, res) => {
   try {
@@ -1492,6 +1493,147 @@ app.get('/api/search', async (req, res) => {
     const results = await findInVault(q || '');
     res.json(results);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================================
+// VAULT INDEX SEARCH (SQLite-based search over indexed content)
+// ============================================================================
+
+/**
+ * GET /api/vault-search
+ * Search indexed vault content (recordings, journals, chats)
+ * Query params: q (query), limit, contentType
+ */
+app.get('/api/vault-search', async (req, res) => {
+  try {
+    const searchService = getVaultSearchService(CONFIG.vaultPath);
+
+    if (!searchService.isAvailable()) {
+      return res.json({
+        available: false,
+        message: 'Search index not found. The Flutter app needs to build the index first.',
+        results: []
+      });
+    }
+
+    const { q, limit, contentType } = req.query;
+
+    if (!q) {
+      return res.status(400).json({ error: 'Query parameter "q" is required' });
+    }
+
+    const options = {
+      limit: limit ? parseInt(limit, 10) : 20,
+      contentType: contentType || null
+    };
+
+    const results = searchService.search(q, options);
+
+    res.json({
+      available: true,
+      query: q,
+      count: results.length,
+      results
+    });
+  } catch (error) {
+    log.error('Vault search error', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/vault-search/stats
+ * Get statistics about indexed content
+ */
+app.get('/api/vault-search/stats', async (req, res) => {
+  try {
+    const searchService = getVaultSearchService(CONFIG.vaultPath);
+
+    if (!searchService.isAvailable()) {
+      return res.json({
+        available: false,
+        message: 'Search index not found'
+      });
+    }
+
+    const stats = searchService.getStats();
+
+    res.json({
+      available: true,
+      ...stats
+    });
+  } catch (error) {
+    log.error('Vault search stats error', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/vault-search/content
+ * List all indexed content
+ * Query params: contentType, limit
+ */
+app.get('/api/vault-search/content', async (req, res) => {
+  try {
+    const searchService = getVaultSearchService(CONFIG.vaultPath);
+
+    if (!searchService.isAvailable()) {
+      return res.json({
+        available: false,
+        message: 'Search index not found',
+        content: []
+      });
+    }
+
+    const { contentType, limit } = req.query;
+
+    const options = {
+      contentType: contentType || null,
+      limit: limit ? parseInt(limit, 10) : 100
+    };
+
+    const content = searchService.listIndexedContent(options);
+
+    res.json({
+      available: true,
+      count: content.length,
+      content
+    });
+  } catch (error) {
+    log.error('Vault search list error', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/vault-search/content/:id
+ * Get a specific content item by ID
+ */
+app.get('/api/vault-search/content/:id', async (req, res) => {
+  try {
+    const searchService = getVaultSearchService(CONFIG.vaultPath);
+
+    if (!searchService.isAvailable()) {
+      return res.json({
+        available: false,
+        message: 'Search index not found'
+      });
+    }
+
+    const content = searchService.getContent(req.params.id);
+
+    if (!content) {
+      return res.status(404).json({ error: 'Content not found' });
+    }
+
+    res.json({
+      available: true,
+      ...content
+    });
+  } catch (error) {
+    log.error('Vault search content error', error);
     res.status(500).json({ error: error.message });
   }
 });

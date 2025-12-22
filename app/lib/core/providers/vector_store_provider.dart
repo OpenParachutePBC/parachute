@@ -1,26 +1,34 @@
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:app/core/services/search/vector_store.dart';
 import 'package:app/core/services/search/sqlite_vector_store.dart';
+import 'package:app/core/services/file_system_service.dart';
 
 /// Provider for the vector store database path
 ///
-/// Stores the database in the app's support directory (not synced).
-/// Path: {supportDir}/search/vector_store.db
+/// Stores the database in the vault's .parachute directory (synced).
+/// Path: {vault}/.parachute/search.db
 ///
-/// The database is device-specific and rebuilt per device.
-/// This is intentional - embedding models may differ per platform.
+/// This allows the search index to be:
+/// 1. Synced across devices via Syncthing
+/// 2. Accessible by the agent for MCP search tools
+///
+/// **Note on embeddings:** Different devices may use different embedding
+/// models (Gemma on mobile, Ollama on desktop). For best results, use
+/// one device as the "indexing source" and others for querying only.
 final vectorStorePathProvider = FutureProvider<String>((ref) async {
-  final supportDir = await getApplicationSupportDirectory();
-  final searchDir = Directory('${supportDir.path}/search');
+  final fileSystem = FileSystemService();
+  await fileSystem.initialize();
+
+  final vaultPath = await fileSystem.getRootPath();
+  final parachuteDir = Directory('$vaultPath/.parachute');
 
   // Ensure directory exists
-  if (!await searchDir.exists()) {
-    await searchDir.create(recursive: true);
+  if (!await parachuteDir.exists()) {
+    await parachuteDir.create(recursive: true);
   }
 
-  return '${searchDir.path}/vector_store.db';
+  return '${parachuteDir.path}/search.db';
 });
 
 /// Provider for the VectorStore implementation

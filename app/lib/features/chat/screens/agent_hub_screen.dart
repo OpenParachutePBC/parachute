@@ -9,15 +9,29 @@ import '../providers/chat_providers.dart';
 import '../widgets/session_list_item.dart';
 import 'chat_screen.dart';
 
+/// Filter options for chat sessions
+enum ChatFilter {
+  all,
+  active,
+  imported,
+}
+
 /// Chat Hub - Main entry point for AI conversations
 ///
 /// Shows a list of recent chat sessions grouped by date,
 /// with quick access to start new conversations.
-class AgentHubScreen extends ConsumerWidget {
+class AgentHubScreen extends ConsumerStatefulWidget {
   const AgentHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AgentHubScreen> createState() => _AgentHubScreenState();
+}
+
+class _AgentHubScreenState extends ConsumerState<AgentHubScreen> {
+  ChatFilter _currentFilter = ChatFilter.active;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final sessionsAsync = ref.watch(chatSessionsProvider);
@@ -38,7 +52,7 @@ class AgentHubScreen extends ConsumerWidget {
         actions: [
           // Quick prompts button
           IconButton(
-            onPressed: () => _showPromptsSheet(context, ref),
+            onPressed: () => _showPromptsSheet(context),
             icon: Icon(
               Icons.bolt_outlined,
               color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
@@ -47,7 +61,7 @@ class AgentHubScreen extends ConsumerWidget {
           ),
           // New chat button
           IconButton(
-            onPressed: () => _startNewChat(context, ref),
+            onPressed: () => _startNewChat(context),
             icon: Icon(
               Icons.add_comment_outlined,
               color: isDark ? BrandColors.nightText : BrandColors.charcoal,
@@ -59,51 +73,229 @@ class AgentHubScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
+          // Filter chips
+          _buildFilterChips(isDark, sessionsAsync.valueOrNull ?? []),
+
           // Sessions list
           Expanded(
             child: sessionsAsync.when(
-              data: (sessions) => _buildSessionsList(context, ref, sessions, isDark),
+              data: (sessions) => _buildSessionsList(context, sessions, isDark),
               loading: () => _buildLoading(isDark),
               error: (e, _) => _buildError(isDark, e.toString()),
             ),
           ),
 
           // Quick chat input at bottom
-          _buildQuickChatInput(context, ref, isDark),
+          _buildQuickChatInput(context, isDark),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChips(bool isDark, List<ChatSession> allSessions) {
+    // Count sessions in each category
+    final activeCount = allSessions.where((s) => !s.archived && !s.isImported).length;
+    final importedCount = allSessions.where((s) => s.isImported).length;
+
+    // Don't show filters if there are no imported sessions
+    if (importedCount == 0) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Spacing.md,
+        vertical: Spacing.sm,
+      ),
+      child: Row(
+        children: [
+          _buildFilterChip(
+            label: 'Active',
+            count: activeCount,
+            isSelected: _currentFilter == ChatFilter.active,
+            onTap: () => setState(() => _currentFilter = ChatFilter.active),
+            isDark: isDark,
+          ),
+          const SizedBox(width: Spacing.sm),
+          _buildFilterChip(
+            label: 'Imported',
+            count: importedCount,
+            isSelected: _currentFilter == ChatFilter.imported,
+            onTap: () => setState(() => _currentFilter = ChatFilter.imported),
+            isDark: isDark,
+          ),
+          const SizedBox(width: Spacing.sm),
+          _buildFilterChip(
+            label: 'All',
+            count: allSessions.length,
+            isSelected: _currentFilter == ChatFilter.all,
+            onTap: () => setState(() => _currentFilter = ChatFilter.all),
+            isDark: isDark,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required int count,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Spacing.md,
+          vertical: Spacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? BrandColors.nightTurquoise : BrandColors.turquoise)
+              : (isDark
+                  ? BrandColors.nightSurfaceElevated
+                  : BrandColors.stone.withValues(alpha: 0.3)),
+          borderRadius: Radii.pill,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: TypographyTokens.labelMedium,
+                fontWeight: FontWeight.w500,
+                color: isSelected
+                    ? Colors.white
+                    : (isDark
+                        ? BrandColors.nightTextSecondary
+                        : BrandColors.driftwood),
+              ),
+            ),
+            if (count > 0) ...[
+              const SizedBox(width: Spacing.xs),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.xs + 2,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : (isDark
+                          ? BrandColors.nightSurface
+                          : BrandColors.softWhite),
+                  borderRadius: Radii.pill,
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: TypographyTokens.labelSmall,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected
+                        ? Colors.white
+                        : (isDark
+                            ? BrandColors.nightTextSecondary
+                            : BrandColors.driftwood),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSessionsList(
     BuildContext context,
-    WidgetRef ref,
     List<ChatSession> sessions,
     bool isDark,
   ) {
-    // Filter out archived sessions
-    final activeSessions = sessions.where((s) => !s.archived).toList();
+    // Apply filter
+    List<ChatSession> filteredSessions;
+    switch (_currentFilter) {
+      case ChatFilter.active:
+        filteredSessions = sessions.where((s) => !s.archived && !s.isImported).toList();
+        break;
+      case ChatFilter.imported:
+        filteredSessions = sessions.where((s) => s.isImported).toList();
+        break;
+      case ChatFilter.all:
+        filteredSessions = sessions.toList();
+        break;
+    }
 
-    if (activeSessions.isEmpty) {
-      return _buildEmptyState(context, ref, isDark);
+    if (filteredSessions.isEmpty) {
+      if (_currentFilter == ChatFilter.imported) {
+        return _buildEmptyImportedState(isDark);
+      }
+      return _buildEmptyState(context, isDark);
     }
 
     // Group sessions by date
-    final grouped = _groupSessionsByDate(activeSessions);
+    final grouped = _groupSessionsByDate(filteredSessions);
 
     return ListView.builder(
       padding: const EdgeInsets.all(Spacing.md),
       itemCount: grouped.length,
       itemBuilder: (context, index) {
         final group = grouped[index];
-        return _buildDateGroup(context, ref, group, isDark);
+        return _buildDateGroup(context, group, isDark);
       },
+    );
+  }
+
+  Widget _buildEmptyImportedState(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(Spacing.xl),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? BrandColors.nightSurfaceElevated
+                    : BrandColors.stone.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.download_outlined,
+                size: 48,
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+              ),
+            ),
+            const SizedBox(height: Spacing.xl),
+            Text(
+              'No imported chats',
+              style: TextStyle(
+                fontSize: TypographyTokens.headlineSmall,
+                fontWeight: FontWeight.w600,
+                color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+              ),
+            ),
+            const SizedBox(height: Spacing.sm),
+            Text(
+              'Import your ChatGPT or Claude conversations\nfrom Settings → Advanced → Import Chat History',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: TypographyTokens.bodyMedium,
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                height: TypographyTokens.lineHeightRelaxed,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildDateGroup(
     BuildContext context,
-    WidgetRef ref,
     _SessionGroup group,
     bool isDark,
   ) {
@@ -131,15 +323,15 @@ class AgentHubScreen extends ConsumerWidget {
               padding: const EdgeInsets.only(bottom: Spacing.sm),
               child: SessionListItem(
                 session: session,
-                onTap: () => _handleSessionTap(context, ref, session),
-                onDelete: () => _handleSessionDelete(ref, session),
+                onTap: () => _handleSessionTap(context, session),
+                onDelete: () => _handleSessionDelete(session),
               ),
             )),
       ],
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, WidgetRef ref, bool isDark) {
+  Widget _buildEmptyState(BuildContext context, bool isDark) {
     final promptsAsync = ref.watch(promptsProvider);
 
     return Center(
@@ -191,7 +383,7 @@ class AgentHubScreen extends ConsumerWidget {
                 alignment: WrapAlignment.center,
                 children: prompts.take(3).map((prompt) => PromptChip(
                       prompt: prompt,
-                      onTap: () => _startNewChatWithPrompt(context, ref, prompt.prompt),
+                      onTap: () => _startNewChatWithPrompt(context, prompt.prompt),
                     )).toList(),
               ),
               loading: () => const SizedBox.shrink(),
@@ -246,7 +438,7 @@ class AgentHubScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildQuickChatInput(BuildContext context, WidgetRef ref, bool isDark) {
+  Widget _buildQuickChatInput(BuildContext context, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(Spacing.md),
       decoration: BoxDecoration(
@@ -262,7 +454,7 @@ class AgentHubScreen extends ConsumerWidget {
       child: SafeArea(
         top: false,
         child: GestureDetector(
-          onTap: () => _startNewChat(context, ref),
+          onTap: () => _startNewChat(context),
           child: Container(
             padding: const EdgeInsets.symmetric(
               horizontal: Spacing.md,
@@ -312,14 +504,14 @@ class AgentHubScreen extends ConsumerWidget {
   // Actions
   // ============================================================
 
-  void _showPromptsSheet(BuildContext context, WidgetRef ref) {
+  void _showPromptsSheet(BuildContext context) {
     PromptsBottomSheet.show(
       context,
-      onPromptSelected: (prompt) => _startNewChatWithPrompt(context, ref, prompt),
+      onPromptSelected: (prompt) => _startNewChatWithPrompt(context, prompt),
     );
   }
 
-  void _startNewChat(BuildContext context, WidgetRef ref) {
+  void _startNewChat(BuildContext context) {
     ref.read(newChatProvider)();
     ref.read(selectedAgentProvider.notifier).state = null;
 
@@ -330,7 +522,7 @@ class AgentHubScreen extends ConsumerWidget {
     );
   }
 
-  void _startNewChatWithPrompt(BuildContext context, WidgetRef ref, String prompt) {
+  void _startNewChatWithPrompt(BuildContext context, String prompt) {
     ref.read(newChatProvider)();
     ref.read(selectedAgentProvider.notifier).state = null;
 
@@ -341,8 +533,10 @@ class AgentHubScreen extends ConsumerWidget {
     );
   }
 
-  void _handleSessionTap(BuildContext context, WidgetRef ref, ChatSession session) {
-    ref.read(switchSessionProvider)(session.id);
+  void _handleSessionTap(BuildContext context, ChatSession session) {
+    // For imported/local sessions, use the local reader
+    final isLocal = session.isImported || session.isLocal;
+    ref.read(switchSessionProvider)(session.id, isLocal: isLocal);
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -351,7 +545,7 @@ class AgentHubScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _handleSessionDelete(WidgetRef ref, ChatSession session) async {
+  Future<void> _handleSessionDelete(ChatSession session) async {
     await ref.read(deleteSessionProvider)(session.id);
   }
 

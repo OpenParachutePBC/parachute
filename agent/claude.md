@@ -40,6 +40,7 @@ Parachute Agent is the backend for Parachute - an AI agent system that uses mark
 | `lib/path-validator.js` | Path traversal prevention utilities |
 | `lib/logger.js` | Structured logging with in-memory buffer |
 | `lib/errors.js` | Custom error classes with HTTP status codes |
+| `lib/vault-search.js` | Search over Flutter app's SQLite index |
 | `obsidian-plugin/main.ts` | Optional Obsidian plugin |
 
 ## Commands
@@ -86,6 +87,10 @@ VAULT_PATH=/path/to/vault npm start  # Custom vault
 | `/api/analytics` | GET | Get session and agent analytics |
 | `/api/logs` | GET | Query recent logs (params: `level`, `component`, `since`, `limit`) |
 | `/api/logs/stats` | GET | Get log statistics |
+| `/api/vault-search` | GET | Search indexed content (params: `q`, `limit?`, `contentType?`) |
+| `/api/vault-search/stats` | GET | Get search index statistics |
+| `/api/vault-search/content` | GET | List indexed content (params: `contentType?`, `limit?`) |
+| `/api/vault-search/content/:id` | GET | Get specific indexed content by ID |
 
 ## Agent Definition Format
 

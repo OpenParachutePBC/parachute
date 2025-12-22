@@ -3,9 +3,16 @@ import 'package:flutter/foundation.dart';
 import 'package:app/core/services/search/vector_store.dart';
 import 'package:app/core/services/search/bm25_index_manager.dart';
 import 'package:app/core/services/search/chunking/recording_chunker.dart';
+import 'package:app/core/services/search/chunking/journal_chunker.dart';
+import 'package:app/core/services/search/chunking/chat_chunker.dart';
 import 'package:app/core/services/search/content_hasher.dart';
+import 'package:app/core/services/search/models/indexed_chunk.dart';
 import 'package:app/features/recorder/services/storage_service.dart';
 import 'package:app/features/recorder/models/recording.dart';
+import 'package:app/features/journal/services/journal_service.dart';
+import 'package:app/features/journal/models/journal_day.dart';
+import 'package:app/features/journal/models/journal_entry.dart';
+import 'package:app/features/chat/services/local_session_reader.dart';
 
 /// Status of the search indexing process
 enum IndexingStatus {
@@ -81,6 +88,14 @@ class SearchIndexService {
   final StorageService _storageService;
   final ContentHasher _hasher;
 
+  // Optional journal support (null if not configured)
+  JournalService? _journalService;
+  JournalChunker? _journalChunker;
+
+  // Optional chat session support (null if not configured)
+  LocalSessionReader? _sessionReader;
+  ChatChunker? _chatChunker;
+
   // Status tracking
   IndexingStatus _status = IndexingStatus.idle;
   String? _errorMessage;
@@ -98,6 +113,36 @@ class SearchIndexService {
     this._storageService,
     this._hasher,
   );
+
+  /// Configure journal indexing support
+  ///
+  /// Call this after constructing the service to enable journal indexing.
+  void configureJournalIndexing(
+    JournalService journalService,
+    JournalChunker journalChunker,
+  ) {
+    _journalService = journalService;
+    _journalChunker = journalChunker;
+    debugPrint('[SearchIndex] Journal indexing configured');
+  }
+
+  /// Check if journal indexing is configured
+  bool get hasJournalSupport => _journalService != null && _journalChunker != null;
+
+  /// Configure chat session indexing support
+  ///
+  /// Call this after constructing the service to enable chat indexing.
+  void configureChatIndexing(
+    LocalSessionReader sessionReader,
+    ChatChunker chatChunker,
+  ) {
+    _sessionReader = sessionReader;
+    _chatChunker = chatChunker;
+    debugPrint('[SearchIndex] Chat indexing configured');
+  }
+
+  /// Check if chat indexing is configured
+  bool get hasChatSupport => _sessionReader != null && _chatChunker != null;
 
   /// Current indexing status
   IndexingStatus get status => _status;
@@ -118,23 +163,40 @@ class SearchIndexService {
   /// Check if sync is currently in progress
   bool get isSyncing => _isSyncing;
 
-  /// Sync indexes with source recordings
+  // ========================================================================
+  // Rebuild Operations (Full Scan)
+  // ========================================================================
+  //
+  // These methods perform full scans of all content and are intended for:
+  // - Initial index build on first launch
+  // - Repair operations (forceFullReindex)
+  // - Debug/maintenance
+  //
+  // For normal operation, use the event-driven methods instead:
+  // - indexRecording() / removeRecording() for recordings
+  // - indexJournalEntry() / removeJournalEntry() for journals
+  // - indexChatSessionById() / removeChatSession() for chats
+  //
+  // The SQLite database syncs via Syncthing, so if device A indexes
+  // content, device B gets the updated database automatically.
+  // ========================================================================
+
+  /// **REBUILD ONLY** - Sync indexes with source recordings
   ///
   /// Performs a full scan of all recordings, compares content hashes,
   /// and re-indexes any that have changed or are new. Also removes
   /// recordings that have been deleted.
   ///
+  /// ⚠️ **Note:** This is a scan-based rebuild operation. For normal
+  /// operation, call `indexRecording()` when saving and `removeRecording()`
+  /// when deleting. The index database syncs via Syncthing.
+  ///
   /// **When to call:**
-  /// - On app start (non-blocking background task)
-  /// - After pull-to-refresh
-  /// - After bulk operations
+  /// - On first app launch (initial index build)
+  /// - Via forceFullReindex() for repair operations
   ///
   /// **Safe to call concurrently** - subsequent calls will wait for
   /// the first sync to complete rather than starting duplicate work.
-  ///
-  /// **Performance:** Depends on number of changed recordings.
-  /// - Checking hashes: ~1ms per recording
-  /// - Indexing: ~500ms per recording (embedding generation)
   Future<void> syncIndexes() async {
     // If already syncing, wait for it to complete
     if (_isSyncing) {
@@ -353,20 +415,502 @@ class SearchIndexService {
     }
   }
 
+  // ========================================================================
+  // Journal Indexing
+  // ========================================================================
+
+  /// **REBUILD ONLY** - Sync all journal indexes
+  ///
+  /// Scans all journal days, compares content hashes, and re-indexes
+  /// any that have changed. Requires journal support to be configured.
+  ///
+  /// ⚠️ **Note:** This is a scan-based rebuild operation. For normal
+  /// operation, call `indexJournalEntry()` when creating/updating entries.
+  /// The index database syncs via Syncthing.
+  ///
+  /// **When to call:**
+  /// - On first app launch (initial index build)
+  /// - Via forceFullReindex() for repair operations
+  Future<void> syncJournals() async {
+    if (!hasJournalSupport) {
+      debugPrint('[SearchIndex] Journal support not configured, skipping');
+      return;
+    }
+
+    try {
+      debugPrint('[SearchIndex] Starting journal sync...');
+      _status = IndexingStatus.syncing;
+      _notifyListeners();
+
+      // Get all journal dates
+      final dates = await _journalService!.listJournalDates();
+      debugPrint('[SearchIndex] Found ${dates.length} journal days');
+
+      // Check each journal for changes
+      final toIndex = <JournalDay>[];
+
+      for (final date in dates) {
+        final journal = await _journalService!.loadDay(date);
+        if (journal.entries.isEmpty) continue;
+
+        // Create content ID for the journal day
+        final dateStr = _formatDate(date);
+
+        // Check each entry in the journal
+        for (final entry in journal.entries) {
+          if (entry.id == 'preamble' || entry.content.isEmpty) continue;
+
+          final contentId = 'journal:$dateStr:${entry.id}';
+          final currentHash = _hasher.computeJournalEntryHash(entry);
+          final storedHash = await _vectorStore.getContentHash(contentId);
+
+          if (storedHash == null || storedHash != currentHash) {
+            // Need to index this entry (as part of the journal day)
+            if (!toIndex.any((j) => _formatDate(j.date) == dateStr)) {
+              toIndex.add(journal);
+            }
+            break; // Already added this journal day
+          }
+        }
+      }
+
+      debugPrint(
+        '[SearchIndex] Journal changes: ${toIndex.length} days to index',
+      );
+
+      // Index changed journal days
+      _status = IndexingStatus.indexing;
+      _totalToIndex = toIndex.length;
+      _indexedCount = 0;
+      _notifyListeners();
+
+      for (final journal in toIndex) {
+        try {
+          await _indexJournalDay(journal);
+          _indexedCount++;
+          _notifyListeners();
+        } catch (e, stackTrace) {
+          debugPrint('[SearchIndex] Error indexing journal ${journal.dateString}: $e');
+          debugPrint('[SearchIndex] Stack trace: $stackTrace');
+        }
+      }
+
+      _status = IndexingStatus.idle;
+      _notifyListeners();
+
+      debugPrint('[SearchIndex] ✅ Journal sync complete: ${toIndex.length} days indexed');
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Journal sync error: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+      _status = IndexingStatus.error;
+      _errorMessage = e.toString();
+      _notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// **REBUILD ONLY** - Index a single journal day
+  Future<void> indexJournalDay(JournalDay journal) async {
+    if (!hasJournalSupport) {
+      throw StateError('Journal support not configured');
+    }
+
+    debugPrint('[SearchIndex] Indexing journal day: ${journal.dateString}');
+
+    try {
+      await _indexJournalDay(journal);
+      _bm25Manager.invalidate();
+      debugPrint('[SearchIndex] ✅ Journal day indexed: ${journal.dateString}');
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Error indexing journal day: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  // Event-Driven Journal Indexing (Preferred)
+  // ------------------------------------------------------------------------
+
+  /// Index a single journal entry (event-driven)
+  ///
+  /// **Preferred method** - Call this from JournalService when an entry
+  /// is added or modified. This is much more efficient than scanning
+  /// all journals.
+  ///
+  /// The index database syncs via Syncthing, so other devices will
+  /// receive the indexed content automatically.
+  Future<void> indexJournalEntry(
+    JournalEntry entry,
+    DateTime date,
+    String journalFilePath,
+  ) async {
+    if (!hasJournalSupport) {
+      debugPrint('[SearchIndex] Journal support not configured, skipping');
+      return;
+    }
+
+    // Skip preamble and empty content
+    if (entry.id == 'preamble' || entry.content.isEmpty) {
+      return;
+    }
+
+    final dateStr = _formatDate(date);
+    final contentId = 'journal:$dateStr:${entry.id}';
+
+    debugPrint('[SearchIndex] Indexing journal entry: $contentId');
+
+    try {
+      // Remove old chunks for this entry
+      await _vectorStore.removeChunks(contentId);
+
+      // Chunk the entry
+      final chunks = await _journalChunker!.chunkEntry(entry, date);
+
+      if (chunks.isEmpty) {
+        debugPrint('[SearchIndex] Warning: No chunks for entry $contentId');
+        return;
+      }
+
+      // Store chunks
+      await _vectorStore.addChunks(chunks);
+
+      // Update manifest
+      final hash = _hasher.computeJournalEntryHash(entry);
+      await _vectorStore.updateManifest(
+        contentId,
+        hash,
+        chunks.length,
+        contentType: ContentType.journal,
+        sourcePath: journalFilePath,
+      );
+
+      _bm25Manager.invalidate();
+      debugPrint('[SearchIndex] ✅ Entry indexed: $contentId (${chunks.length} chunks)');
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Error indexing entry $contentId: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+      // Don't rethrow - indexing failure shouldn't break the app
+    }
+  }
+
+  /// Remove a single journal entry from the index
+  Future<void> removeJournalEntry(String entryId, DateTime date) async {
+    final dateStr = _formatDate(date);
+    final contentId = 'journal:$dateStr:$entryId';
+
+    debugPrint('[SearchIndex] Removing journal entry: $contentId');
+
+    try {
+      await _vectorStore.removeChunks(contentId);
+      _bm25Manager.invalidate();
+      debugPrint('[SearchIndex] ✅ Entry removed: $contentId');
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Error removing entry: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+    }
+  }
+
+  /// Internal implementation of journal day indexing
+  Future<void> _indexJournalDay(JournalDay journal) async {
+    final dateStr = _formatDate(journal.date);
+    final sourcePath = journal.filePath;
+
+    for (final entry in journal.entries) {
+      if (entry.id == 'preamble' || entry.content.isEmpty) continue;
+
+      final contentId = 'journal:$dateStr:${entry.id}';
+
+      // Remove old chunks for this entry
+      await _vectorStore.removeChunks(contentId);
+
+      // Chunk the entry
+      final chunks = await _journalChunker!.chunkEntry(entry, journal.date);
+
+      if (chunks.isEmpty) {
+        debugPrint('[SearchIndex] Warning: No chunks for entry $contentId');
+        continue;
+      }
+
+      // Store chunks
+      await _vectorStore.addChunks(chunks);
+
+      // Update manifest with content hash, type, and source path
+      final hash = _hasher.computeJournalEntryHash(entry);
+      await _vectorStore.updateManifest(
+        contentId,
+        hash,
+        chunks.length,
+        contentType: ContentType.journal,
+        sourcePath: sourcePath,
+      );
+
+      debugPrint(
+        '[SearchIndex] Entry $contentId indexed: ${chunks.length} chunks',
+      );
+    }
+  }
+
+  /// Remove a journal day from the index
+  Future<void> removeJournalDay(DateTime date) async {
+    final dateStr = _formatDate(date);
+    debugPrint('[SearchIndex] Removing journal day: $dateStr');
+
+    try {
+      // Get all indexed IDs that match this date pattern
+      final indexedIds = await _vectorStore.getIndexedRecordingIds();
+      final prefix = 'journal:$dateStr:';
+
+      for (final id in indexedIds) {
+        if (id.startsWith(prefix)) {
+          await _vectorStore.removeChunks(id);
+        }
+      }
+
+      _bm25Manager.invalidate();
+      debugPrint('[SearchIndex] ✅ Journal day removed: $dateStr');
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Error removing journal day: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Format date as YYYY-MM-DD
+  static String _formatDate(DateTime date) {
+    final year = date.year.toString();
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  // ========================================================================
+  // Chat Session Indexing
+  // ========================================================================
+
+  /// **REBUILD ONLY** - Sync all chat session indexes
+  ///
+  /// Scans all chat sessions, compares content hashes, and re-indexes
+  /// any that have changed. Requires chat support to be configured.
+  ///
+  /// ⚠️ **Note:** This is a scan-based rebuild operation. For normal
+  /// operation, call `indexChatSessionById()` when a chat stream completes.
+  /// The index database syncs via Syncthing.
+  ///
+  /// **When to call:**
+  /// - On first app launch (initial index build)
+  /// - Via forceFullReindex() for repair operations
+  Future<void> syncChats() async {
+    if (!hasChatSupport) {
+      debugPrint('[SearchIndex] Chat support not configured, skipping');
+      return;
+    }
+
+    try {
+      debugPrint('[SearchIndex] Starting chat sync...');
+      _status = IndexingStatus.syncing;
+      _notifyListeners();
+
+      // Get all local sessions
+      final sessions = await _sessionReader!.getLocalSessions();
+      debugPrint('[SearchIndex] Found ${sessions.length} chat sessions');
+
+      // Check each session for changes
+      final toIndex = <ChatSessionWithLocalMessages>[];
+
+      for (final session in sessions) {
+        final contentId = 'chat:${session.id}';
+
+        // Load full session with messages
+        final fullSession = await _sessionReader!.getSession(session.id);
+        if (fullSession == null || fullSession.messages.isEmpty) continue;
+
+        final currentHash = _hasher.computeChatSessionHash(fullSession);
+        final storedHash = await _vectorStore.getContentHash(contentId);
+
+        if (storedHash == null || storedHash != currentHash) {
+          toIndex.add(fullSession);
+        }
+      }
+
+      debugPrint(
+        '[SearchIndex] Chat changes: ${toIndex.length} sessions to index',
+      );
+
+      // Index changed sessions
+      _status = IndexingStatus.indexing;
+      _totalToIndex = toIndex.length;
+      _indexedCount = 0;
+      _notifyListeners();
+
+      for (final sessionData in toIndex) {
+        try {
+          await _indexChatSession(sessionData);
+          _indexedCount++;
+          _notifyListeners();
+        } catch (e, stackTrace) {
+          debugPrint(
+            '[SearchIndex] Error indexing chat ${sessionData.session.id}: $e',
+          );
+          debugPrint('[SearchIndex] Stack trace: $stackTrace');
+        }
+      }
+
+      _status = IndexingStatus.idle;
+      _notifyListeners();
+
+      debugPrint(
+        '[SearchIndex] ✅ Chat sync complete: ${toIndex.length} sessions indexed',
+      );
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Chat sync error: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+      _status = IndexingStatus.error;
+      _errorMessage = e.toString();
+      _notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// **REBUILD ONLY** - Index a single chat session from full data
+  Future<void> indexChatSession(ChatSessionWithLocalMessages sessionData) async {
+    if (!hasChatSupport) {
+      throw StateError('Chat support not configured');
+    }
+
+    debugPrint('[SearchIndex] Indexing chat session: ${sessionData.session.id}');
+
+    try {
+      await _indexChatSession(sessionData);
+      _bm25Manager.invalidate();
+      debugPrint('[SearchIndex] ✅ Chat session indexed: ${sessionData.session.id}');
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Error indexing chat session: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  // Event-Driven Chat Indexing (Preferred)
+  // ------------------------------------------------------------------------
+
+  /// Index a chat session by ID (event-driven)
+  ///
+  /// **Preferred method** - Call this from ChatMessagesNotifier when a
+  /// streaming response completes. This is much more efficient than
+  /// scanning all sessions.
+  ///
+  /// The index database syncs via Syncthing, so other devices will
+  /// receive the indexed content automatically.
+  Future<void> indexChatSessionById(String sessionId) async {
+    if (!hasChatSupport) {
+      debugPrint('[SearchIndex] Chat support not configured, skipping');
+      return;
+    }
+
+    debugPrint('[SearchIndex] Indexing chat session by ID: $sessionId');
+
+    try {
+      // Load the full session with messages
+      final sessionData = await _sessionReader!.getSession(sessionId);
+      if (sessionData == null || sessionData.messages.isEmpty) {
+        debugPrint('[SearchIndex] Session not found or empty: $sessionId');
+        return;
+      }
+
+      await _indexChatSession(sessionData);
+      _bm25Manager.invalidate();
+      debugPrint('[SearchIndex] ✅ Chat session indexed: $sessionId');
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Error indexing chat session $sessionId: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+      // Don't rethrow - indexing failure shouldn't break the app
+    }
+  }
+
+  /// Internal implementation of chat session indexing
+  Future<void> _indexChatSession(ChatSessionWithLocalMessages sessionData) async {
+    final session = sessionData.session;
+    final contentId = 'chat:${session.id}';
+
+    // Remove old chunks for this session
+    await _vectorStore.removeChunks(contentId);
+
+    // Determine source path
+    final sessionsPath = await _sessionReader!.sessionsPath;
+    final sourcePath = sessionsPath != null
+        ? '${_sessionReader!.sessionsFolderName}/${session.id}.md'
+        : null;
+
+    // Chunk the session
+    final chunks = await _chatChunker!.chunkChatSession(sessionData, sourcePath ?? '');
+
+    if (chunks.isEmpty) {
+      debugPrint('[SearchIndex] Warning: No chunks for chat $contentId');
+      return;
+    }
+
+    // Store chunks
+    await _vectorStore.addChunks(chunks);
+
+    // Update manifest with content hash, type, and source path
+    final hash = _hasher.computeChatSessionHash(sessionData);
+    await _vectorStore.updateManifest(
+      contentId,
+      hash,
+      chunks.length,
+      contentType: ContentType.chat,
+      sourcePath: sourcePath,
+    );
+
+    debugPrint(
+      '[SearchIndex] Chat $contentId indexed: ${chunks.length} chunks',
+    );
+  }
+
+  /// Remove a chat session from the index
+  Future<void> removeChatSession(String sessionId) async {
+    final contentId = 'chat:$sessionId';
+    debugPrint('[SearchIndex] Removing chat session: $sessionId');
+
+    try {
+      await _vectorStore.removeChunks(contentId);
+      _bm25Manager.invalidate();
+      debugPrint('[SearchIndex] ✅ Chat session removed: $sessionId');
+    } catch (e, stackTrace) {
+      debugPrint('[SearchIndex] ❌ Error removing chat session: $e');
+      debugPrint('[SearchIndex] Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
   /// Force full reindex
   ///
   /// Clears all indexes and rebuilds from scratch.
   /// Use for debugging or repair operations.
   ///
   /// **Warning:** This is an expensive operation that will
-  /// re-embed all recordings. Use sparingly.
+  /// re-embed all recordings, journals, and chats. Use sparingly.
   Future<void> forceFullReindex() async {
     debugPrint('[SearchIndex] Force full reindex requested');
 
     try {
       await _vectorStore.clear();
       _bm25Manager.invalidate();
+
+      // Sync recordings
       await syncIndexes();
+
+      // Sync journals if configured
+      if (hasJournalSupport) {
+        await syncJournals();
+      }
+
+      // Sync chats if configured
+      if (hasChatSupport) {
+        await syncChats();
+      }
 
       debugPrint('[SearchIndex] ✅ Full reindex complete');
     } catch (e, stackTrace) {

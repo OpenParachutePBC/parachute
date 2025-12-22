@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:app/features/recorder/models/recording.dart';
+import 'package:app/features/journal/models/journal_entry.dart';
+import 'package:app/features/journal/models/journal_day.dart';
+import 'package:app/features/chat/services/local_session_reader.dart';
 
 /// Computes content hashes for change detection
 ///
@@ -64,6 +67,63 @@ class ContentHasher {
       context,
       tags.join(','),
       transcript,
+    ].join('\n');
+
+    final bytes = utf8.encode(content);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  /// Compute SHA-256 hash of a journal entry
+  ///
+  /// Includes:
+  /// - Entry ID
+  /// - Title
+  /// - Content
+  ///
+  /// Returns a hexadecimal string representation of the hash.
+  String computeJournalEntryHash(JournalEntry entry) {
+    final content = [
+      entry.id,
+      entry.title,
+      entry.content,
+    ].join('\n');
+
+    final bytes = utf8.encode(content);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  /// Compute SHA-256 hash of an entire journal day
+  ///
+  /// Combines hashes of all entries in the day.
+  /// Used to detect if any entry in the day has changed.
+  String computeJournalDayHash(JournalDay journal) {
+    final entryHashes = journal.entries
+        .map((e) => computeJournalEntryHash(e))
+        .join('\n');
+
+    final bytes = utf8.encode(entryHashes);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  /// Compute SHA-256 hash of a chat session with messages
+  ///
+  /// Includes:
+  /// - Session ID
+  /// - Title
+  /// - All message content
+  ///
+  /// Returns a hexadecimal string representation of the hash.
+  String computeChatSessionHash(ChatSessionWithLocalMessages sessionData) {
+    final session = sessionData.session;
+    final messages = sessionData.messages;
+
+    final content = [
+      session.id,
+      session.title ?? '',
+      ...messages.map((m) => '${m.role.name}:${m.textContent}'),
     ].join('\n');
 
     final bytes = utf8.encode(content);

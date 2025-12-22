@@ -3,12 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/services/search/search_index_service.dart';
 import 'package:app/core/services/search/content_hasher.dart';
 import 'package:app/core/services/search/chunking/recording_chunker.dart';
+import 'package:app/core/services/search/chunking/journal_chunker.dart';
+import 'package:app/core/services/search/chunking/chat_chunker.dart';
 import 'package:app/core/services/search/hybrid_search_service.dart';
 import 'package:app/core/services/search/models/search_result.dart';
 import 'package:app/core/providers/vector_store_provider.dart';
 import 'package:app/core/providers/bm25_provider.dart';
 import 'package:app/core/providers/embedding_provider.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
+import 'package:app/features/journal/providers/journal_providers.dart';
+import 'package:app/features/chat/services/local_session_reader.dart';
+import 'package:app/core/providers/file_system_provider.dart';
 
 // Export for convenience
 export 'package:app/core/services/search/search_index_service.dart' show IndexingStatus;
@@ -28,6 +33,30 @@ final contentHasherProvider = Provider<ContentHasher>((ref) {
 final recordingChunkerProvider = Provider<RecordingChunker>((ref) {
   final embeddingService = ref.watch(embeddingServiceProvider);
   return RecordingChunker(embeddingService);
+});
+
+/// Provider for JournalChunker
+///
+/// Chunks journal entries into IndexedChunk objects with embeddings.
+final journalChunkerProvider = Provider<JournalChunker>((ref) {
+  final embeddingService = ref.watch(embeddingServiceProvider);
+  return JournalChunker(embeddingService);
+});
+
+/// Provider for ChatChunker
+///
+/// Chunks chat sessions into IndexedChunk objects with embeddings.
+final chatChunkerProvider = Provider<ChatChunker>((ref) {
+  final embeddingService = ref.watch(embeddingServiceProvider);
+  return ChatChunker(embeddingService);
+});
+
+/// Provider for LocalSessionReader
+///
+/// Reads chat sessions from local vault files.
+final localSessionReaderProvider = Provider<LocalSessionReader>((ref) {
+  final fileSystemService = ref.watch(fileSystemServiceProvider);
+  return LocalSessionReader(fileSystemService);
 });
 
 /// Provider for SearchIndexService
@@ -72,12 +101,35 @@ final searchIndexServiceProvider = Provider<SearchIndexService>((ref) {
     hasher,
   );
 
+  // Configure journal indexing
+  final journalChunker = ref.watch(journalChunkerProvider);
+  final sessionReader = ref.watch(localSessionReaderProvider);
+  final chatChunker = ref.watch(chatChunkerProvider);
+
+  // Chat support can be configured immediately (LocalSessionReader is sync)
+  service.configureChatIndexing(sessionReader, chatChunker);
+
   // Auto-dispose: clean up resources
   ref.onDispose(() async {
     await service.dispose();
   });
 
   return service;
+});
+
+/// Async provider for fully configured SearchIndexService
+///
+/// Use this when you need journal indexing support configured.
+/// This waits for JournalService to be ready before configuring.
+final configuredSearchIndexProvider = FutureProvider<SearchIndexService>((ref) async {
+  final searchIndex = ref.watch(searchIndexServiceProvider);
+
+  // Configure journal support once JournalService is ready
+  final journalService = await ref.watch(journalServiceFutureProvider.future);
+  final journalChunker = ref.watch(journalChunkerProvider);
+  searchIndex.configureJournalIndexing(journalService, journalChunker);
+
+  return searchIndex;
 });
 
 /// State provider for indexing status

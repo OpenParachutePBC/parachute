@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/file_system_provider.dart';
+import '../../../core/providers/search_providers.dart';
 import '../models/journal_day.dart';
 import '../models/journal_entry.dart';
 import '../services/para_id_service.dart';
@@ -71,10 +72,26 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
   final JournalService _journalService;
   final Ref _ref;
   DateTime _currentDate;
+  String? _journalFilePath;
 
   JournalNotifier(this._journalService, this._ref, this._currentDate)
       : super(const AsyncValue.loading()) {
     _loadJournal();
+  }
+
+  /// Index a journal entry in the search index (fire-and-forget)
+  void _indexEntry(JournalEntry entry) {
+    if (_journalFilePath == null) return;
+
+    // Fire and forget - don't await
+    final searchIndex = _ref.read(searchIndexServiceProvider);
+    searchIndex.indexJournalEntry(entry, _currentDate, _journalFilePath!);
+  }
+
+  /// Remove a journal entry from the search index (fire-and-forget)
+  void _removeEntryFromIndex(String entryId) {
+    final searchIndex = _ref.read(searchIndexServiceProvider);
+    searchIndex.removeJournalEntry(entryId, _currentDate);
   }
 
   DateTime get currentDate => _currentDate;
@@ -83,6 +100,7 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
     state = const AsyncValue.loading();
     try {
       final journal = await _journalService.loadDay(_currentDate);
+      _journalFilePath = journal.filePath;
       state = AsyncValue.data(journal);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
@@ -118,8 +136,12 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
       );
 
       // Update state immediately with the returned journal (no reload needed!)
+      _journalFilePath = result.journal.filePath;
       state = AsyncValue.data(result.journal);
       _triggerRefresh();
+
+      // Index the new entry (fire-and-forget)
+      _indexEntry(result.entry);
 
       return result.entry;
     } catch (e, st) {
@@ -145,8 +167,12 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
       );
 
       // Update state immediately with the returned journal
+      _journalFilePath = result.journal.filePath;
       state = AsyncValue.data(result.journal);
       _triggerRefresh();
+
+      // Index the new entry (fire-and-forget)
+      _indexEntry(result.entry);
 
       return result.entry;
     } catch (e, st) {
@@ -172,8 +198,12 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
       );
 
       // Update state immediately with the returned journal
+      _journalFilePath = result.journal.filePath;
       state = AsyncValue.data(result.journal);
       _triggerRefresh();
+
+      // Index the new entry (fire-and-forget)
+      _indexEntry(result.entry);
 
       return result.entry;
     } catch (e, st) {
@@ -189,6 +219,9 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
       await _journalService.updateEntry(_currentDate, entry);
       await _loadJournal();
       _triggerRefresh();
+
+      // Re-index the updated entry (fire-and-forget)
+      _indexEntry(entry);
     } catch (e, st) {
       debugPrint('[JournalNotifier] Error updating entry: $e');
       debugPrint('$st');
@@ -201,6 +234,9 @@ class JournalNotifier extends StateNotifier<AsyncValue<JournalDay>> {
       await _journalService.deleteEntry(_currentDate, entryId);
       await _loadJournal();
       _triggerRefresh();
+
+      // Remove from search index (fire-and-forget)
+      _removeEntryFromIndex(entryId);
     } catch (e, st) {
       debugPrint('[JournalNotifier] Error deleting entry: $e');
       debugPrint('$st');

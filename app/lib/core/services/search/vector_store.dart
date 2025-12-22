@@ -37,23 +37,29 @@ abstract class VectorStore {
   ///
   /// Stores metadata about what was indexed and when.
   /// The content hash is used to detect if re-indexing is needed.
+  /// [contentType] specifies the type of content (recording, journal, chat)
+  /// [sourcePath] is the relative path to the source file in the vault
   Future<void> updateManifest(
     String recordingId,
     String contentHash,
-    int chunkCount,
-  );
+    int chunkCount, {
+    ContentType contentType = ContentType.recording,
+    String? sourcePath,
+  });
 
   /// Search for similar chunks using cosine similarity
   ///
   /// [queryEmbedding] should be normalized for best results.
   /// [limit] controls how many results to return (default: 20).
   /// [minScore] filters out results below this similarity threshold (default: 0.0).
+  /// [filterContentType] optionally filters results to a specific content type.
   ///
   /// Returns results sorted by similarity score (highest first).
   Future<List<VectorSearchResult>> search(
     List<double> queryEmbedding, {
     int limit = 20,
     double minScore = 0.0,
+    ContentType? filterContentType,
   });
 
   /// Get all indexed recording IDs

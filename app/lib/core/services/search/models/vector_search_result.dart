@@ -1,12 +1,17 @@
+import 'package:app/core/services/search/models/indexed_chunk.dart';
+
 /// Result from a vector similarity search
 class VectorSearchResult {
   /// Unique ID of the chunk
   final int chunkId;
 
-  /// ID of the recording this chunk belongs to
+  /// ID of the content this chunk belongs to (recording, journal, chat)
   final String recordingId;
 
-  /// Field this chunk came from ('transcript', 'title', 'summary', 'context')
+  /// Type of content this result came from
+  final ContentType contentType;
+
+  /// Field this chunk came from ('transcript', 'title', 'summary', 'context', 'content')
   final String field;
 
   /// Index of this chunk within the field
@@ -23,6 +28,7 @@ class VectorSearchResult {
   VectorSearchResult({
     required this.chunkId,
     required this.recordingId,
+    this.contentType = ContentType.recording,
     required this.field,
     required this.chunkIndex,
     required this.chunkText,
@@ -33,6 +39,7 @@ class VectorSearchResult {
   VectorSearchResult copyWith({
     int? chunkId,
     String? recordingId,
+    ContentType? contentType,
     String? field,
     int? chunkIndex,
     String? chunkText,
@@ -41,6 +48,7 @@ class VectorSearchResult {
     return VectorSearchResult(
       chunkId: chunkId ?? this.chunkId,
       recordingId: recordingId ?? this.recordingId,
+      contentType: contentType ?? this.contentType,
       field: field ?? this.field,
       chunkIndex: chunkIndex ?? this.chunkIndex,
       chunkText: chunkText ?? this.chunkText,

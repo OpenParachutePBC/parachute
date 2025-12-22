@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
+import 'package:app/core/providers/file_system_provider.dart';
+import 'package:app/core/services/export_detection_service.dart';
 import 'package:app/features/context/providers/context_providers.dart';
 import 'package:app/features/context/widgets/vault_setup_dialog.dart';
 import 'package:app/features/context/widgets/prompt_chip.dart';
 import 'package:app/features/context/widgets/reflection_banner.dart';
+import '../models/chat_session.dart';
 import '../providers/chat_providers.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/chat_input.dart';
 import '../widgets/session_selector.dart';
 import '../widgets/connection_status_banner.dart';
+import '../widgets/resume_marker.dart';
 
 /// Main chat screen for AI conversations
 ///
@@ -202,14 +206,22 @@ If you have suggestions, show me the specific edits you'd recommend.''';
           // Messages list
           Expanded(
             child: chatState.messages.isEmpty
-                ? _buildEmptyState(context, isDark)
+                ? _buildEmptyStateOrContinuation(context, isDark, chatState)
                 : ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(Spacing.md),
-                    itemCount: chatState.messages.length,
+                    itemCount: chatState.messages.length + (chatState.isContinuation ? 1 : 0),
                     itemBuilder: (context, index) {
+                      // Show resume marker at the top if this is a continuation
+                      if (chatState.isContinuation && index == 0) {
+                        return ResumeMarker(
+                          originalSession: chatState.continuedFromSession!,
+                          priorMessages: chatState.priorMessages,
+                        );
+                      }
+                      final msgIndex = chatState.isContinuation ? index - 1 : index;
                       return MessageBubble(
-                        message: chatState.messages[index],
+                        message: chatState.messages[msgIndex],
                       );
                     },
                   ),
@@ -218,6 +230,10 @@ If you have suggestions, show me the specific edits you'd recommend.''';
           // Error banner
           if (chatState.error != null)
             _buildErrorBanner(context, isDark, chatState.error!),
+
+          // Continue button for imported sessions
+          if (chatState.isViewingImported)
+            _buildContinueButton(context, isDark, chatState),
 
           // Reflection suggestion banner
           if (_showReflectionBanner && !chatState.isStreaming)
@@ -292,8 +308,62 @@ If you have suggestions, show me the specific edits you'd recommend.''';
     );
   }
 
+  Widget _buildEmptyStateOrContinuation(
+    BuildContext context,
+    bool isDark,
+    ChatMessagesState chatState,
+  ) {
+    // If this is a continuation, show the resume marker with a prompt to continue
+    if (chatState.isContinuation) {
+      return ListView(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(Spacing.md),
+        children: [
+          ResumeMarker(
+            originalSession: chatState.continuedFromSession!,
+            priorMessages: chatState.priorMessages,
+          ),
+          const SizedBox(height: Spacing.xl),
+          Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.chat_outlined,
+                  size: 32,
+                  color: isDark ? BrandColors.nightForest : BrandColors.forest,
+                ),
+                const SizedBox(height: Spacing.md),
+                Text(
+                  'Continue the conversation',
+                  style: TextStyle(
+                    fontSize: TypographyTokens.titleMedium,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                  ),
+                ),
+                const SizedBox(height: Spacing.sm),
+                Text(
+                  'Send a message to pick up where you left off',
+                  style: TextStyle(
+                    fontSize: TypographyTokens.bodyMedium,
+                    color: isDark
+                        ? BrandColors.nightTextSecondary
+                        : BrandColors.driftwood,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _buildEmptyState(context, isDark);
+  }
+
   Widget _buildEmptyState(BuildContext context, bool isDark) {
     final promptsAsync = ref.watch(promptsProvider);
+    final exportsAsync = ref.watch(availableExportsProvider);
 
     return Center(
       child: Padding(
@@ -301,6 +371,14 @@ If you have suggestions, show me the specific edits you'd recommend.''';
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Show exports banner if exports are detected
+            exportsAsync.maybeWhen(
+              data: (exports) => exports.isNotEmpty
+                  ? _buildExportsBanner(context, isDark, exports)
+                  : const SizedBox.shrink(),
+              orElse: () => const SizedBox.shrink(),
+            ),
+
             Container(
               padding: const EdgeInsets.all(Spacing.xl),
               decoration: BoxDecoration(
@@ -428,6 +506,162 @@ If you have suggestions, show me the specific edits you'd recommend.''';
             ),
             constraints: const BoxConstraints(),
             padding: EdgeInsets.zero,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExportsBanner(
+    BuildContext context,
+    bool isDark,
+    List<DetectedExport> exports,
+  ) {
+    // Summarize what was found
+    final hasClaudeMemories = exports.any((e) =>
+        e.type == ExportType.claude && e.hasMemories);
+    final exportNames = exports
+        .map((e) => e.type == ExportType.claude
+            ? 'Claude'
+            : e.type == ExportType.chatgpt
+                ? 'ChatGPT'
+                : 'AI')
+        .toSet()
+        .join(' & ');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: Spacing.xl),
+      padding: const EdgeInsets.all(Spacing.md),
+      decoration: BoxDecoration(
+        color: isDark
+            ? BrandColors.nightTurquoise.withValues(alpha: 0.1)
+            : BrandColors.turquoiseMist,
+        borderRadius: Radii.card,
+        border: Border.all(
+          color: isDark
+              ? BrandColors.nightTurquoise.withValues(alpha: 0.3)
+              : BrandColors.turquoise.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.auto_awesome,
+                size: 20,
+                color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+              ),
+              const SizedBox(width: Spacing.sm),
+              Expanded(
+                child: Text(
+                  'Found your $exportNames export${exports.length > 1 ? 's' : ''}!',
+                  style: TextStyle(
+                    fontSize: TypographyTokens.bodyMedium,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Spacing.sm),
+          Text(
+            hasClaudeMemories
+                ? 'I can use your memories and chat history to personalize your vault. Ask me to help set things up!'
+                : 'I can help you import your conversations and set up your vault.',
+            style: TextStyle(
+              fontSize: TypographyTokens.bodySmall,
+              color: isDark
+                  ? BrandColors.nightTextSecondary
+                  : BrandColors.driftwood,
+            ),
+          ),
+          const SizedBox(height: Spacing.md),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _handleSend(
+                hasClaudeMemories
+                    ? 'Help me set up my vault using my Claude export. I have memories and conversations you can use to understand me better.'
+                    : 'Help me set up my vault and import my chat history.',
+              ),
+              icon: const Icon(Icons.rocket_launch_outlined, size: 16),
+              label: const Text('Set up my vault'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor:
+                    isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+                side: BorderSide(
+                  color: isDark
+                      ? BrandColors.nightTurquoise
+                      : BrandColors.turquoise,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContinueButton(
+    BuildContext context,
+    bool isDark,
+    ChatMessagesState chatState,
+  ) {
+    final session = chatState.viewingSession!;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Spacing.md,
+        vertical: Spacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: isDark
+            ? BrandColors.nightForest.withValues(alpha: 0.1)
+            : BrandColors.forestMist,
+        border: Border(
+          top: BorderSide(
+            color: isDark
+                ? BrandColors.nightForest.withValues(alpha: 0.2)
+                : BrandColors.forest.withValues(alpha: 0.2),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.history,
+            size: 16,
+            color: isDark ? BrandColors.nightForest : BrandColors.forest,
+          ),
+          const SizedBox(width: Spacing.sm),
+          Expanded(
+            child: Text(
+              'Imported from ${session.source.displayName}',
+              style: TextStyle(
+                fontSize: TypographyTokens.labelSmall,
+                color: isDark
+                    ? BrandColors.nightTextSecondary
+                    : BrandColors.driftwood,
+              ),
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              await ref.read(continueSessionProvider)(session);
+              // Stay on this screen - it will update with the continuation state
+            },
+            icon: const Icon(Icons.play_arrow, size: 16),
+            label: const Text('Continue'),
+            style: FilledButton.styleFrom(
+              backgroundColor:
+                  isDark ? BrandColors.nightForest : BrandColors.forest,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Spacing.md,
+                vertical: Spacing.sm,
+              ),
+            ),
           ),
         ],
       ),

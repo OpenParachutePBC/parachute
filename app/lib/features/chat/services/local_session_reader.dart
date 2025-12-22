@@ -18,6 +18,9 @@ class LocalSessionReader {
 
   LocalSessionReader(this._fileSystem);
 
+  /// Get the sessions folder name (for relative paths)
+  String get sessionsFolderName => _fileSystem.getSessionsFolderName();
+
   /// Get the path to the sessions folder
   Future<String?> get sessionsPath async {
     try {
@@ -104,6 +107,9 @@ class LocalSessionReader {
       updatedAt: _parseDateTime(metadata['last_accessed']),
       archived: metadata['archived'] == true,
       isLocal: true, // Mark as local session
+      source: ChatSourceExtension.fromString(metadata['source'] as String?),
+      continuedFrom: metadata['continued_from'] as String?,
+      originalId: metadata['original_id'] as String?,
     );
   }
 
@@ -210,6 +216,9 @@ class LocalSessionReader {
       updatedAt: _parseDateTime(metadata['last_accessed']),
       archived: metadata['archived'] == true,
       isLocal: true,
+      source: ChatSourceExtension.fromString(metadata['source'] as String?),
+      continuedFrom: metadata['continued_from'] as String?,
+      originalId: metadata['original_id'] as String?,
     );
 
     // Parse messages from markdown content

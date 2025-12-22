@@ -59,11 +59,20 @@ class SqliteVectorStore implements VectorStore {
   }
 
   /// Create database schema
+  ///
+  /// Schema supports multiple content types:
+  /// - 'recording': Voice recordings/captures
+  /// - 'journal': Daily journal entries (Daily/*.md)
+  /// - 'chat': Chat sessions (agent-sessions/*.md)
+  ///
+  /// The 'recording_id' field is used as a generic content ID for all types.
+  /// The 'content_type' field distinguishes between different content sources.
   void _createSchema() {
     _db!.execute('''
       CREATE TABLE IF NOT EXISTS chunks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         recording_id TEXT NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'recording',
         field TEXT NOT NULL,
         chunk_index INTEGER NOT NULL,
         chunk_text TEXT NOT NULL,
@@ -79,15 +88,57 @@ class SqliteVectorStore implements VectorStore {
     ''');
 
     _db!.execute('''
+      CREATE INDEX IF NOT EXISTS idx_chunks_content_type
+      ON chunks(content_type)
+    ''');
+
+    _db!.execute('''
       CREATE TABLE IF NOT EXISTS index_manifest (
         recording_id TEXT PRIMARY KEY,
+        content_type TEXT NOT NULL DEFAULT 'recording',
         content_hash TEXT NOT NULL,
         indexed_at TEXT NOT NULL,
-        chunk_count INTEGER NOT NULL
+        chunk_count INTEGER NOT NULL,
+        source_path TEXT
       )
     ''');
 
+    // Run migrations for existing databases
+    _runMigrations();
+
     debugPrint('[VectorStore] Schema created successfully');
+  }
+
+  /// Run schema migrations for existing databases
+  void _runMigrations() {
+    try {
+      // Check if content_type column exists in chunks table
+      final chunksInfo = _db!.select("PRAGMA table_info(chunks)");
+      final hasContentType = chunksInfo.any((row) => row['name'] == 'content_type');
+
+      if (!hasContentType) {
+        debugPrint('[VectorStore] Migrating: Adding content_type column to chunks');
+        _db!.execute("ALTER TABLE chunks ADD COLUMN content_type TEXT NOT NULL DEFAULT 'recording'");
+        _db!.execute("CREATE INDEX IF NOT EXISTS idx_chunks_content_type ON chunks(content_type)");
+      }
+
+      // Check if content_type and source_path columns exist in index_manifest
+      final manifestInfo = _db!.select("PRAGMA table_info(index_manifest)");
+      final manifestHasContentType = manifestInfo.any((row) => row['name'] == 'content_type');
+      final manifestHasSourcePath = manifestInfo.any((row) => row['name'] == 'source_path');
+
+      if (!manifestHasContentType) {
+        debugPrint('[VectorStore] Migrating: Adding content_type column to index_manifest');
+        _db!.execute("ALTER TABLE index_manifest ADD COLUMN content_type TEXT NOT NULL DEFAULT 'recording'");
+      }
+
+      if (!manifestHasSourcePath) {
+        debugPrint('[VectorStore] Migrating: Adding source_path column to index_manifest');
+        _db!.execute("ALTER TABLE index_manifest ADD COLUMN source_path TEXT");
+      }
+    } catch (e) {
+      debugPrint('[VectorStore] Migration error (may be expected on new DB): $e');
+    }
   }
 
   @override
@@ -113,8 +164,8 @@ class SqliteVectorStore implements VectorStore {
 
         // Insert new chunks
         final stmt = _db!.prepare('''
-          INSERT INTO chunks (recording_id, field, chunk_index, chunk_text, embedding, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO chunks (recording_id, content_type, field, chunk_index, chunk_text, embedding, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         ''');
 
         for (final chunk in chunks) {
@@ -124,6 +175,7 @@ class SqliteVectorStore implements VectorStore {
 
           stmt.execute([
             chunk.recordingId,
+            chunk.contentType.name,
             chunk.field,
             chunk.chunkIndex,
             chunk.chunkText,
@@ -227,23 +279,29 @@ class SqliteVectorStore implements VectorStore {
   Future<void> updateManifest(
     String recordingId,
     String contentHash,
-    int chunkCount,
-  ) async {
+    int chunkCount, {
+    ContentType contentType = ContentType.recording,
+    String? sourcePath,
+  }) async {
     if (!_isInitialized) await initialize();
 
     try {
       debugPrint(
-        '[VectorStore] Updating manifest for $recordingId: $chunkCount chunks, hash: $contentHash',
+        '[VectorStore] Updating manifest for $recordingId: $chunkCount chunks, '
+        'hash: $contentHash, type: ${contentType.name}',
       );
 
       _db!.execute('''
-        INSERT OR REPLACE INTO index_manifest (recording_id, content_hash, indexed_at, chunk_count)
-        VALUES (?, ?, ?, ?)
+        INSERT OR REPLACE INTO index_manifest
+        (recording_id, content_type, content_hash, indexed_at, chunk_count, source_path)
+        VALUES (?, ?, ?, ?, ?, ?)
       ''', [
         recordingId,
+        contentType.name,
         contentHash,
         DateTime.now().toIso8601String(),
         chunkCount,
+        sourcePath,
       ]);
 
       debugPrint('[VectorStore] Manifest updated');
@@ -259,6 +317,7 @@ class SqliteVectorStore implements VectorStore {
     List<double> queryEmbedding, {
     int limit = 20,
     double minScore = 0.0,
+    ContentType? filterContentType,
   }) async {
     if (!_isInitialized) await initialize();
 
@@ -268,11 +327,17 @@ class SqliteVectorStore implements VectorStore {
       // Normalize query embedding for cosine similarity
       final normalizedQuery = _normalizeVector(queryEmbedding);
 
-      // Load all chunks (for small datasets this is fine)
+      // Load chunks (optionally filtered by content type)
       // Future optimization: batch loading, early termination, approximate NN
-      final rows = _db!.select(
-        'SELECT id, recording_id, field, chunk_index, chunk_text, embedding FROM chunks',
-      );
+      String query = 'SELECT id, recording_id, content_type, field, chunk_index, chunk_text, embedding FROM chunks';
+      List<Object?> params = [];
+
+      if (filterContentType != null) {
+        query += ' WHERE content_type = ?';
+        params.add(filterContentType.name);
+      }
+
+      final rows = _db!.select(query, params);
 
       debugPrint('[VectorStore] Computing similarity for ${rows.length} chunks');
 
@@ -283,9 +348,17 @@ class SqliteVectorStore implements VectorStore {
         final score = _cosineSimilarity(normalizedQuery, embedding);
 
         if (score >= minScore) {
+          // Parse content type from string
+          final contentTypeStr = row['content_type'] as String? ?? 'recording';
+          final contentType = ContentType.values.firstWhere(
+            (t) => t.name == contentTypeStr,
+            orElse: () => ContentType.recording,
+          );
+
           results.add(VectorSearchResult(
             chunkId: row['id'] as int,
             recordingId: row['recording_id'] as String,
+            contentType: contentType,
             field: row['field'] as String,
             chunkIndex: row['chunk_index'] as int,
             chunkText: row['chunk_text'] as String,

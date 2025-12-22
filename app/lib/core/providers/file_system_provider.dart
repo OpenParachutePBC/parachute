@@ -1,7 +1,51 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/services/file_system_service.dart';
+import 'package:app/core/services/export_detection_service.dart';
+import 'package:app/core/services/vault_state_service.dart';
 
 /// Provider for the FileSystemService singleton
 final fileSystemServiceProvider = Provider<FileSystemService>((ref) {
   return FileSystemService();
+});
+
+/// Provider for the ExportDetectionService
+final exportDetectionServiceProvider = Provider<ExportDetectionService>((ref) {
+  final fileSystem = ref.watch(fileSystemServiceProvider);
+  return ExportDetectionService(fileSystem);
+});
+
+/// Provider that scans for available exports
+final availableExportsProvider = FutureProvider<List<DetectedExport>>((ref) async {
+  final service = ref.watch(exportDetectionServiceProvider);
+  return service.scanForExports();
+});
+
+/// Provider that checks if any exports are available
+final hasExportsProvider = FutureProvider<bool>((ref) async {
+  final exports = await ref.watch(availableExportsProvider.future);
+  return exports.isNotEmpty;
+});
+
+/// Provider for VaultStateService
+final vaultStateServiceProvider = Provider<VaultStateService>((ref) {
+  final fileSystem = ref.watch(fileSystemServiceProvider);
+  return VaultStateService(fileSystem);
+});
+
+/// Provider for current vault state
+final vaultStateProvider = FutureProvider<VaultState>((ref) async {
+  final service = ref.watch(vaultStateServiceProvider);
+  return service.loadState();
+});
+
+/// Provider to check if vault needs initial setup
+final vaultNeedsSetupProvider = FutureProvider<bool>((ref) async {
+  final state = await ref.watch(vaultStateProvider.future);
+  return state.needsSetup;
+});
+
+/// Provider to check if agent initialization is needed
+final vaultNeedsAgentInitProvider = FutureProvider<bool>((ref) async {
+  final state = await ref.watch(vaultStateProvider.future);
+  return state.needsAgentInit;
 });
