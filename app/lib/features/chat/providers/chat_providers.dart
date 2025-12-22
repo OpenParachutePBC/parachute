@@ -188,12 +188,19 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   final Ref _ref;
   static const _uuid = Uuid();
 
+  /// Track the session ID of the currently active stream
+  /// Used to prevent old streams from updating state after session switch
+  String? _activeStreamSessionId;
+
   ChatMessagesNotifier(this._service, this._ref) : super(const ChatMessagesState());
 
   /// Load messages for a session
   ///
   /// Tries the server first, falls back to local files for imported/local sessions.
+  /// Also cancels any active stream by invalidating the stream session ID.
   Future<void> loadSession(String sessionId, {bool isLocal = false}) async {
+    _activeStreamSessionId = null; // Cancel any active stream
+
     try {
       // Try server first unless we know it's local
       if (!isLocal) {
@@ -232,7 +239,10 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   }
 
   /// Clear current session (for new chat)
+  ///
+  /// Also cancels any active stream by invalidating the stream session ID.
   void clearSession() {
+    _activeStreamSessionId = null; // Cancel any active stream
     state = const ChatMessagesState();
   }
 
@@ -296,6 +306,9 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
       sessionId: sessionId,
     );
 
+    // Mark this session as the active stream
+    _activeStreamSessionId = sessionId;
+
     state = state.copyWith(
       messages: [...state.messages, userMessage, assistantMessage],
       isStreaming: true,
@@ -324,6 +337,12 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
         agentPath: agentPath,
         initialContext: effectiveContext,
       )) {
+        // Check if session has changed (user switched chats during stream)
+        if (_activeStreamSessionId != sessionId) {
+          debugPrint('[ChatMessagesNotifier] Stream cancelled - session changed from $sessionId');
+          break; // Exit the stream loop
+        }
+
         switch (event.type) {
           case StreamEventType.session:
             // Server may return a different session ID
