@@ -1280,11 +1280,11 @@ export class Orchestrator extends EventEmitter {
       tools: fullToolSet,
       // Load all MCP servers from .mcp.json by default
       mcpServers: 'all',
-      // Auto-load context files from contexts/ folder
-      // This mirrors Claude's approach of loading project/memory context
+      // Load general context by default (user can configure additional contexts)
+      // Other context files in contexts/ are available for the agent to read on-demand
       context: {
-        include: ['contexts/*.md'],
-        max_tokens: 50000
+        include: ['contexts/general-context.md'],
+        max_tokens: 10000
       },
       permissions: {
         read: ['*'],
@@ -1339,8 +1339,8 @@ export class Orchestrator extends EventEmitter {
       prompt = await this.buildDefaultVaultPrompt(context);
     }
 
-    // Load context files from contexts/ folder
-    // This mirrors Claude's approach of loading user context and project memories
+    // Load general context file by default
+    // Other context files (project-specific) are available for the agent to read on-demand
     const vaultAgent = this.createVaultAgent();
     if (vaultAgent.context && vaultAgent.context.include) {
       try {
