@@ -4,7 +4,6 @@ import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/core/services/export_detection_service.dart';
 import 'package:app/features/context/providers/context_providers.dart';
-import 'package:app/features/context/widgets/vault_setup_dialog.dart';
 import 'package:app/features/context/widgets/prompt_chip.dart';
 import 'package:app/features/context/widgets/reflection_banner.dart';
 import '../models/chat_session.dart';
@@ -52,7 +51,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   String? _pendingInitialContext;
   bool _hasAutoRun = false;
-  bool _hasCheckedVaultSetup = false;
   bool _showReflectionBanner = false;
   bool _reflectionBannerDismissed = false;
   int _lastMessageCount = 0;
@@ -62,28 +60,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.initState();
     _pendingInitialContext = widget.initialContext;
 
-    // Schedule vault setup check after first frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkVaultSetup();
-      // Schedule auto-run after first frame
-      if (widget.autoRun && widget.autoRunMessage != null) {
+    // Schedule auto-run after first frame
+    if (widget.autoRun && widget.autoRunMessage != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         _performAutoRun();
-      }
-    });
-  }
-
-  Future<void> _checkVaultSetup() async {
-    if (_hasCheckedVaultSetup) return;
-    _hasCheckedVaultSetup = true;
-
-    final needsSetup = await ref.read(vaultNeedsSetupProvider.future);
-    if (needsSetup && mounted) {
-      final created = await VaultSetupDialog.show(context);
-      if (created && mounted) {
-        // Optionally start with "Get to know me" prompt
-        // For now, just refresh the providers
-        ref.invalidate(promptsProvider);
-      }
+      });
     }
   }
 

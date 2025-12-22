@@ -37,6 +37,8 @@ class LocalSessionReader {
   }
 
   /// List all local session files
+  ///
+  /// Scans recursively to include imported sessions in subdirectories.
   Future<List<ChatSession>> getLocalSessions() async {
     try {
       final path = await sessionsPath;
@@ -49,7 +51,8 @@ class LocalSessionReader {
       final dir = Directory(path);
       final sessions = <ChatSession>[];
 
-      await for (final entity in dir.list()) {
+      // Scan recursively to include imported/ subdirectory
+      await for (final entity in dir.list(recursive: true)) {
         if (entity is File && entity.path.endsWith('.md')) {
           try {
             final session = await _parseSessionFile(entity);
@@ -173,13 +176,16 @@ class LocalSessionReader {
   }
 
   /// Get a specific session with its messages
+  ///
+  /// Searches recursively to find imported sessions in subdirectories.
   Future<ChatSessionWithLocalMessages?> getSession(String sessionId) async {
     try {
       final path = await sessionsPath;
       if (path == null) return null;
 
       final dir = Directory(path);
-      await for (final entity in dir.list()) {
+      // Search recursively to include imported/ subdirectory
+      await for (final entity in dir.list(recursive: true)) {
         if (entity is File && entity.path.endsWith('.md')) {
           final content = await entity.readAsString();
           if (content.contains('session_id: $sessionId') ||

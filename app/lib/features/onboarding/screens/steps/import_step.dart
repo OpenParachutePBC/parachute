@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/core/services/conversation_import_service.dart';
+import 'package:app/features/context/providers/context_providers.dart';
 
 /// Import step for onboarding - guides users through importing Claude history
 ///
@@ -51,6 +52,34 @@ class _ImportStepState extends ConsumerState<ImportStep> {
   int _importedConversations = 0;
   int _importedContexts = 0;
   String? _error;
+
+  /// Ensure AGENTS.md exists before moving to next step
+  Future<void> _ensureAgentsMdAndContinue() async {
+    try {
+      final needsSetup = await ref.read(vaultNeedsSetupProvider.future);
+      if (needsSetup) {
+        // Create default AGENTS.md and prompts.yaml
+        await ref.read(initializeVaultContextProvider)();
+      }
+    } catch (e) {
+      // Don't block progression if this fails
+      debugPrint('[ImportStep] Error creating AGENTS.md: $e');
+    }
+    widget.onNext();
+  }
+
+  /// Skip import but still ensure AGENTS.md exists
+  Future<void> _skipAndContinue() async {
+    try {
+      final needsSetup = await ref.read(vaultNeedsSetupProvider.future);
+      if (needsSetup) {
+        await ref.read(initializeVaultContextProvider)();
+      }
+    } catch (e) {
+      debugPrint('[ImportStep] Error creating AGENTS.md on skip: $e');
+    }
+    widget.onSkip();
+  }
 
   void _selectSource(_ImportSource source) {
     setState(() {
@@ -892,13 +921,13 @@ $memory
           const Spacer(),
           if (_phase == _ImportPhase.selectSource || _phase == _ImportPhase.instructions)
             TextButton(
-              onPressed: widget.onSkip,
+              onPressed: _skipAndContinue,
               child: const Text('Skip'),
             ),
           SizedBox(width: Spacing.md),
           if (_phase == _ImportPhase.complete)
             FilledButton(
-              onPressed: widget.onNext,
+              onPressed: _ensureAgentsMdAndContinue,
               child: const Text('Continue'),
             ),
         ],
