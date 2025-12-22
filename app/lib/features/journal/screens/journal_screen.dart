@@ -591,7 +591,21 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
     }
 
     if (journal.isEmpty) {
-      return _buildEmptyState(context, isToday);
+      // Wrap empty state in RefreshIndicator with scrollable child
+      // so pull-to-refresh works even when there are no entries
+      return RefreshIndicator(
+        onRefresh: _refreshJournal,
+        color: BrandColors.forest,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: _buildEmptyState(context, isToday),
+            ),
+          ),
+        ),
+      );
     }
 
     return RefreshIndicator(

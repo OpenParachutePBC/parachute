@@ -209,6 +209,12 @@ class _AgentHubScreenState extends ConsumerState<AgentHubScreen> {
     );
   }
 
+  Future<void> _refreshSessions() async {
+    ref.invalidate(chatSessionsProvider);
+    // Wait for the provider to refresh
+    await ref.read(chatSessionsProvider.future);
+  }
+
   Widget _buildSessionsList(
     BuildContext context,
     List<ChatSession> sessions,
@@ -229,22 +235,38 @@ class _AgentHubScreenState extends ConsumerState<AgentHubScreen> {
     }
 
     if (filteredSessions.isEmpty) {
-      if (_currentFilter == ChatFilter.imported) {
-        return _buildEmptyImportedState(isDark);
-      }
-      return _buildEmptyState(context, isDark);
+      // Wrap empty states in RefreshIndicator so pull-to-refresh works
+      return RefreshIndicator(
+        onRefresh: _refreshSessions,
+        color: BrandColors.forest,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: _currentFilter == ChatFilter.imported
+                  ? _buildEmptyImportedState(isDark)
+                  : _buildEmptyState(context, isDark),
+            ),
+          ),
+        ),
+      );
     }
 
     // Group sessions by date
     final grouped = _groupSessionsByDate(filteredSessions);
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(Spacing.md),
-      itemCount: grouped.length,
-      itemBuilder: (context, index) {
-        final group = grouped[index];
-        return _buildDateGroup(context, group, isDark);
-      },
+    return RefreshIndicator(
+      onRefresh: _refreshSessions,
+      color: BrandColors.forest,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(Spacing.md),
+        itemCount: grouped.length,
+        itemBuilder: (context, index) {
+          final group = grouped[index];
+          return _buildDateGroup(context, group, isDark);
+        },
+      ),
     );
   }
 
