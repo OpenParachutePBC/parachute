@@ -301,13 +301,14 @@ class ConversationImportService {
 
     final buffer = StringBuffer();
 
-    // YAML frontmatter
+    // YAML frontmatter - use session_id for compatibility with LocalSessionReader
     buffer.writeln('---');
     buffer.writeln('title: ${_escapeYaml(title)}');
+    buffer.writeln('session_id: $uuid');
     buffer.writeln('source: claude');
-    buffer.writeln('uuid: $uuid');
-    if (createdAt != null) buffer.writeln('created: $createdAt');
-    if (updatedAt != null) buffer.writeln('updated: $updatedAt');
+    buffer.writeln('original_id: $uuid');
+    if (createdAt != null) buffer.writeln('created_at: $createdAt');
+    if (updatedAt != null) buffer.writeln('last_accessed: $updatedAt');
     buffer.writeln('imported: ${DateTime.now().toUtc().toIso8601String()}');
     buffer.writeln('archived: false');
     buffer.writeln('---');
@@ -319,23 +320,19 @@ class ConversationImportService {
       buffer.writeln();
     }
 
-    // Messages
+    // Messages - use format: ### Human | timestamp
     for (final msg in messages) {
       final sender = msg['sender'] as String? ?? 'unknown';
       final text = msg['text'] as String? ?? '';
       final msgCreatedAt = msg['created_at'] as String?;
       final attachments = msg['attachments'] as List<dynamic>? ?? [];
 
-      // Format sender header
+      // Format sender header with timestamp
       final senderDisplay = sender == 'human' ? 'Human' : 'Assistant';
-      buffer.writeln('### $senderDisplay');
-
-      // Timestamp as subtle text
       if (msgCreatedAt != null) {
-        final timestamp = DateTime.tryParse(msgCreatedAt);
-        if (timestamp != null) {
-          buffer.writeln('_${_formatTimestamp(timestamp)}_');
-        }
+        buffer.writeln('### $senderDisplay | $msgCreatedAt');
+      } else {
+        buffer.writeln('### $senderDisplay | ${DateTime.now().toUtc().toIso8601String()}');
       }
       buffer.writeln();
 
@@ -587,36 +584,34 @@ class ConversationImportService {
 
     final buffer = StringBuffer();
 
-    // YAML frontmatter
+    // YAML frontmatter - use session_id for compatibility with LocalSessionReader
     buffer.writeln('---');
     buffer.writeln('title: ${_escapeYaml(title)}');
+    buffer.writeln('session_id: $id');
     buffer.writeln('source: chatgpt');
-    buffer.writeln('uuid: $id');
+    buffer.writeln('original_id: $id');
     if (createTime != null) {
       final created = DateTime.fromMillisecondsSinceEpoch((createTime * 1000).toInt());
-      buffer.writeln('created: ${created.toUtc().toIso8601String()}');
+      buffer.writeln('created_at: ${created.toUtc().toIso8601String()}');
     }
     if (updateTime != null) {
       final updated = DateTime.fromMillisecondsSinceEpoch((updateTime * 1000).toInt());
-      buffer.writeln('updated: ${updated.toUtc().toIso8601String()}');
+      buffer.writeln('last_accessed: ${updated.toUtc().toIso8601String()}');
     }
     buffer.writeln('imported: ${DateTime.now().toUtc().toIso8601String()}');
     buffer.writeln('archived: $isArchived');
     buffer.writeln('---');
     buffer.writeln();
 
-    // Messages
+    // Messages - use format: ### Human | timestamp
     for (final msg in messages) {
       final role = msg['role'] as String;
       final text = msg['text'] as String;
       final timestamp = msg['timestamp'] as DateTime?;
 
       final senderDisplay = role == 'user' ? 'Human' : 'Assistant';
-      buffer.writeln('### $senderDisplay');
-
-      if (timestamp != null) {
-        buffer.writeln('_${_formatTimestamp(timestamp)}_');
-      }
+      final timestampStr = timestamp?.toUtc().toIso8601String() ?? DateTime.now().toUtc().toIso8601String();
+      buffer.writeln('### $senderDisplay | $timestampStr');
       buffer.writeln();
       buffer.writeln(text);
       buffer.writeln();

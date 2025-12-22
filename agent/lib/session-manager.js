@@ -176,7 +176,7 @@ export class SessionManager {
         sdkSessionId: this.validateSdkSessionId(matter.data.sdk_session_id),
         workingDirectory: matter.data.working_directory || null,
         // Don't load messages - that's the heavy part
-        messageCount: (content.match(/### (User|Assistant|System) \|/g) || []).length
+        messageCount: (content.match(/### (Human|User|Assistant|System) \|/g) || []).length
       });
     } catch (e) {
       console.error(`[SessionManager] Error indexing ${filePath}:`, e.message);
@@ -297,16 +297,18 @@ export class SessionManager {
 
   /**
    * Parse messages from markdown body
-   * Supports both formats:
-   * - New: ### para:abc123def456 User | 2025-12-20T10:30:00Z
-   * - Legacy: ### User | 10:30 AM
+   * Supports formats:
+   * - New: ### para:abc123def456 Human | 2025-12-20T10:30:00Z
+   * - Legacy: ### User | 10:30 AM (User is treated as Human)
+   * - Import: ### Human | 2025-12-20T10:30:00Z
    */
   parseMessages(body) {
     const messages = [];
-    // Match both formats:
+    // Match formats:
     // - ### para:xxxxxxxxxxxx Role | timestamp
     // - ### Role | timestamp
-    const regex = /### (para:[a-z0-9]+\s+)?(User|Assistant|System) \| (\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\n\n([\s\S]*?)(?=\n### |\n---|\n## |$)/g;
+    // Accept both "Human" and "User" as user role (Human is preferred)
+    const regex = /### (para:[a-z0-9]+\s+)?(Human|User|Assistant|System) \| (\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\n\n([\s\S]*?)(?=\n### |\n---|\n## |$)/g;
 
     let match;
     while ((match = regex.exec(body)) !== null) {
@@ -314,8 +316,12 @@ export class SessionManager {
       const headerLine = `### ${match[1] || ''}${match[2]} | ${match[3]}`;
       const paraId = ParaIdService.parseFromH3(headerLine);
 
+      // Normalize role: both "Human" and "User" map to "user"
+      const roleStr = match[2];
+      const role = (roleStr === 'Human' || roleStr === 'User') ? 'user' : roleStr.toLowerCase();
+
       messages.push({
-        role: match[2].toLowerCase(),
+        role,
         timestamp: match[3],
         content: match[4].trim(),
         paraId: paraId || null
@@ -651,7 +657,8 @@ ${contextYaml}
     md += `## Conversation\n\n`;
 
     for (const msg of session.messages) {
-      const role = msg.role.charAt(0).toUpperCase() + msg.role.slice(1);
+      // Use "Human" for user messages, "Assistant" for assistant
+      const role = msg.role === 'user' ? 'Human' : 'Assistant';
       const timestamp = msg.timestamp || new Date().toISOString();
 
       // Use para ID if available, otherwise legacy format

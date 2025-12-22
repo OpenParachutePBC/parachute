@@ -232,22 +232,26 @@ class LocalSessionReader {
   }
 
   /// Parse messages from markdown format
-  /// Supports both formats:
-  /// - New: ### para:abc123def456 User | 2025-12-20T10:30:00Z
-  /// - Legacy: ### User | 10:30 AM
+  /// Supports formats:
+  /// - New: ### para:abc123def456 Human | 2025-12-20T10:30:00Z
+  /// - Legacy: ### User | 10:30 AM (User is treated as Human)
+  /// - Import: ### Human | 2025-12-20T10:30:00Z
   List<ChatMessage> _parseMessages(String content, String sessionId) {
     final messages = <ChatMessage>[];
 
-    // Match both formats:
+    // Match formats:
     // - ### para:xxxxxxxxxxxx Role | timestamp
     // - ### Role | timestamp
-    final regex = RegExp(r'### (para:[a-z0-9]+\s+)?(User|Assistant) \| ([^\n]+)\n');
+    // Accept both "Human" and "User" as user role (Human is preferred)
+    final regex = RegExp(r'### (para:[a-z0-9]+\s+)?(Human|User|Assistant) \| ([^\n]+)\n');
     final matches = regex.allMatches(content).toList();
 
     for (var i = 0; i < matches.length; i++) {
       final match = matches[i];
       final headerLine = content.substring(match.start, match.end - 1); // Remove trailing \n
-      final role = match.group(2)!.toLowerCase();
+      final roleStr = match.group(2)!;
+      // Normalize: both "Human" and "User" map to user role
+      final role = (roleStr == 'Human' || roleStr == 'User') ? 'user' : 'assistant';
       final timestampStr = match.group(3)!;
 
       // Extract para ID using ParaIdService

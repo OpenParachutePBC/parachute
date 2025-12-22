@@ -133,10 +133,10 @@ describe('SessionManager', () => {
   });
 
   describe('parseMessages', () => {
-    test('parses timestamps with milliseconds', () => {
+    test('parses Human messages with timestamps', () => {
       const body = `## Conversation
 
-### User | 2025-12-07T04:39:47.485Z
+### Human | 2025-12-07T04:39:47.485Z
 
 Hello world!
 
@@ -155,7 +155,7 @@ Hi there!
     test('parses timestamps without milliseconds', () => {
       const body = `## Conversation
 
-### User | 2025-12-07T04:39:47Z
+### Human | 2025-12-07T04:39:47Z
 
 Hello!
 
@@ -163,6 +163,20 @@ Hello!
       const messages = sessionManager.parseMessages(body);
       assert.strictEqual(messages.length, 1);
       assert.strictEqual(messages[0].content, 'Hello!');
+    });
+
+    test('parses legacy User format for backward compatibility', () => {
+      const body = `## Conversation
+
+### User | 2025-12-07T04:39:47Z
+
+Legacy message!
+
+`;
+      const messages = sessionManager.parseMessages(body);
+      assert.strictEqual(messages.length, 1);
+      assert.strictEqual(messages[0].role, 'user');
+      assert.strictEqual(messages[0].content, 'Legacy message!');
     });
   });
 
