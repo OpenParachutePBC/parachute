@@ -380,8 +380,13 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             // Refresh sessions list to get updated title
             _ref.invalidate(chatSessionsProvider);
             // Index the chat session for search (fire-and-forget)
-            final indexSessionId = actualSessionId ?? state.sessionId ?? sessionId;
-            _ref.read(searchIndexServiceProvider).indexChatSessionById(indexSessionId);
+            // Wrapped in try-catch since vectorStore may not be ready yet
+            try {
+              final indexSessionId = actualSessionId ?? state.sessionId ?? sessionId;
+              _ref.read(searchIndexServiceProvider).indexChatSessionById(indexSessionId);
+            } catch (e) {
+              debugPrint('[ChatMessagesNotifier] Search indexing skipped: $e');
+            }
             break;
 
           case StreamEventType.error:
@@ -484,12 +489,22 @@ final switchSessionProvider = Provider<Future<void> Function(String, {bool isLoc
 /// passing all prior messages as context for the AI.
 final continueSessionProvider = Provider<Future<void> Function(ChatSession)>((ref) {
   final service = ref.watch(chatServiceProvider);
+  final localReader = ref.watch(localSessionReaderProvider);
 
   return (ChatSession originalSession) async {
     try {
-      // Load messages from the original session
-      final sessionData = await service.getSession(originalSession.id);
-      final priorMessages = sessionData?.messages ?? [];
+      List<ChatMessage> priorMessages = [];
+
+      // For local/imported sessions, use local reader
+      // For server sessions, try the server API
+      if (originalSession.isLocal || originalSession.isImported) {
+        final localSession = await localReader.getSession(originalSession.id);
+        priorMessages = localSession?.messages ?? [];
+        debugPrint('[ChatProviders] Loaded ${priorMessages.length} messages from local session');
+      } else {
+        final sessionData = await service.getSession(originalSession.id);
+        priorMessages = sessionData?.messages ?? [];
+      }
 
       // Clear current session and set up continuation
       ref.read(currentSessionIdProvider.notifier).state = null;

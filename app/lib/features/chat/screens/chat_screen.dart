@@ -629,10 +629,7 @@ If you have suggestions, show me the specific edits you'd recommend.''';
             ),
           ),
           FilledButton.icon(
-            onPressed: () async {
-              await ref.read(continueSessionProvider)(session);
-              // Stay on this screen - it will update with the continuation state
-            },
+            onPressed: () => _showContinueConfirmation(context, session, isDark),
             icon: const Icon(Icons.play_arrow, size: 16),
             label: const Text('Continue'),
             style: FilledButton.styleFrom(
@@ -679,6 +676,91 @@ If you have suggestions, show me the specific edits you'd recommend.''';
         ],
       ),
     );
+  }
+
+  Future<void> _showContinueConfirmation(
+    BuildContext context,
+    ChatSession session,
+    bool isDark,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? BrandColors.nightSurfaceElevated : BrandColors.softWhite,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.xl)),
+        title: Text(
+          'Continue conversation?',
+          style: TextStyle(
+            color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This will start a new conversation with the prior messages as context.',
+              style: TextStyle(
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                height: TypographyTokens.lineHeightRelaxed,
+              ),
+            ),
+            const SizedBox(height: Spacing.md),
+            Container(
+              padding: const EdgeInsets.all(Spacing.sm),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? BrandColors.nightSurface
+                    : BrandColors.stone.withValues(alpha: 0.3),
+                borderRadius: Radii.badge,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+                  ),
+                  const SizedBox(width: Spacing.sm),
+                  Expanded(
+                    child: Text(
+                      'Attachments, images, and some context may not carry over perfectly.',
+                      style: TextStyle(
+                        fontSize: TypographyTokens.labelSmall,
+                        color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+              ),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: isDark ? BrandColors.nightForest : BrandColors.forest,
+            ),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await ref.read(continueSessionProvider)(session);
+    }
   }
 }
 
