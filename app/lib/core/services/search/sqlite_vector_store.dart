@@ -413,6 +413,15 @@ class SqliteVectorStore implements VectorStore {
       );
       final totalRecordings = recordingsResult.first['count'] as int;
 
+      // Count chunks by content type
+      final chunksByTypeResult = _db!.select(
+        'SELECT content_type, COUNT(*) as count FROM chunks GROUP BY content_type',
+      );
+      final chunksByType = <String, int>{};
+      for (final row in chunksByTypeResult) {
+        chunksByType[row['content_type'] as String] = row['count'] as int;
+      }
+
       // Estimate total size (approximate)
       final dbFile = File(_dbPath);
       final totalSize = await dbFile.exists() ? await dbFile.length() : 0;
@@ -420,6 +429,7 @@ class SqliteVectorStore implements VectorStore {
       return {
         'totalChunks': totalChunks,
         'totalRecordings': totalRecordings,
+        'chunksByType': chunksByType,
         'totalSize': totalSize,
       };
     } catch (e) {
@@ -427,6 +437,7 @@ class SqliteVectorStore implements VectorStore {
       return {
         'totalChunks': 0,
         'totalRecordings': 0,
+        'chunksByType': <String, int>{},
         'totalSize': 0,
       };
     }

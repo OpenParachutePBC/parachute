@@ -14,12 +14,16 @@ import 'core/services/logging_service.dart';
 import 'core/services/file_system_service.dart';
 import 'core/services/asset_migration_service.dart';
 import 'core/providers/feature_flags_provider.dart';
+import 'core/providers/search_providers.dart';
+import 'core/providers/vector_store_provider.dart';
+import 'core/config/app_config.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 import 'features/chat/screens/agent_hub_screen.dart';
 import 'features/files/screens/files_screen.dart';
 import 'features/journal/screens/journal_screen.dart';
+import 'features/search/screens/search_screen.dart';
 import 'services/sherpa_onnx_service.dart';
 
 void main() async {
@@ -159,6 +163,35 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     _setupTranscriptionCallbacks();
     _preInitializeTranscription();
     _runAssetMigration();
+    _startSearchIndexSync();
+  }
+
+  /// Trigger background sync of search indexes for journals and chats
+  void _startSearchIndexSync() {
+    if (!AppConfig.enableSearchIndexing) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        // Wait for vectorStore to be ready before syncing
+        debugPrint('[Main] Waiting for vector store to initialize...');
+        await ref.read(vectorStorePathProvider.future);
+
+        // Use configuredSearchIndexProvider which sets up journal support
+        debugPrint('[Main] Configuring search index with journal support...');
+        final searchIndex = await ref.read(configuredSearchIndexProvider.future);
+
+        debugPrint('[Main] Starting background search index sync...');
+
+        // Sync journals and chats (not recordings - we use journals now)
+        await searchIndex.syncJournals();
+        await searchIndex.syncChats();
+
+        debugPrint('[Main] ✅ Search index sync complete');
+      } catch (e, st) {
+        debugPrint('[Main] Search index sync error (non-fatal): $e');
+        debugPrint('[Main] Stack trace: $st');
+      }
+    });
   }
 
   /// Run asset migration if needed (moves audio files to unified assets/ folder)
@@ -288,6 +321,24 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             color: isDark ? BrandColors.nightForest : BrandColors.forest,
           ),
           label: 'Chat',
+        ),
+      );
+    }
+
+    // Add Search tab if search indexing is enabled
+    if (AppConfig.enableSearchIndexing) {
+      screens.add(const SearchScreen());
+      destinations.add(
+        NavigationDestination(
+          icon: Icon(
+            Icons.search_outlined,
+            color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+          ),
+          selectedIcon: Icon(
+            Icons.search,
+            color: isDark ? BrandColors.nightForest : BrandColors.forest,
+          ),
+          label: 'Search',
         ),
       );
     }

@@ -361,7 +361,7 @@ class _VaultPickerStepState extends ConsumerState<VaultPickerStep> {
 
             // Info text
             Text(
-              'Parachute creates a "captures" subfolder in your vault for recordings',
+              'Parachute stores journals, chats, and audio in your vault',
               style: TextStyle(
                 fontSize: TypographyTokens.bodySmall,
                 color: isDark

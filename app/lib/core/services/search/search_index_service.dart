@@ -484,8 +484,12 @@ class SearchIndexService {
       _indexedCount = 0;
       _notifyListeners();
 
-      for (final journal in toIndex) {
+      for (var i = 0; i < toIndex.length; i++) {
+        final journal = toIndex[i];
         try {
+          debugPrint(
+            '[SearchIndex] Indexing journal ${i + 1}/${toIndex.length}: ${journal.dateString}',
+          );
           await _indexJournalDay(journal);
           _indexedCount++;
           _notifyListeners();
@@ -743,8 +747,12 @@ class SearchIndexService {
       _indexedCount = 0;
       _notifyListeners();
 
-      for (final sessionData in toIndex) {
+      for (var i = 0; i < toIndex.length; i++) {
+        final sessionData = toIndex[i];
         try {
+          debugPrint(
+            '[SearchIndex] Indexing chat ${i + 1}/${toIndex.length}: ${sessionData.session.title ?? sessionData.session.id}',
+          );
           await _indexChatSession(sessionData);
           _indexedCount++;
           _notifyListeners();

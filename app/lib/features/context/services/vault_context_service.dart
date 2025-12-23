@@ -220,8 +220,11 @@ You are a **thinking partner and memory extension**, not primarily a coding assi
 This vault contains:
 
 ```
-journals/           # Daily journal entries with voice transcripts
+Daily/              # Daily journal entries with voice transcripts
   YYYY-MM-DD.md     # One file per day, includes recordings and reflections
+
+assets/             # Audio files organized by month
+  YYYY-MM/          # Monthly subfolders for recordings
 
 agent-sessions/     # Chat conversation history
   {session-id}.md   # Searchable record of past conversations
@@ -230,11 +233,8 @@ contexts/           # User context (imported from Claude, etc.)
   general-context.md  # Core context about the user (auto-loaded)
   {project}.md        # Project-specific context (loaded on request)
 
-captures/           # Voice recordings and documents
-  {timestamp}.md    # Captured thoughts, transcripts, uploads
-
-agents/             # Custom agent definitions (optional)
-  {agent-name}.md   # Specialized agents for specific tasks
+.parachute/         # App data (search index, etc.)
+  search.db         # Vector search index
 ```
 
 ## Your Context
