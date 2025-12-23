@@ -185,13 +185,20 @@ class MobileEmbeddingService implements EmbeddingService {
       final fullEmbeddings = await _model!.generateEmbeddings(texts);
 
       // Truncate each to 256 dimensions (Matryoshka)
-      final truncatedEmbeddings = fullEmbeddings.map((embedding) {
-        return EmbeddingDimensionHelper.truncate(
-          embedding,
+      // Note: flutter_gemma returns List<Object?> from platform channel,
+      // so we need to explicitly convert each value to double using List<double>.from()
+      final List<List<double>> truncatedEmbeddings = [];
+      for (final embedding in fullEmbeddings) {
+        final List<double> typedEmbedding = List<double>.from(
+          embedding.map((e) => (e as num).toDouble()),
+        );
+        final truncated = EmbeddingDimensionHelper.truncate(
+          typedEmbedding,
           _targetDimensions,
           renormalize: true,
         );
-      }).toList();
+        truncatedEmbeddings.add(truncated);
+      }
 
       debugPrint(
         '[MobileEmbedding] ✅ Generated ${truncatedEmbeddings.length} embeddings (${_targetDimensions}d each)',

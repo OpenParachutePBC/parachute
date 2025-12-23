@@ -113,10 +113,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         // Trigger search index sync now that embedding is ready
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Embedding model ready! Indexing will start...'),
+            content: Text('Embedding model ready! Starting indexing...'),
             duration: Duration(seconds: 3),
           ),
         );
+
+        // Actually trigger the indexing
+        _triggerSearchIndexSync();
       }
     } catch (e) {
       if (mounted) {
@@ -125,6 +128,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           _embeddingError = e.toString();
         });
       }
+    }
+  }
+
+  /// Trigger search index sync after embedding model is downloaded
+  Future<void> _triggerSearchIndexSync() async {
+    try {
+      debugPrint('[SearchScreen] Triggering search index sync after model download...');
+
+      // Get the configured search index (with journal support)
+      final searchIndex = await ref.read(configuredSearchIndexProvider.future);
+
+      // Run indexing in background
+      debugPrint('[SearchScreen] Starting journal sync...');
+      await searchIndex.syncJournals();
+
+      debugPrint('[SearchScreen] Starting chat sync...');
+      await searchIndex.syncChats();
+
+      debugPrint('[SearchScreen] ✅ Search index sync complete');
+
+      // Refresh stats
+      if (mounted) {
+        _loadStats();
+      }
+    } catch (e) {
+      debugPrint('[SearchScreen] Error during index sync: $e');
     }
   }
 
