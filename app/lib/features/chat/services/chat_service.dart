@@ -6,6 +6,7 @@ import '../models/chat_session.dart';
 import '../models/chat_message.dart';
 import '../models/agent.dart';
 import '../models/stream_event.dart';
+import '../models/context_file.dart';
 
 /// Service for communicating with the parachute-agent backend
 class ChatService {
@@ -175,21 +176,64 @@ class ChatService {
   }
 
   // ============================================================
+  // Contexts
+  // ============================================================
+
+  /// Get all available context files from the vault
+  Future<List<ContextFile>> getContexts() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$baseUrl/api/contexts'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to get contexts: ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final contextsList = data['contexts'] as List<dynamic>? ?? [];
+      return contextsList
+          .map((json) => ContextFile.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[ChatService] Error getting contexts: $e');
+      rethrow;
+    }
+  }
+
+  // ============================================================
   // Streaming Chat
   // ============================================================
 
   /// Send a message and receive streaming response
   /// Returns a stream of events as they arrive
+  ///
+  /// [contexts] - List of context file paths to load (e.g., ['contexts/general-context.md'])
+  /// If not provided, the server will load general-context.md by default
+  ///
+  /// [priorConversation] - For continued conversations, formatted prior messages
+  /// that go into the system prompt (not shown in user message)
+  ///
+  /// [continuedFrom] - ID of the session this continues from (for persistence)
   Stream<StreamEvent> streamChat({
     required String sessionId,
     required String message,
     String? agentPath,
     String? initialContext,
+    List<String>? contexts,
+    String? priorConversation,
+    String? continuedFrom,
   }) async* {
     debugPrint('[ChatService] Starting stream chat');
     debugPrint('[ChatService] Session: $sessionId');
     debugPrint('[ChatService] Agent: $agentPath');
     debugPrint('[ChatService] Message: ${message.substring(0, message.length.clamp(0, 50))}...');
+    debugPrint('[ChatService] priorConversation provided: ${priorConversation != null}');
+    if (priorConversation != null) {
+      debugPrint('[ChatService] priorConversation length: ${priorConversation.length}');
+      debugPrint('[ChatService] priorConversation preview: ${priorConversation.substring(0, priorConversation.length.clamp(0, 200))}...');
+    }
 
     final request = http.Request(
       'POST',
@@ -197,12 +241,17 @@ class ChatService {
     );
 
     request.headers['Content-Type'] = 'application/json';
-    request.body = jsonEncode({
+    final requestBody = {
       'message': message,
       'agentPath': agentPath,
       'sessionId': sessionId,
       if (initialContext != null) 'initialContext': initialContext,
-    });
+      if (contexts != null && contexts.isNotEmpty) 'contexts': contexts,
+      if (priorConversation != null) 'priorConversation': priorConversation,
+      if (continuedFrom != null) 'continuedFrom': continuedFrom,
+    };
+    debugPrint('[ChatService] Request body keys: ${requestBody.keys.toList()}');
+    request.body = jsonEncode(requestBody);
 
     try {
       final streamedResponse = await _client.send(request);

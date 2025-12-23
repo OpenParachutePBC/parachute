@@ -265,7 +265,7 @@ app.post('/api/chat/stream', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders();
 
-  const { message, agentPath, sessionId, initialContext, workingDirectory } = req.body;
+  const { message, agentPath, sessionId, initialContext, workingDirectory, contexts, priorConversation, continuedFrom } = req.body;
 
   if (!message) {
     res.write(`data: ${JSON.stringify({ type: 'error', error: 'message is required' })}\n\n`);
@@ -280,7 +280,19 @@ app.post('/api/chat/stream', async (req, res) => {
     return;
   }
 
-  log.info('Streaming chat request', { agentPath, sessionId, workingDirectory });
+  log.info('Streaming chat request', {
+    agentPath,
+    sessionId,
+    workingDirectory,
+    contexts,
+    hasPriorConversation: !!priorConversation,
+    priorConversationLength: priorConversation?.length || 0
+  });
+
+  if (priorConversation) {
+    console.log(`[Server] Prior conversation received: ${priorConversation.length} chars`);
+    console.log(`[Server] Prior conversation preview: ${priorConversation.substring(0, 200)}...`);
+  }
 
   const context = {};
   if (sessionId) {
@@ -291,6 +303,21 @@ app.post('/api/chat/stream', async (req, res) => {
   }
   if (workingDirectory) {
     context.workingDirectory = workingDirectory;
+  }
+  // Context files to load into the system prompt
+  // e.g., ["contexts/general-context.md", "contexts/parachute.md"]
+  if (contexts && Array.isArray(contexts)) {
+    context.contexts = contexts;
+  }
+  // Prior conversation for continued sessions (goes into system prompt)
+  if (priorConversation) {
+    context.priorConversation = priorConversation;
+    console.log('[Server] Added priorConversation to context');
+  }
+  // Track which session this continues from (for persistence)
+  if (continuedFrom) {
+    context.continuedFrom = continuedFrom;
+    console.log(`[Server] Session continues from: ${continuedFrom}`);
   }
 
   try {
@@ -506,6 +533,67 @@ app.get('/api/agents', async (req, res) => {
       triggers: a.triggers
     })));
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/contexts
+ * List available context files from contexts/ folder
+ * Returns files that can be loaded into chat sessions
+ */
+app.get('/api/contexts', async (req, res) => {
+  try {
+    const contextsPath = path.join(CONFIG.vaultPath, 'contexts');
+
+    // Check if contexts folder exists
+    try {
+      await fs.access(contextsPath);
+    } catch {
+      // No contexts folder yet
+      return res.json({ contexts: [] });
+    }
+
+    // List all .md files in contexts/
+    const files = await fs.readdir(contextsPath);
+    const contexts = [];
+
+    for (const file of files) {
+      if (file.endsWith('.md')) {
+        const filePath = path.join(contextsPath, file);
+        const stats = await fs.stat(filePath);
+        const content = await fs.readFile(filePath, 'utf-8');
+
+        // Extract title from first heading or filename
+        const titleMatch = content.match(/^#\s+(.+)$/m);
+        const title = titleMatch ? titleMatch[1] : file.replace('.md', '');
+
+        // Get first paragraph as description
+        const lines = content.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+        const description = lines[0]?.substring(0, 200) || '';
+
+        contexts.push({
+          path: `contexts/${file}`,
+          filename: file,
+          title,
+          description,
+          isDefault: file === 'general-context.md',
+          size: stats.size,
+          modified: stats.mtime
+        });
+      }
+    }
+
+    // Sort: general-context first, then alphabetically
+    contexts.sort((a, b) => {
+      if (a.isDefault) return -1;
+      if (b.isDefault) return 1;
+      return a.title.localeCompare(b.title);
+    });
+
+    res.json({ contexts });
+  } catch (error) {
+    log.error('Error listing contexts', error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -179,25 +179,46 @@ class LocalSessionReader {
   ///
   /// Searches recursively to find imported sessions in subdirectories.
   Future<ChatSessionWithLocalMessages?> getSession(String sessionId) async {
+    debugPrint('[LocalSessionReader] getSession called with id: $sessionId');
     try {
       final path = await sessionsPath;
-      if (path == null) return null;
+      if (path == null) {
+        debugPrint('[LocalSessionReader] sessionsPath is null, cannot search');
+        return null;
+      }
 
+      debugPrint('[LocalSessionReader] Searching in: $path');
       final dir = Directory(path);
+      int filesChecked = 0;
+
       // Search recursively to include imported/ subdirectory
       await for (final entity in dir.list(recursive: true)) {
         if (entity is File && entity.path.endsWith('.md')) {
+          filesChecked++;
           final content = await entity.readAsString();
-          if (content.contains('session_id: $sessionId') ||
-              content.contains("session_id: '$sessionId'") ||
-              content.contains('session_id: "$sessionId"')) {
-            return _parseFullSession(entity, sessionId);
+          final patterns = [
+            'session_id: $sessionId',
+            "session_id: '$sessionId'",
+            'session_id: "$sessionId"',
+          ];
+
+          for (final pattern in patterns) {
+            if (content.contains(pattern)) {
+              debugPrint('[LocalSessionReader] Found session in: ${entity.path}');
+              debugPrint('[LocalSessionReader] Matched pattern: $pattern');
+              final result = await _parseFullSession(entity, sessionId);
+              debugPrint('[LocalSessionReader] Parsed ${result?.messages.length ?? 0} messages');
+              return result;
+            }
           }
         }
       }
+
+      debugPrint('[LocalSessionReader] Session not found after checking $filesChecked files');
       return null;
-    } catch (e) {
+    } catch (e, st) {
       debugPrint('[LocalSessionReader] Error getting session $sessionId: $e');
+      debugPrint('[LocalSessionReader] Stack trace: $st');
       return null;
     }
   }
@@ -251,6 +272,12 @@ class LocalSessionReader {
     // Accept both "Human" and "User" as user role (Human is preferred)
     final regex = RegExp(r'### (para:[a-z0-9]+\s+)?(Human|User|Assistant) \| ([^\n]+)\n');
     final matches = regex.allMatches(content).toList();
+
+    debugPrint('[LocalSessionReader] _parseMessages: found ${matches.length} message headers');
+    if (matches.isEmpty) {
+      // Try to show first 500 chars of content for debugging
+      debugPrint('[LocalSessionReader] Content preview: ${content.substring(0, content.length.clamp(0, 500))}...');
+    }
 
     for (var i = 0; i < matches.length; i++) {
       final match = matches[i];

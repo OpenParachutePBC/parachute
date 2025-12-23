@@ -614,6 +614,9 @@ export class Orchestrator extends EventEmitter {
     if (context.workingDirectory) {
       chatbotContext.workingDirectory = context.workingDirectory;
     }
+    if (context.continuedFrom) {
+      chatbotContext.continuedFrom = context.continuedFrom;
+    }
 
     const { session, resumeInfo } = await this.sessionManager.getSession(effectivePath, chatbotContext);
     const sessionKey = this.sessionManager.getSessionKey(effectivePath, chatbotContext);
@@ -821,6 +824,9 @@ export class Orchestrator extends EventEmitter {
     }
     if (context.workingDirectory) {
       chatbotContext.workingDirectory = context.workingDirectory;
+    }
+    if (context.continuedFrom) {
+      chatbotContext.continuedFrom = context.continuedFrom;
     }
 
     // Get or create session (now returns { session, resumeInfo })
@@ -1339,28 +1345,58 @@ export class Orchestrator extends EventEmitter {
       prompt = await this.buildDefaultVaultPrompt(context);
     }
 
-    // Load general context file by default
-    // Other context files (project-specific) are available for the agent to read on-demand
-    const vaultAgent = this.createVaultAgent();
-    if (vaultAgent.context && vaultAgent.context.include) {
-      try {
-        const contextResult = await loadAgentContext(vaultAgent.context, this.vaultPath, {
-          max_tokens: vaultAgent.context.max_tokens
+    // Determine which context files to load
+    // If context.contexts is provided, use those
+    // Otherwise, fall back to default (general-context.md)
+    let contextPaths = context.contexts;
+    if (!contextPaths || contextPaths.length === 0) {
+      // Default: load general-context.md
+      contextPaths = ['contexts/general-context.md'];
+    }
+
+    // Load specified context files
+    try {
+      const contextConfig = {
+        include: contextPaths,
+        max_tokens: 50000
+      };
+      const contextResult = await loadAgentContext(contextConfig, this.vaultPath, {
+        max_tokens: contextConfig.max_tokens
+      });
+      if (contextResult.content && contextResult.files.length > 0) {
+        prompt += formatContextForPrompt(contextResult);
+        log.info('Loaded vault context', {
+          files: contextResult.files,
+          tokens: contextResult.totalTokens,
+          requested: contextPaths
         });
-        if (contextResult.content && contextResult.files.length > 0) {
-          prompt += formatContextForPrompt(contextResult);
-          log.info('Loaded vault context', {
-            files: contextResult.files.length,
-            tokens: contextResult.totalTokens
-          });
-        }
-      } catch (e) {
-        log.warn('Failed to load vault context', { error: e.message });
       }
+    } catch (e) {
+      log.warn('Failed to load vault context', { error: e.message, requested: contextPaths });
     }
 
     // Add vault location for context
     prompt += `\n\n---\n\n## Environment\n\nVault location: ${this.vaultPath}`;
+
+    // Add prior conversation context if provided (for continued conversations)
+    if (context.priorConversation) {
+      prompt += `\n\n---\n\n## Prior Conversation (IMPORTANT)
+
+**The user is continuing a previous conversation they had with you (or another AI assistant).**
+The messages below are from that earlier session. Treat them as if they happened in THIS conversation -
+the user said what "Human:" shows, and you (or a previous assistant) responded with what "Assistant:" shows.
+
+When the user asks about "what we discussed" or "what I said", refer to this prior conversation as your shared history.
+
+<prior_conversation>
+${context.priorConversation}
+</prior_conversation>
+
+The user is now continuing this conversation with you. Respond naturally as if you remember the above exchange.`;
+      log.info('Added prior conversation to system prompt', {
+        length: context.priorConversation.length
+      });
+    }
 
     return prompt;
   }
