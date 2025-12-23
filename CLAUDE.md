@@ -224,19 +224,24 @@ You are a helpful assistant with access to the user's vault...
 
 ## Current Development Focus
 
+### Recently Completed
+
+- **Import Old Chats** - Claude/ChatGPT history import with onboarding flow
+- **Session Continuation** - Continued sessions load prior messages correctly
+- **Date Sorting** - Fixed timezone bug for Today/This Week grouping
+- **AGENTS.md** - Personal context template system
+
 ### Priority Issues
 
-1. **Server Connection Reliability** - Better handling of unreachable server
-2. **Previous Chats Display** - Show local markdown sessions even when server is down
-3. **Voice Input for Chat** - Use transcription to fill chat text box
-4. **Audio File Organization** - Standardize with para:uuid and year-month folders
+1. **Voice Input for Chat** - Use transcription to fill chat text box
+2. **Audio File Organization** - Standardize with para:uuid and year-month folders
+3. **Offline Mode** - Show local sessions when server is unreachable
 
 ### Future Considerations
 
-- **RAG Indexing** - Full-text search across vault (Lucian's feature branch)
-- **Import Old Chats** - Bring in Claude/ChatGPT history as markdown
+- **RAG Indexing** - Full-text search across vault (vault-search.js foundation exists)
 - **Multiple Agent Servers** - Each client could run its own server
-- **Offline Mode** - Full functionality without server connection
+- **iOS Support** - Full feature parity with macOS/Android
 
 ---
 
@@ -312,4 +317,4 @@ Always use `git --no-pager` to prevent pager blocking output.
 
 ---
 
-**Last Updated**: December 20, 2025
+**Last Updated**: December 22, 2025

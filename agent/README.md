@@ -82,7 +82,7 @@ curl -X POST http://localhost:3333/api/chat \
 ## Project Structure
 
 ```
-parachute-agent/
+agent/                     # You are here (within parachute monorepo)
 ├── server.js              # Express API
 ├── lib/
 │   ├── orchestrator.js    # Agent execution via Claude SDK
@@ -123,7 +123,12 @@ claude login
 
 ## Part of Parachute
 
-This is the agent backend for [Parachute](https://github.com/OpenParachutePBC), an open-source "second brain" powered by AI.
+This is the agent backend within the [Parachute monorepo](../README.md) — an open-source "second brain" powered by AI.
 
-- **parachute-agent** (this repo) - Agent backend
-- **parachute-app** - Mobile/desktop app (Flutter)
+- **[agent/](.)** - Agent backend (you are here)
+- **[app/](../app/)** - Flutter mobile/desktop app
+- **[Root README](../README.md)** - Monorepo overview and quick start
+
+---
+
+**Last Updated:** December 22, 2025

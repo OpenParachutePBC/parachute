@@ -68,7 +68,7 @@ Works with your existing tools:
 ## Technology
 
 - **App:** Flutter (macOS, Android primary; iOS coming soon)
-- **Backend:** [parachute-agent](https://github.com/OpenParachutePBC/parachute-agent) (Node.js, separate repo)
+- **Backend:** [agent/](../agent/) (Node.js, in this monorepo)
 - **Transcription:** Whisper (on-device)
 - **Title Generation:** Gemma (on-device)
 - **Sync:** Git via git2dart (native libgit2)
@@ -92,22 +92,22 @@ The app includes three main tabs:
 
 ## Current Status
 
-**Active Development** - Stability Focus (Nov 24, 2025)
+**Active Development** — December 2025
 
 **Primary Platforms:** macOS and Android
 
 ### Recently Completed
 
+- Chat import from Claude/ChatGPT exports
+- Session continuation with prior message loading
 - Auto-pause voice recording with VAD-based silence detection
 - Git sync on macOS and Android
-- Memory leak fixes and reliability improvements
 - 116 unit tests for audio pipeline
 
 ### Coming Soon
 
-- Sphere management with JSONL metadata
-- Export integrations (to ChatGPT, Claude, etc.)
 - iOS Git support
+- Voice input for chat
 
 See [ROADMAP.md](ROADMAP.md) for detailed progress.
 
@@ -163,7 +163,7 @@ Parachute: Local-first with your actual context. Open source = you can leave any
 ## Project Structure
 
 ```
-parachute-app/
+app/                  # You are here (within parachute monorepo)
 ├── lib/              # Flutter source code
 ├── test/             # Unit tests
 ├── ios/              # iOS platform code
@@ -174,9 +174,10 @@ parachute-app/
 └── firmware/         # Omi device firmware source
 ```
 
-## Related Repos
+## Related
 
-- **[parachute-agent](https://github.com/OpenParachutePBC/parachute-agent)** - AI agent backend (Node.js)
+- **[agent/](../agent/)** - AI agent backend (Node.js, in this monorepo)
+- **[Root README](../README.md)** - Monorepo overview and quick start
 
 ---
 
@@ -214,4 +215,4 @@ Whisper models for transcription under MIT License.
 
 ---
 
-**Status:** Active Development - Last Updated: December 8, 2025
+**Last Updated:** December 22, 2025
