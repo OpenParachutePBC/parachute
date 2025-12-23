@@ -52,6 +52,26 @@ class MobileEmbeddingService implements EmbeddingService {
       }
     } catch (e) {
       debugPrint('[MobileEmbedding] No active embedder available: $e');
+
+      // Try to activate existing model files (will skip download if files exist)
+      try {
+        debugPrint('[MobileEmbedding] Attempting to activate existing model files...');
+        await FlutterGemma.installEmbedder()
+            .modelFromNetwork(_modelUrl)
+            .tokenizerFromNetwork(_tokenizerUrl)
+            .install();
+
+        // Now try to get the embedder again
+        _model = await FlutterGemma.getActiveEmbedder(
+          preferredBackend: PreferredBackend.gpu,
+        );
+        if (_model != null) {
+          debugPrint('[MobileEmbedding] ✅ Model activated from existing files');
+          return true;
+        }
+      } catch (activateError) {
+        debugPrint('[MobileEmbedding] Could not activate existing files: $activateError');
+      }
     }
 
     return false;
@@ -64,18 +84,13 @@ class MobileEmbeddingService implements EmbeddingService {
       return false;
     }
 
-    // Try to check if model is already installed
-    try {
-      final embedder = await FlutterGemma.getActiveEmbedder(
-        preferredBackend: PreferredBackend.gpu,
-      );
-      await embedder.close();
-      debugPrint('[MobileEmbedding] Model already installed');
+    // First check if isReady (which will try to activate existing files)
+    if (await isReady()) {
+      debugPrint('[MobileEmbedding] Model is ready, no download needed');
       return false;
-    } catch (e) {
-      debugPrint('[MobileEmbedding] Model needs download: $e');
     }
 
+    debugPrint('[MobileEmbedding] Model needs download');
     return true;
   }
 

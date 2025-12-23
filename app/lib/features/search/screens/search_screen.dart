@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/providers/embedding_provider.dart';
 import 'package:app/core/providers/vector_store_provider.dart';
 import 'package:app/core/providers/search_providers.dart';
+import 'package:app/core/services/search/search_index_service.dart';
 import 'package:app/core/services/search/models/vector_search_result.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/chat/providers/chat_providers.dart';
@@ -34,9 +35,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String? _error;
   int? _searchTimeMs;
 
-  // For indexing progress updates
-  bool _isMonitoringIndexing = false;
-
   // For embedding model status
   bool _isEmbeddingReady = false;
   bool _isCheckingEmbedding = true;
@@ -44,20 +42,49 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   double _embeddingDownloadProgress = 0.0;
   String? _embeddingError;
 
+  // For listening to search index changes
+  SearchIndexService? _searchIndex;
+  VoidCallback? _indexingListener;
+
   @override
   void initState() {
     super.initState();
     _checkEmbeddingStatus();
     _waitForVectorStore();
-    _startIndexingMonitor();
+    _setupIndexingListener();
   }
 
   @override
   void dispose() {
-    _isMonitoringIndexing = false;
+    _removeIndexingListener();
     _searchController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Set up listener for search index status changes
+  void _setupIndexingListener() async {
+    try {
+      final searchIndex = await ref.read(configuredSearchIndexProvider.future);
+      if (!mounted) return;
+
+      _searchIndex = searchIndex;
+      _indexingListener = () {
+        if (mounted) {
+          setState(() {}); // Trigger rebuild when indexing status changes
+        }
+      };
+      searchIndex.addListener(_indexingListener!);
+    } catch (e) {
+      debugPrint('[SearchScreen] Error setting up indexing listener: $e');
+    }
+  }
+
+  /// Remove the indexing listener
+  void _removeIndexingListener() {
+    if (_searchIndex != null && _indexingListener != null) {
+      _searchIndex!.removeListener(_indexingListener!);
+    }
   }
 
   /// Check if embedding model is ready
@@ -154,18 +181,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       }
     } catch (e) {
       debugPrint('[SearchScreen] Error during index sync: $e');
-    }
-  }
-
-  /// Monitor indexing progress and refresh UI
-  void _startIndexingMonitor() async {
-    _isMonitoringIndexing = true;
-
-    while (_isMonitoringIndexing && mounted) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) {
-        setState(() {}); // Trigger rebuild to update indexing banner
-      }
     }
   }
 
