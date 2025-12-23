@@ -16,6 +16,7 @@ import 'core/services/asset_migration_service.dart';
 import 'core/providers/feature_flags_provider.dart';
 import 'core/providers/search_providers.dart';
 import 'core/providers/vector_store_provider.dart';
+import 'core/providers/embedding_provider.dart';
 import 'core/config/app_config.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
@@ -175,6 +176,21 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         // Wait for vectorStore to be ready before syncing
         debugPrint('[Main] Waiting for vector store to initialize...');
         await ref.read(vectorStorePathProvider.future);
+
+        // Check if embedding model is ready before indexing
+        debugPrint('[Main] Checking embedding model readiness...');
+        final embeddingService = ref.read(embeddingServiceProvider);
+        final isEmbeddingReady = await embeddingService.isReady();
+
+        if (!isEmbeddingReady) {
+          // Check if model needs download
+          final needsDownload = await embeddingService.needsDownload();
+          if (needsDownload) {
+            debugPrint('[Main] ⚠️ Embedding model not downloaded - skipping search indexing');
+            debugPrint('[Main] Visit Search tab to download the embedding model');
+            return;
+          }
+        }
 
         // Use configuredSearchIndexProvider which sets up journal support
         debugPrint('[Main] Configuring search index with journal support...');

@@ -37,9 +37,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   // For indexing progress updates
   bool _isMonitoringIndexing = false;
 
+  // For embedding model status
+  bool _isEmbeddingReady = false;
+  bool _isCheckingEmbedding = true;
+  bool _isDownloadingEmbedding = false;
+  double _embeddingDownloadProgress = 0.0;
+  String? _embeddingError;
+
   @override
   void initState() {
     super.initState();
+    _checkEmbeddingStatus();
     _waitForVectorStore();
     _startIndexingMonitor();
   }
@@ -50,6 +58,74 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _searchController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Check if embedding model is ready
+  Future<void> _checkEmbeddingStatus() async {
+    try {
+      final embeddingService = ref.read(embeddingServiceProvider);
+      final isReady = await embeddingService.isReady();
+
+      if (mounted) {
+        setState(() {
+          _isEmbeddingReady = isReady;
+          _isCheckingEmbedding = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isEmbeddingReady = false;
+          _isCheckingEmbedding = false;
+          _embeddingError = e.toString();
+        });
+      }
+    }
+  }
+
+  /// Download the embedding model
+  Future<void> _downloadEmbeddingModel() async {
+    if (_isDownloadingEmbedding) return;
+
+    setState(() {
+      _isDownloadingEmbedding = true;
+      _embeddingDownloadProgress = 0.0;
+      _embeddingError = null;
+    });
+
+    try {
+      final embeddingService = ref.read(embeddingServiceProvider);
+
+      await for (final progress in embeddingService.downloadModel()) {
+        if (mounted) {
+          setState(() {
+            _embeddingDownloadProgress = progress;
+          });
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isDownloadingEmbedding = false;
+          _isEmbeddingReady = true;
+        });
+
+        // Trigger search index sync now that embedding is ready
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Embedding model ready! Indexing will start...'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isDownloadingEmbedding = false;
+          _embeddingError = e.toString();
+        });
+      }
+    }
   }
 
   /// Monitor indexing progress and refresh UI
@@ -198,6 +274,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       body: Column(
         children: [
+          // Embedding model status banner (show if not ready)
+          _buildEmbeddingBanner(isDark),
+
           // Indexing progress banner
           _buildIndexingBanner(isDark),
 
@@ -324,6 +403,126 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           initialMessage: query,
           initialContext: searchContext,
         ),
+      ),
+    );
+  }
+
+  /// Build embedding model status banner
+  Widget _buildEmbeddingBanner(bool isDark) {
+    // Don't show if still checking or already ready
+    if (_isCheckingEmbedding || _isEmbeddingReady) {
+      return const SizedBox.shrink();
+    }
+
+    final isError = _embeddingError != null && !_isDownloadingEmbedding;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isError
+            ? Colors.red.withValues(alpha: 0.1)
+            : (isDark ? BrandColors.nightForest : BrandColors.forest)
+                .withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isError
+              ? Colors.red.withValues(alpha: 0.3)
+              : (isDark ? BrandColors.nightForest : BrandColors.forest)
+                  .withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isError ? Icons.error_outline : Icons.download,
+                size: 20,
+                color: isError
+                    ? Colors.red
+                    : (isDark ? BrandColors.nightForest : BrandColors.forest),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isError
+                      ? 'Embedding model error'
+                      : _isDownloadingEmbedding
+                          ? 'Downloading embedding model...'
+                          : 'Embedding model needed for search',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_isDownloadingEmbedding) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: _embeddingDownloadProgress,
+                backgroundColor: isDark
+                    ? BrandColors.nightTextSecondary.withValues(alpha: 0.2)
+                    : BrandColors.driftwood.withValues(alpha: 0.2),
+                color: isDark ? BrandColors.nightForest : BrandColors.forest,
+                minHeight: 6,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${(_embeddingDownloadProgress * 100).toStringAsFixed(0)}% - This may take a few minutes',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark
+                    ? BrandColors.nightTextSecondary
+                    : BrandColors.driftwood,
+              ),
+            ),
+          ] else if (isError) ...[
+            Text(
+              _embeddingError!,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.red[700],
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _downloadEmbeddingModel,
+                child: const Text('Retry Download'),
+              ),
+            ),
+          ] else ...[
+            Text(
+              'Download the AI model to enable semantic search across your vault',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark
+                    ? BrandColors.nightTextSecondary
+                    : BrandColors.driftwood,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _downloadEmbeddingModel,
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Download Model (~200 MB)'),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

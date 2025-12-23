@@ -19,11 +19,11 @@ class MobileEmbeddingService implements EmbeddingService {
   /// Target dimensions (using Matryoshka truncation from 768)
   static const int _targetDimensions = 256;
 
-  /// Model URLs from HuggingFace
+  /// Model URLs from Parachute CDN (Cloudflare R2) - no auth required
   static const String _modelUrl =
-      'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq1024_mixed-precision.tflite';
+      'https://pub-83d77b23427846aa85d32982f50d7f18.r2.dev/embeddinggemma-300M_seq1024_mixed-precision.tflite';
   static const String _tokenizerUrl =
-      'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/sentencepiece.model';
+      'https://pub-83d77b23427846aa85d32982f50d7f18.r2.dev/sentencepiece-embedding.model';
 
   @override
   int get dimensions => _targetDimensions;
