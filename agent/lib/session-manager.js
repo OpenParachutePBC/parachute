@@ -175,6 +175,7 @@ export class SessionManager {
         archived: matter.data.archived === 'true' || matter.data.archived === true,
         sdkSessionId: this.validateSdkSessionId(matter.data.sdk_session_id),
         workingDirectory: matter.data.working_directory || null,
+        continuedFrom: matter.data.continued_from || null,
         // Don't load messages - that's the heavy part
         messageCount: (content.match(/### (Human|User|Assistant|System) \|/g) || []).length
       });
@@ -249,7 +250,8 @@ export class SessionManager {
       createdAt: matter.data.created_at,
       lastAccessed: matter.data.last_accessed,
       archived: matter.data.archived === 'true' || matter.data.archived === true,
-      workingDirectory: matter.data.working_directory || null
+      workingDirectory: matter.data.working_directory || null,
+      continuedFrom: matter.data.continued_from || null
     };
   }
 
@@ -417,8 +419,14 @@ export class SessionManager {
       createdAt: new Date().toISOString(),
       lastAccessed: new Date().toISOString(),
       archived: false,
-      workingDirectory: context.workingDirectory || null
+      workingDirectory: context.workingDirectory || null,
+      continuedFrom: context.continuedFrom || null
     };
+
+    if (context.continuedFrom) {
+      console.log(`[SessionManager] New session continues from: ${context.continuedFrom}`);
+      console.log(`[SessionManager] Session object continuedFrom: ${session.continuedFrom}`);
+    }
 
     this.loadedSessions.set(key, session);
     this.sessionIndex.set(key, {
@@ -432,7 +440,8 @@ export class SessionManager {
       archived: false,
       sdkSessionId: null,
       messageCount: 0,
-      workingDirectory: session.workingDirectory
+      workingDirectory: session.workingDirectory,
+      continuedFrom: session.continuedFrom
     });
 
     await this.saveSession(session);
@@ -628,6 +637,13 @@ export class SessionManager {
     // Working directory line - only include if set
     const workingDirYaml = session.workingDirectory ? `working_directory: "${session.workingDirectory}"` : '';
 
+    // Continued from line - only include if this session continues another
+    const continuedFromYaml = session.continuedFrom ? `continued_from: "${session.continuedFrom}"` : '';
+    if (session.continuedFrom) {
+      console.log(`[SessionManager] sessionToMarkdown - continuedFrom: ${session.continuedFrom}`);
+      console.log(`[SessionManager] sessionToMarkdown - continuedFromYaml: ${continuedFromYaml}`);
+    }
+
     // Use title for heading if available, otherwise default
     const heading = session.title || `Chat with ${agentName}`;
 
@@ -643,6 +659,7 @@ last_accessed: "${session.lastAccessed}"
 sdk_session_id: "${validatedSdkId}"
 archived: ${session.archived || false}
 ${workingDirYaml}
+${continuedFromYaml}
 ${contextYaml}
 ---
 

@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
-import 'package:app/core/providers/file_system_provider.dart';
-import 'package:app/core/services/export_detection_service.dart';
 import 'package:app/features/context/providers/context_providers.dart';
 import 'package:app/features/context/widgets/prompt_chip.dart';
 import 'package:app/features/context/widgets/reflection_banner.dart';
 import '../models/chat_session.dart';
+import '../models/context_file.dart';
 import '../providers/chat_providers.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/chat_input.dart';
@@ -94,11 +93,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _handleSend(String message) {
     final selectedAgent = ref.read(selectedAgentProvider);
+    final selectedContexts = ref.read(selectedContextsProvider);
+
+    // Convert selected context files to paths for the API
+    final contextPaths = selectedContexts.map((c) => c.path).toList();
 
     ref.read(chatMessagesProvider.notifier).sendMessage(
           message: message,
           agentPath: selectedAgent?.path,
           initialContext: _pendingInitialContext,
+          contexts: contextPaths.isNotEmpty ? contextPaths : null,
         );
 
     // Clear pending context after first message
@@ -196,6 +200,7 @@ If you have suggestions, show me the specific edits you'd recommend.''';
                       // Show resume marker at the top if this is a continuation
                       if (chatState.isContinuation && index == 0) {
                         return ResumeMarker(
+                          key: const ValueKey('resume_marker'),
                           originalSession: chatState.continuedFromSession!,
                           priorMessages: chatState.priorMessages,
                         );
@@ -228,14 +233,16 @@ If you have suggestions, show me the specific edits you'd recommend.''';
               },
             ),
 
-          // Input field
+          // Input field - disabled when viewing imported sessions (use Continue button)
           ChatInput(
             onSend: _handleSend,
-            enabled: !chatState.isStreaming,
+            enabled: !chatState.isStreaming && !chatState.isViewingImported,
             initialText: widget.initialMessage,
             hintText: _pendingInitialContext != null
                 ? 'Ask about this recording...'
-                : 'Message your vault...',
+                : chatState.isViewingImported
+                    ? 'Click Continue to resume this conversation'
+                    : 'Message your vault...',
           ),
         ],
       ),
@@ -344,23 +351,17 @@ If you have suggestions, show me the specific edits you'd recommend.''';
 
   Widget _buildEmptyState(BuildContext context, bool isDark) {
     final promptsAsync = ref.watch(promptsProvider);
-    final exportsAsync = ref.watch(availableExportsProvider);
+    final availableContexts = ref.watch(availableContextsProvider);
+    final selectedContexts = ref.watch(selectedContextsProvider);
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(Spacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Show exports banner if exports are detected
-            exportsAsync.maybeWhen(
-              data: (exports) => exports.isNotEmpty
-                  ? _buildExportsBanner(context, isDark, exports)
-                  : const SizedBox.shrink(),
-              orElse: () => const SizedBox.shrink(),
-            ),
-
-            Container(
+    return SingleChildScrollView(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(Spacing.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
               padding: const EdgeInsets.all(Spacing.xl),
               decoration: BoxDecoration(
                 color: isDark
@@ -395,7 +396,16 @@ If you have suggestions, show me the specific edits you'd recommend.''';
                 height: TypographyTokens.lineHeightRelaxed,
               ),
             ),
-            const SizedBox(height: Spacing.xxl),
+            const SizedBox(height: Spacing.xl),
+            // Context selector
+            availableContexts.when(
+              data: (contexts) => contexts.isEmpty
+                  ? const SizedBox.shrink()
+                  : _buildContextSelector(context, isDark, contexts, selectedContexts),
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+            const SizedBox(height: Spacing.xl),
             // Quick action prompts from prompts.yaml
             promptsAsync.when(
               data: (prompts) => Wrap(
@@ -437,7 +447,8 @@ If you have suggestions, show me the specific edits you'd recommend.''';
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildContextBanner(BuildContext context, bool isDark) {
@@ -493,94 +504,150 @@ If you have suggestions, show me the specific edits you'd recommend.''';
     );
   }
 
-  Widget _buildExportsBanner(
+  Widget _buildContextSelector(
     BuildContext context,
     bool isDark,
-    List<DetectedExport> exports,
+    List<ContextFile> availableContexts,
+    List<ContextFile> selectedContexts,
   ) {
-    // Summarize what was found
-    final hasClaudeMemories = exports.any((e) =>
-        e.type == ExportType.claude && e.hasMemories);
-    final exportNames = exports
-        .map((e) => e.type == ExportType.claude
-            ? 'Claude'
-            : e.type == ExportType.chatgpt
-                ? 'ChatGPT'
-                : 'AI')
-        .toSet()
-        .join(' & ');
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: Spacing.xl),
-      padding: const EdgeInsets.all(Spacing.md),
-      decoration: BoxDecoration(
-        color: isDark
-            ? BrandColors.nightTurquoise.withValues(alpha: 0.1)
-            : BrandColors.turquoiseMist,
-        borderRadius: Radii.card,
-        border: Border.all(
-          color: isDark
-              ? BrandColors.nightTurquoise.withValues(alpha: 0.3)
-              : BrandColors.turquoise.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.auto_awesome,
-                size: 20,
-                color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.folder_outlined,
+              size: 14,
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+            ),
+            const SizedBox(width: Spacing.xs),
+            Text(
+              'Contexts',
+              style: TextStyle(
+                fontSize: TypographyTokens.labelSmall,
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
               ),
-              const SizedBox(width: Spacing.sm),
-              Expanded(
-                child: Text(
-                  'Found your $exportNames export${exports.length > 1 ? 's' : ''}!',
-                  style: TextStyle(
-                    fontSize: TypographyTokens.bodyMedium,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+            ),
+          ],
+        ),
+        const SizedBox(height: Spacing.sm),
+        Wrap(
+          spacing: Spacing.xs,
+          runSpacing: Spacing.xs,
+          alignment: WrapAlignment.center,
+          children: [
+            // Show selected contexts as chips
+            ...selectedContexts.map((ctx) => _ContextChip(
+              context: ctx,
+              isSelected: true,
+              onToggle: () => ref.read(toggleContextProvider)(ctx),
+            )),
+            // Show add button if there are more contexts to add
+            if (availableContexts.length > selectedContexts.length)
+              _AddContextButton(
+                onTap: () => _showContextPicker(context, isDark, availableContexts, selectedContexts),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _showContextPicker(
+    BuildContext context,
+    bool isDark,
+    List<ContextFile> available,
+    List<ContextFile> selected,
+  ) {
+    final unselected = available.where(
+      (c) => !selected.any((s) => s.path == c.path),
+    ).toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? BrandColors.nightSurfaceElevated : BrandColors.softWhite,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.6,
+      ),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.xl)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(Spacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Add Context',
+                style: TextStyle(
+                  fontSize: TypographyTokens.titleMedium,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                ),
+              ),
+              const SizedBox(height: Spacing.sm),
+              Text(
+                'Select context files to include in this conversation',
+                style: TextStyle(
+                  fontSize: TypographyTokens.bodySmall,
+                  color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                ),
+              ),
+              const SizedBox(height: Spacing.lg),
+              if (unselected.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: Spacing.lg),
+                  child: Center(
+                    child: Text(
+                      'All contexts are selected',
+                      style: TextStyle(
+                        color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: unselected.map((ctx) => ListTile(
+                      leading: Icon(
+                        Icons.description_outlined,
+                        color: isDark ? BrandColors.nightForest : BrandColors.forest,
+                      ),
+                      title: Text(
+                        ctx.title,
+                        style: TextStyle(
+                          color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: ctx.description.isNotEmpty
+                          ? Text(
+                              ctx.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: TypographyTokens.labelSmall,
+                                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                              ),
+                            )
+                          : null,
+                      onTap: () {
+                        ref.read(toggleContextProvider)(ctx);
+                        Navigator.of(sheetContext).pop();
+                      },
+                    )).toList(),
                   ),
                 ),
-              ),
+              const SizedBox(height: Spacing.md),
             ],
           ),
-          const SizedBox(height: Spacing.sm),
-          Text(
-            hasClaudeMemories
-                ? 'I can use your memories and chat history to personalize your vault. Ask me to help set things up!'
-                : 'I can help you import your conversations and set up your vault.',
-            style: TextStyle(
-              fontSize: TypographyTokens.bodySmall,
-              color: isDark
-                  ? BrandColors.nightTextSecondary
-                  : BrandColors.driftwood,
-            ),
-          ),
-          const SizedBox(height: Spacing.md),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => _handleSend(
-                hasClaudeMemories
-                    ? 'Help me set up my vault using my Claude export. I have memories and conversations you can use to understand me better.'
-                    : 'Help me set up my vault and import my chat history.',
-              ),
-              icon: const Icon(Icons.rocket_launch_outlined, size: 16),
-              label: const Text('Set up my vault'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor:
-                    isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
-                side: BorderSide(
-                  color: isDark
-                      ? BrandColors.nightTurquoise
-                      : BrandColors.turquoise,
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -794,6 +861,90 @@ class _SuggestionChip extends StatelessWidget {
           color: isDark ? BrandColors.nightSurfaceElevated : BrandColors.stone,
         ),
       ),
+    );
+  }
+}
+
+/// Chip for displaying a selected context file
+class _ContextChip extends StatelessWidget {
+  final ContextFile context;
+  final bool isSelected;
+  final VoidCallback onToggle;
+
+  const _ContextChip({
+    required this.context,
+    required this.isSelected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext buildContext) {
+    final theme = Theme.of(buildContext);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return InputChip(
+      label: Text(context.title),
+      onDeleted: isSelected ? onToggle : null,
+      deleteIcon: const Icon(Icons.close, size: 14),
+      deleteIconColor: isDark ? BrandColors.nightForest : BrandColors.forest,
+      backgroundColor: isDark
+          ? BrandColors.nightForest.withValues(alpha: 0.15)
+          : BrandColors.forestMist.withValues(alpha: 0.5),
+      labelStyle: TextStyle(
+        fontSize: TypographyTokens.labelSmall,
+        color: isDark ? BrandColors.nightForest : BrandColors.forest,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: Radii.badge,
+        side: BorderSide(
+          color: isDark
+              ? BrandColors.nightForest.withValues(alpha: 0.3)
+              : BrandColors.forest.withValues(alpha: 0.3),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xs),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+/// Button to add more context files
+class _AddContextButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddContextButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return ActionChip(
+      avatar: Icon(
+        Icons.add,
+        size: 14,
+        color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+      ),
+      label: Text(
+        'Add',
+        style: TextStyle(
+          fontSize: TypographyTokens.labelSmall,
+          color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+        ),
+      ),
+      onPressed: onTap,
+      backgroundColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: Radii.badge,
+        side: BorderSide(
+          color: isDark
+              ? BrandColors.nightSurfaceElevated
+              : BrandColors.stone.withValues(alpha: 0.5),
+          style: BorderStyle.solid,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.xs),
+      visualDensity: VisualDensity.compact,
     );
   }
 }

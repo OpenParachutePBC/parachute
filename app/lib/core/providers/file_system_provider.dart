@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/export_detection_service.dart';
 import 'package:app/core/services/vault_state_service.dart';
@@ -56,4 +57,10 @@ final vaultNeedsAgentInitProvider = FutureProvider<bool>((ref) async {
 final conversationImportServiceProvider = Provider<ConversationImportService>((ref) {
   final fileSystem = ref.watch(fileSystemServiceProvider);
   return ConversationImportService(fileSystem);
+});
+
+/// Provider to check if onboarding has been completed
+final hasCompletedOnboardingProvider = FutureProvider<bool>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool('has_seen_onboarding_v1') ?? false;
 });

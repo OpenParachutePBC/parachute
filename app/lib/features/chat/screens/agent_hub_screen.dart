@@ -581,16 +581,26 @@ class _AgentHubScreenState extends ConsumerState<AgentHubScreen> {
     final yesterday = today.subtract(const Duration(days: 1));
     final thisWeekStart = today.subtract(Duration(days: today.weekday - 1));
 
+    // Helper to get the relevant date for sorting/grouping
+    // Convert to local time to ensure correct date comparison
+    DateTime getRelevantDate(ChatSession s) =>
+        (s.updatedAt ?? s.createdAt).toLocal();
+
+    // Sort all sessions by date descending (newest first)
+    final sortedSessions = sessions.toList()
+      ..sort((a, b) => getRelevantDate(b).compareTo(getRelevantDate(a)));
+
     final todaySessions = <ChatSession>[];
     final yesterdaySessions = <ChatSession>[];
     final thisWeekSessions = <ChatSession>[];
     final earlierSessions = <ChatSession>[];
 
-    for (final session in sessions) {
+    for (final session in sortedSessions) {
+      final relevantDate = getRelevantDate(session);
       final sessionDate = DateTime(
-        session.createdAt.year,
-        session.createdAt.month,
-        session.createdAt.day,
+        relevantDate.year,
+        relevantDate.month,
+        relevantDate.day,
       );
 
       if (sessionDate == today) {
