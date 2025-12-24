@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/providers/embedding_provider.dart';
 import 'package:app/core/providers/vector_store_provider.dart';
 import 'package:app/core/providers/search_providers.dart' hide localSessionReaderProvider;
+import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/core/services/search/search_index_service.dart';
 import 'package:app/core/services/search/models/vector_search_result.dart';
 import 'package:app/core/theme/design_tokens.dart';
@@ -181,8 +182,14 @@ class _SearchContentState extends ConsumerState<SearchContent> {
       debugPrint('[SearchContent] Starting journal sync...');
       await searchIndex.syncJournals();
 
-      debugPrint('[SearchContent] Starting chat sync...');
-      await searchIndex.syncChats();
+      // Only sync chats if AI Chat is enabled
+      final aiChatEnabled = ref.read(aiChatEnabledNotifierProvider).valueOrNull ?? false;
+      if (aiChatEnabled) {
+        debugPrint('[SearchContent] Starting chat sync...');
+        await searchIndex.syncChats();
+      } else {
+        debugPrint('[SearchContent] Skipping chat sync (AI Chat disabled)');
+      }
 
       debugPrint('[SearchContent] Search index sync complete');
 
@@ -892,17 +899,29 @@ class _SearchContentState extends ConsumerState<SearchContent> {
             ),
             if (chunksByType.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: chunksByType.entries.map((e) {
-                  return _buildStatChip(
-                    _contentTypeLabel(e.key),
-                    e.value.toString(),
-                    isDark,
-                    color: _contentTypeColor(e.key),
+              Builder(
+                builder: (context) {
+                  // Filter out 'chat' entries if AI Chat is disabled
+                  final aiChatEnabled = ref.watch(aiChatEnabledNotifierProvider).valueOrNull ?? false;
+                  final filteredEntries = chunksByType.entries
+                      .where((e) => aiChatEnabled || e.key != 'chat')
+                      .toList();
+
+                  if (filteredEntries.isEmpty) return const SizedBox.shrink();
+
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: filteredEntries.map((e) {
+                      return _buildStatChip(
+                        _contentTypeLabel(e.key),
+                        e.value.toString(),
+                        isDark,
+                        color: _contentTypeColor(e.key),
+                      );
+                    }).toList(),
                   );
-                }).toList(),
+                },
               ),
             ],
           ],
@@ -917,10 +936,14 @@ class _SearchContentState extends ConsumerState<SearchContent> {
     final journalDates = await journalService.listJournalDates();
     final journalCount = journalDates.length;
 
-    // Get chat session count
-    final localReader = ref.read(localSessionReaderProvider);
-    final chatSessions = await localReader.getLocalSessions();
-    final chatCount = chatSessions.length;
+    // Only get chat count if AI Chat is enabled
+    final aiChatEnabled = ref.read(aiChatEnabledNotifierProvider).valueOrNull ?? false;
+    int chatCount = 0;
+    if (aiChatEnabled) {
+      final localReader = ref.read(localSessionReaderProvider);
+      final chatSessions = await localReader.getLocalSessions();
+      chatCount = chatSessions.length;
+    }
 
     if (!mounted) return;
 
@@ -947,13 +970,15 @@ class _SearchContentState extends ConsumerState<SearchContent> {
               Icons.book,
               isDark,
             ),
-            const SizedBox(height: 8),
-            _buildIndexOption(
-              'Chats',
-              '$chatCount sessions',
-              Icons.chat,
-              isDark,
-            ),
+            if (aiChatEnabled) ...[
+              const SizedBox(height: 8),
+              _buildIndexOption(
+                'Chats',
+                '$chatCount sessions',
+                Icons.chat,
+                isDark,
+              ),
+            ],
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),

@@ -46,7 +46,7 @@ class _AiChatSectionState extends ConsumerState<AiChatSection> {
     await featureFlagsService.setAiChatEnabled(enabled);
     setState(() => _aiChatEnabled = enabled);
 
-    // Invalidate the provider to update the navigation
+    // Invalidate the provider to update the navigation immediately
     ref.invalidate(aiChatEnabledNotifierProvider);
 
     if (mounted) {
@@ -54,11 +54,11 @@ class _AiChatSectionState extends ConsumerState<AiChatSection> {
         SnackBar(
           content: Text(
             enabled
-                ? 'AI Chat enabled - restart app to see changes'
-                : 'AI Chat disabled - restart app to see changes',
+                ? 'AI Chat enabled - Chat tab now visible'
+                : 'AI Chat disabled',
           ),
-          backgroundColor: BrandColors.warning,
-          duration: const Duration(seconds: 3),
+          backgroundColor: enabled ? BrandColors.success : BrandColors.driftwood,
+          duration: const Duration(seconds: 2),
         ),
       );
     }

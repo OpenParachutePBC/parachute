@@ -5,13 +5,13 @@ import 'package:app/core/theme/design_tokens.dart';
 
 import 'steps/welcome_step.dart';
 import 'steps/vault_picker_step.dart';
-import 'steps/import_step.dart';
 import 'steps/local_ai_step.dart';
 import 'steps/ready_step.dart';
 
 /// Multi-step onboarding flow for first-time users
 ///
-/// Simplified flow: Welcome → Vault → Import → LocalAI → Ready
+/// Simplified flow for journaling: Welcome → Vault → LocalAI → Ready
+/// (Import chats step removed - only relevant for AI Chat power users)
 class OnboardingFlow extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
 
@@ -40,11 +40,11 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
   int _currentStep = 0;
   late AnimationController _progressController;
 
-  // Simplified step structure
+  // Simplified step structure for journaling users
+  // (Import step removed - only relevant for AI Chat power users)
   final List<OnboardingStepData> _steps = [
     OnboardingStepData(title: 'Welcome', icon: Icons.waving_hand),
     OnboardingStepData(title: 'Vault', icon: Icons.folder_open),
-    OnboardingStepData(title: 'Import', icon: Icons.download_outlined),
     OnboardingStepData(title: 'AI', icon: Icons.auto_awesome),
     OnboardingStepData(title: 'Ready', icon: Icons.rocket_launch),
   ];
@@ -118,11 +118,6 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
                       onNext: _nextStep,
                       onBack: _previousStep,
                       onSkip: _skipToEnd,
-                    ),
-                    ImportStep(
-                      onNext: _nextStep,
-                      onBack: _previousStep,
-                      onSkip: _nextStep, // Skip import just goes to next step
                     ),
                     LocalAiStep(
                       onNext: _nextStep,

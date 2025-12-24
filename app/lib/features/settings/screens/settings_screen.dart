@@ -176,15 +176,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildAdvancedSection(bool isDark) {
+    // Watch AI Chat enabled state to conditionally show import section
+    final aiChatEnabled = ref.watch(aiChatEnabledNotifierProvider).valueOrNull ?? false;
+
     return ExpandableSettingsSection(
       title: 'Advanced',
       subtitle: 'AI chat, import, and privacy settings',
       icon: Icons.tune,
       accentColor: BrandColors.driftwood,
-      children: const [
-        AiChatSection(),
-        ChatImportSection(),
-        PrivacySection(),
+      children: [
+        const AiChatSection(),
+        // Only show import section when AI Chat is enabled
+        if (aiChatEnabled) const ChatImportSection(),
+        const PrivacySection(),
       ],
     );
   }
