@@ -3,16 +3,44 @@
  *
  * Loads MCP server definitions from .mcp.json in the vault root.
  * Provides resolution of server references in agent configs.
+ *
+ * Built-in servers (always available, auto-injected):
+ * - vault-search: Search past conversations, journals, and captures
+ *   Gives agents "memory" by allowing searches over the vault's SQLite index
+ *
+ * User servers (optional, defined in vault's .mcp.json):
+ * - Can define additional MCP servers like browser automation
+ * - User servers can override built-in servers if needed
  */
 
 import fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get the agent directory for built-in MCP servers
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const AGENT_DIR = path.dirname(__dirname); // Parent of lib/
 
 /**
  * MCP Server configuration cache
  */
 let mcpServersCache = null;
 let mcpServersPath = null;
+
+/**
+ * Get built-in MCP servers that are always available
+ * @returns {object} Map of built-in server name -> config
+ */
+function getBuiltInServers() {
+  return {
+    'vault-search': {
+      command: 'node',
+      args: ['mcp-vault-search.js'],
+      cwd: AGENT_DIR
+    }
+  };
+}
 
 /**
  * Load MCP servers from .mcp.json
@@ -29,6 +57,10 @@ export async function loadMcpServers(vaultPath, forceReload = false) {
     return mcpServersCache;
   }
 
+  // Start with built-in servers
+  const builtIn = getBuiltInServers();
+  let userServers = {};
+
   try {
     const content = await fs.readFile(configPath, 'utf-8');
     const config = JSON.parse(content);
@@ -36,29 +68,32 @@ export async function loadMcpServers(vaultPath, forceReload = false) {
     // Validate structure
     if (typeof config !== 'object' || config === null) {
       console.warn('[MCP] Invalid .mcp.json structure - expected object');
-      return {};
+    } else {
+      userServers = config;
     }
-
-    // Cache and return
-    mcpServersCache = config;
-    mcpServersPath = configPath;
-
-    const serverNames = Object.keys(config);
-    if (serverNames.length > 0) {
-      console.log(`[MCP] Loaded ${serverNames.length} server(s): ${serverNames.join(', ')}`);
-    }
-
-    return config;
   } catch (e) {
-    if (e.code === 'ENOENT') {
-      // File doesn't exist - that's fine
-      mcpServersCache = {};
-      mcpServersPath = configPath;
-      return {};
+    if (e.code !== 'ENOENT') {
+      console.error('[MCP] Error loading .mcp.json:', e.message);
     }
-    console.error('[MCP] Error loading .mcp.json:', e.message);
-    return {};
+    // File doesn't exist or error - just use built-ins
   }
+
+  // Merge: user servers can override built-ins if needed
+  const allServers = { ...builtIn, ...userServers };
+
+  // Cache and return
+  mcpServersCache = allServers;
+  mcpServersPath = configPath;
+
+  const builtInNames = Object.keys(builtIn);
+  const userNames = Object.keys(userServers);
+
+  if (userNames.length > 0) {
+    console.log(`[MCP] Loaded ${userNames.length} user server(s): ${userNames.join(', ')}`);
+  }
+  console.log(`[MCP] Built-in servers: ${builtInNames.join(', ')}`);
+
+  return allServers;
 }
 
 /**

@@ -296,6 +296,25 @@ agent:
 - Avoids bot detection (real fingerprint)
 - Runs locally for privacy
 
+### Vault Search MCP Server (Memory) - Built-in
+
+The `vault-search` MCP server is **built-in and always available** to all agents. It gives agents access to search past conversations, journals, and captures, enabling "memory" - agents can recall previous discussions and context.
+
+**Setup:**
+1. Ensure the Flutter app has built the search index (Search tab → Build Index)
+2. That's it! vault-search is auto-injected for all agents
+
+**Vault Search Tools:**
+- `vault_search` - Search indexed content, returns snippets with IDs
+- `vault_get_content` - Get truncated content for a specific item (respects context limits)
+- `vault_recent` - List recently indexed content
+- `vault_stats` - Get index statistics
+
+**Context Management:**
+- `vault_search` returns snippets (~200 chars), not full content
+- `vault_get_content` truncates large content (default 8000 chars, ~2000 tokens)
+- Agents can do targeted searches to find specific information without blowing context
+
 ## Authentication
 
 This project uses **Claude Agent SDK authentication** via `claude login`. No API keys are needed!
