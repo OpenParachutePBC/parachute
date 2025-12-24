@@ -85,3 +85,32 @@ final currentFolderNameProvider = Provider<String>((ref) {
   if (path.isEmpty) return 'Files';
   return path.split('/').last;
 });
+
+/// Contents of the current folder with optional hidden files
+/// Family provider that takes a boolean to show/hide hidden files
+final folderContentsWithHiddenProvider = FutureProvider.family<List<FileItem>, bool>((ref, showHidden) async {
+  final service = ref.watch(fileBrowserServiceProvider);
+  final path = ref.watch(currentBrowsePathProvider);
+  final rootPath = await ref.watch(vaultRootPathProvider.future);
+
+  // Watch refresh trigger to allow manual refresh
+  ref.watch(folderRefreshTriggerProvider);
+
+  debugPrint('[FileBrowser] Provider rebuild - path: "$path", rootPath: "$rootPath", showHidden: $showHidden');
+
+  // If path is empty or doesn't start with current root, reset to root
+  String browsePath = path;
+  if (browsePath.isEmpty || !browsePath.startsWith(rootPath)) {
+    debugPrint('[FileBrowser] Resetting to root - path empty: ${browsePath.isEmpty}, startsWith: ${browsePath.startsWith(rootPath)}');
+    browsePath = rootPath;
+    // Schedule path update for after this build
+    Future.microtask(() {
+      ref.read(currentBrowsePathProvider.notifier).state = rootPath;
+    });
+  }
+
+  debugPrint('[FileBrowser] Listing folder: "$browsePath"');
+  final items = await service.listFolder(browsePath, includeHidden: showHidden);
+  debugPrint('[FileBrowser] Found ${items.length} items (showHidden: $showHidden)');
+  return items;
+});

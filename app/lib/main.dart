@@ -14,14 +14,12 @@ import 'core/services/logging_service.dart';
 import 'core/services/file_system_service.dart';
 import 'core/services/asset_migration_service.dart';
 import 'core/providers/feature_flags_provider.dart';
-import 'core/config/app_config.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 import 'features/chat/screens/agent_hub_screen.dart';
-import 'features/files/screens/files_screen.dart';
 import 'features/journal/screens/journal_screen.dart';
-import 'features/search/screens/search_screen.dart';
+import 'features/vault/screens/vault_screen.dart';
 import 'services/sherpa_onnx_service.dart';
 
 void main() async {
@@ -295,26 +293,8 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       );
     }
 
-    // Add Search tab if search indexing is enabled
-    if (AppConfig.enableSearchIndexing) {
-      screens.add(const SearchScreen());
-      destinations.add(
-        NavigationDestination(
-          icon: Icon(
-            Icons.search_outlined,
-            color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
-          ),
-          selectedIcon: Icon(
-            Icons.search,
-            color: isDark ? BrandColors.nightForest : BrandColors.forest,
-          ),
-          label: 'Search',
-        ),
-      );
-    }
-
-    // Always add Files tab
-    screens.add(const FilesScreen());
+    // Add Vault tab (combines Search and Files)
+    screens.add(const VaultScreen());
     destinations.add(
       NavigationDestination(
         icon: Icon(
@@ -325,7 +305,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
           Icons.folder,
           color: isDark ? BrandColors.nightForest : BrandColors.forest,
         ),
-        label: 'Files',
+        label: 'Vault',
       ),
     );
 

@@ -62,7 +62,8 @@ class FileBrowserService {
 
   /// List contents of a folder
   /// Returns items sorted: folders first, then files, alphabetically
-  Future<List<FileItem>> listFolder(String path) async {
+  /// Set [includeHidden] to true to show files/folders starting with '.'
+  Future<List<FileItem>> listFolder(String path, {bool includeHidden = false}) async {
     try {
       final dir = Directory(path);
       final exists = await dir.exists();
@@ -84,9 +85,9 @@ class FileBrowserService {
             final stat = await entity.stat();
             final isDirectory = entity is Directory;
 
-            // Skip hidden files/folders (starting with .)
+            // Skip hidden files/folders (starting with .) unless includeHidden is true
             final name = entity.path.split('/').last;
-            if (name.startsWith('.')) {
+            if (!includeHidden && name.startsWith('.')) {
               skippedCount++;
               continue;
             }
@@ -136,6 +137,33 @@ class FileBrowserService {
       debugPrint('[FileBrowserService] Error listing folder $path: $e');
       debugPrint('[FileBrowserService] Stack trace: $stackTrace');
       return [];
+    }
+  }
+
+  /// Delete a file or folder
+  /// For folders, deletes recursively
+  Future<void> deleteItem(String path) async {
+    try {
+      // First check if it's within the vault
+      if (!await isWithinVault(path)) {
+        throw Exception('Cannot delete items outside the vault');
+      }
+
+      final type = FileSystemEntity.typeSync(path);
+      if (type == FileSystemEntityType.directory) {
+        final dir = Directory(path);
+        await dir.delete(recursive: true);
+        debugPrint('[FileBrowserService] Deleted directory: $path');
+      } else if (type == FileSystemEntityType.file) {
+        final file = File(path);
+        await file.delete();
+        debugPrint('[FileBrowserService] Deleted file: $path');
+      } else {
+        throw Exception('Item does not exist');
+      }
+    } catch (e) {
+      debugPrint('[FileBrowserService] Error deleting $path: $e');
+      rethrow;
     }
   }
 
