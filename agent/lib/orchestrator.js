@@ -1426,7 +1426,18 @@ ${files.length > 20 ? `\n... and ${files.length - 20} more` : ''}
 ## Available Tools
 
 You have access to tools for reading, searching, and modifying files in the vault.
-Use your search tools to find relevant context before answering questions.
+
+### Memory & Search (vault-search MCP)
+You have access to vault-search tools that let you search through the user's past conversations, journal entries, and captures:
+- \`mcp__vault-search__vault_search\` - Search for keywords across all indexed content
+- \`mcp__vault-search__vault_get_content\` - Get more detail on a specific item by ID
+- \`mcp__vault-search__vault_recent\` - List recently added content
+
+**Use these tools when:**
+- The user asks about something you discussed before ("what did we talk about...")
+- The user references past conversations or notes
+- You need context from their journal or previous chats
+- The user asks you to find or remember something
 
 Be helpful and concise. Ask clarifying questions when needed.`;
 

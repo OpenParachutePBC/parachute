@@ -100,30 +100,41 @@ export async function loadMcpServers(vaultPath, forceReload = false) {
  * Resolve MCP server references in an agent config
  *
  * Agent can specify mcpServers as:
- * - 'all': Load all servers from .mcp.json
+ * - null/undefined: Get built-in servers only (vault-search, etc.)
+ * - 'all': Load all servers from .mcp.json (built-in + user-defined)
  * - Array of strings (references): ["browser", "filesystem"]
  * - Object with inline configs: { browser: { command: "npx", args: [...] } }
  * - Mixed: ["browser", { custom: { command: "..." } }]
  *
+ * Built-in servers (like vault-search) are ALWAYS included regardless of config.
+ *
  * @param {object|array|string|null} agentMcpServers - Agent's mcpServers config
- * @param {object} globalServers - Global server definitions from .mcp.json
+ * @param {object} globalServers - Global server definitions from .mcp.json (includes built-ins)
  * @returns {object|null} Resolved server configs ready for SDK
  */
 export function resolveMcpServers(agentMcpServers, globalServers) {
+  // Get built-in servers that should always be available
+  const builtIn = getBuiltInServers();
+
+  // If no mcpServers specified, still return built-in servers
   if (!agentMcpServers) {
-    return null;
+    console.log(`[MCP] Using built-in servers: ${Object.keys(builtIn).join(', ')}`);
+    return { ...builtIn };
   }
 
-  // Handle 'all' - load everything from .mcp.json
+  // Handle 'all' - load everything from .mcp.json (already includes built-ins)
   if (agentMcpServers === 'all') {
     if (globalServers && Object.keys(globalServers).length > 0) {
       console.log(`[MCP] Loading all servers: ${Object.keys(globalServers).join(', ')}`);
       return { ...globalServers };
     }
-    return null;
+    // Even with no user servers, return built-ins
+    console.log(`[MCP] Using built-in servers: ${Object.keys(builtIn).join(', ')}`);
+    return { ...builtIn };
   }
 
-  const resolved = {};
+  // Start with built-in servers (always included)
+  const resolved = { ...builtIn };
 
   // Handle array format: ["browser", "filesystem"] or mixed
   if (Array.isArray(agentMcpServers)) {
@@ -132,7 +143,8 @@ export function resolveMcpServers(agentMcpServers, globalServers) {
         // Reference to global server
         if (globalServers[item]) {
           resolved[item] = globalServers[item];
-        } else {
+        } else if (!builtIn[item]) {
+          // Only warn if not a built-in server
           console.warn(`[MCP] Unknown server reference: "${item}" - not found in .mcp.json`);
         }
       } else if (typeof item === 'object' && item !== null) {
@@ -150,7 +162,7 @@ export function resolveMcpServers(agentMcpServers, globalServers) {
         // Reference by value: { browser: "browser" } (unusual but support it)
         if (globalServers[config]) {
           resolved[name] = globalServers[config];
-        } else {
+        } else if (!builtIn[config]) {
           console.warn(`[MCP] Unknown server reference: "${config}"`);
         }
       } else if (config && typeof config === 'object') {
@@ -160,7 +172,8 @@ export function resolveMcpServers(agentMcpServers, globalServers) {
     }
   }
 
-  return Object.keys(resolved).length > 0 ? resolved : null;
+  console.log(`[MCP] Resolved servers: ${Object.keys(resolved).join(', ')}`);
+  return resolved;
 }
 
 /**
