@@ -91,6 +91,7 @@ VAULT_PATH=/path/to/vault npm start  # Custom vault
 | `/api/vault-search/stats` | GET | Get search index statistics |
 | `/api/vault-search/content` | GET | List indexed content (params: `contentType?`, `limit?`) |
 | `/api/vault-search/content/:id` | GET | Get specific indexed content by ID |
+| `/api/setup` | GET | Get Ollama and search index status with setup instructions |
 
 ## Agent Definition Format
 
@@ -300,20 +301,39 @@ agent:
 
 The `vault-search` MCP server is **built-in and always available** to all agents. It gives agents access to search past conversations, journals, and captures, enabling "memory" - agents can recall previous discussions and context.
 
+**Search Modes:**
+- **Keyword search**: Always available, finds exact text matches
+- **Semantic search**: Requires Ollama + embeddinggemma, finds content by meaning
+- **Hybrid search**: Combines both for best results (default when Ollama available)
+
 **Setup:**
-1. Ensure the Flutter app has built the search index (Search tab → Build Index)
-2. That's it! vault-search is auto-injected for all agents
+1. Build the search index in the Flutter app (Search tab → Build Index)
+2. (Optional) Install Ollama for semantic search:
+   ```bash
+   # macOS
+   brew install ollama
+
+   # Then install the embedding model
+   ollama pull embeddinggemma
+   ```
+3. That's it! vault-search is auto-injected for all agents
 
 **Vault Search Tools:**
-- `vault_search` - Search indexed content, returns snippets with IDs
-- `vault_get_content` - Get truncated content for a specific item (respects context limits)
+- `vault_search` - Hybrid search (keyword + semantic when available)
+- `vault_get_content` - Get truncated content for a specific item
 - `vault_recent` - List recently indexed content
 - `vault_stats` - Get index statistics
+- `vault_semantic_status` - Check if semantic search is available
 
 **Context Management:**
 - `vault_search` returns snippets (~200 chars), not full content
 - `vault_get_content` truncates large content (default 8000 chars, ~2000 tokens)
 - Agents can do targeted searches to find specific information without blowing context
+
+**Checking Setup Status:**
+- **API**: `GET /api/setup` - Returns Ollama and search index status
+- **CLI**: Server startup shows semantic search status
+- **MCP**: `vault_semantic_status` tool provides setup instructions
 
 ## Authentication
 
