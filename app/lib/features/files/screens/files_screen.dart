@@ -4,6 +4,7 @@ import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/files/models/file_item.dart';
 import 'package:app/features/files/providers/file_browser_provider.dart';
 import 'package:app/features/files/screens/markdown_viewer_screen.dart';
+import 'package:app/features/settings/screens/settings_screen.dart';
 
 /// File browser screen for navigating the vault
 class FilesScreen extends ConsumerStatefulWidget {
@@ -218,6 +219,17 @@ class _FilesScreenState extends ConsumerState<FilesScreen> with WidgetsBindingOb
               color: isDark ? BrandColors.nightText : BrandColors.charcoal,
             ),
             onPressed: _refresh,
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.settings_outlined,
+              color: isDark ? BrandColors.driftwood : BrandColors.charcoal,
+            ),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SettingsScreen()),
+            ),
+            tooltip: 'Settings',
           ),
         ],
       ),

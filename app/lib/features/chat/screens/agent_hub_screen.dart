@@ -4,6 +4,7 @@ import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/context/providers/context_providers.dart';
 import 'package:app/features/context/widgets/prompts_bottom_sheet.dart';
 import 'package:app/features/context/widgets/prompt_chip.dart';
+import 'package:app/features/settings/screens/settings_screen.dart';
 import '../models/chat_session.dart';
 import '../providers/chat_providers.dart';
 import '../widgets/session_list_item.dart';
@@ -67,6 +68,18 @@ class _AgentHubScreenState extends ConsumerState<AgentHubScreen> {
               color: isDark ? BrandColors.nightText : BrandColors.charcoal,
             ),
             tooltip: 'New Chat',
+          ),
+          // Settings button
+          IconButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SettingsScreen()),
+            ),
+            icon: Icon(
+              Icons.settings_outlined,
+              color: isDark ? BrandColors.driftwood : BrandColors.charcoal,
+            ),
+            tooltip: 'Settings',
           ),
           const SizedBox(width: Spacing.xs),
         ],

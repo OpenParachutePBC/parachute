@@ -9,6 +9,7 @@ import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/chat/providers/chat_providers.dart';
 import 'package:app/features/chat/screens/chat_screen.dart';
 import 'package:app/features/journal/providers/journal_providers.dart';
+import 'package:app/features/settings/screens/settings_screen.dart';
 
 /// Search mode enum
 enum SearchMode {
@@ -349,6 +350,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: _loadStats,
             tooltip: 'Refresh stats',
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.settings_outlined,
+              color: isDark ? BrandColors.driftwood : BrandColors.charcoal,
+            ),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SettingsScreen()),
+            ),
+            tooltip: 'Settings',
           ),
         ],
       ),
