@@ -3,61 +3,50 @@ import 'package:ollama_dart/ollama_dart.dart';
 import 'package:app/core/models/embedding_models.dart';
 import 'package:app/core/services/embedding/embedding_service.dart';
 
-/// Desktop embedding service using Ollama
+/// Desktop embedding service using Ollama with EmbeddingGemma
 ///
-/// This service uses Ollama's REST API to generate embeddings locally
-/// on desktop platforms (macOS, Linux, Windows).
+/// Uses the same EmbeddingGemma model as mobile for cross-device compatibility.
+/// Embeddings are truncated to 256 dimensions using Matryoshka representation.
 ///
-/// Requires:
-/// - Ollama installed: brew install ollama (macOS) or https://ollama.com (Linux/Windows)
-/// - Ollama server running: ollama serve
-/// - Embedding model downloaded: ollama pull nomic-embed-text
+/// Requires Ollama to be installed and running:
+/// - Install: brew install ollama (macOS) or https://ollama.com (Linux/Windows)
+/// - Start: ollama serve (runs automatically on macOS after install)
 ///
-/// Supported models:
-/// - nomic-embed-text: 768 dims, fast, good quality (default)
-/// - mxbai-embed-large: 1024 dims, higher quality but slower
-///
-/// All embeddings are truncated to 256 dimensions for consistency with mobile.
+/// The model is automatically downloaded when needed via the app UI.
 class DesktopEmbeddingService implements EmbeddingService {
   final OllamaClient _client;
-  OllamaEmbeddingModelType _modelType;
 
-  static const int _targetDimensions = 256;
-
-  DesktopEmbeddingService({
-    OllamaClient? client,
-    OllamaEmbeddingModelType modelType = OllamaEmbeddingModelType.nomicEmbedText,
-  })  : _client = client ?? OllamaClient(),
-        _modelType = modelType;
+  DesktopEmbeddingService({OllamaClient? client})
+      : _client = client ?? OllamaClient();
 
   @override
-  int get dimensions => _targetDimensions;
+  int get dimensions => DesktopEmbeddingConfig.targetDimensions;
 
-  /// Check if Ollama is running and the model is available
+  /// Check if Ollama is running and EmbeddingGemma is available
   @override
   Future<bool> isReady() async {
     try {
-      // Check if Ollama server is running
       final modelsResponse = await _client.listModels();
 
-      // Check if our embedding model is available
-      // Ollama lists models with tags (e.g., "nomic-embed-text:latest")
-      // so we check if any model starts with our base model name
       final availableModels = modelsResponse.models
               ?.map((model) => model.model ?? '')
               .where((name) => name.isNotEmpty)
               .toList() ??
           [];
 
+      // Check for embeddinggemma (with or without :latest tag)
+      final modelName = DesktopEmbeddingConfig.modelName;
       final isModelAvailable = availableModels.any(
-        (model) => model == _modelType.modelName ||
-                   model.startsWith('${_modelType.modelName}:'),
+        (model) => model == modelName || model.startsWith('$modelName:'),
       );
 
       if (isModelAvailable) {
-        debugPrint('[DesktopEmbedding] ✅ Model ${_modelType.modelName} is ready');
+        debugPrint('[DesktopEmbedding] ✅ EmbeddingGemma is ready');
       } else {
-        debugPrint('[DesktopEmbedding] ⚠️ Model ${_modelType.modelName} not found. Available: ${availableModels.join(", ")}');
+        debugPrint(
+          '[DesktopEmbedding] ⚠️ EmbeddingGemma not found. '
+          'Available: ${availableModels.join(", ")}',
+        );
       }
 
       return isModelAvailable;
@@ -67,88 +56,109 @@ class DesktopEmbeddingService implements EmbeddingService {
     }
   }
 
+  /// Check if Ollama is installed and running
+  Future<bool> isOllamaRunning() async {
+    try {
+      await _client.listModels();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /// Check if the model needs to be downloaded
   @override
   Future<bool> needsDownload() async {
     try {
-      final isModelReady = await isReady();
-      return !isModelReady;
+      // First check if Ollama is even running
+      if (!await isOllamaRunning()) {
+        return true; // Will show appropriate error during download
+      }
+      return !await isReady();
     } catch (e) {
-      debugPrint('[DesktopEmbedding] Error checking if download needed: $e');
+      debugPrint('[DesktopEmbedding] Error checking download status: $e');
       return true;
     }
   }
 
-  /// Download the embedding model using Ollama
+  /// Download EmbeddingGemma via Ollama
   ///
-  /// Note: Ollama's pull operation doesn't provide streaming progress via the API,
-  /// so we yield progress at start (0.0) and end (1.0) only.
-  ///
-  /// For actual progress tracking, users should run `ollama pull <model>` in terminal.
+  /// Streams real download progress from Ollama's pull API.
   @override
   Stream<double> downloadModel() async* {
-    try {
-      debugPrint('[DesktopEmbedding] Starting download of ${_modelType.modelName}...');
+    final modelName = DesktopEmbeddingConfig.modelName;
 
-      // Check if Ollama is running
-      try {
-        await _client.listModels();
-      } catch (e) {
+    try {
+      debugPrint('[DesktopEmbedding] Starting download of $modelName...');
+
+      // Check if Ollama is running first
+      if (!await isOllamaRunning()) {
         throw Exception(
           'Ollama is not running.\n\n'
-          'Please install Ollama:\n'
-          '  macOS: brew install ollama\n'
-          '  Linux/Windows: https://ollama.com/download\n\n'
-          'Then start the server:\n'
-          '  ollama serve',
+          'Please install and start Ollama:\n\n'
+          'macOS:\n'
+          '  brew install ollama\n'
+          '  (Ollama starts automatically after install)\n\n'
+          'Linux/Windows:\n'
+          '  Download from https://ollama.com\n'
+          '  Then run: ollama serve',
         );
       }
 
-      yield 0.0;
+      yield 0.0; // Starting
 
-      // Pull the model
-      // Note: ollama_dart's pullModel doesn't provide progress streaming
-      // Users can monitor progress by running: ollama pull <model> in terminal
-      await _client.pullModel(
-        request: PullModelRequest(
-          model: _modelType.modelName,
-          stream: false,
-        ),
+      // Use streaming pull to get real progress updates
+      final stream = _client.pullModelStream(
+        request: PullModelRequest(model: modelName),
       );
 
-      debugPrint('[DesktopEmbedding] ✅ Model ${_modelType.modelName} downloaded');
+      String? lastStatus;
+      await for (final response in stream) {
+        final total = response.total ?? 0;
+        final completed = response.completed ?? 0;
+        final status = response.status?.name ?? 'downloading';
+
+        // Log status changes
+        if (status != lastStatus) {
+          debugPrint('[DesktopEmbedding] Status: $status');
+          lastStatus = status;
+        }
+
+        // Calculate progress (0.0 to 1.0)
+        if (total > 0) {
+          final progress = completed / total;
+          yield progress.clamp(0.0, 0.99); // Reserve 1.0 for completion
+        }
+      }
+
+      debugPrint('[DesktopEmbedding] ✅ EmbeddingGemma downloaded');
       yield 1.0;
     } catch (e) {
       debugPrint('[DesktopEmbedding] ❌ Download failed: $e');
-      throw Exception('Failed to download model: $e');
+      rethrow;
     }
   }
 
   /// Embed a single text string
   ///
-  /// Returns a normalized embedding vector truncated to 256 dimensions.
+  /// Returns a 256-dimensional embedding (truncated from 768 via Matryoshka).
   @override
   Future<List<double>> embed(String text) async {
     if (text.trim().isEmpty) {
       throw ArgumentError('Text cannot be empty');
     }
 
+    final modelName = DesktopEmbeddingConfig.modelName;
+
     try {
-      // Check if ready before embedding
-      if (!await isReady()) {
-        throw Exception(
-          'Model ${_modelType.modelName} is not ready.\n\n'
-          'Please download it first:\n'
-          '  ollama pull ${_modelType.modelName}',
-        );
-      }
+      debugPrint(
+        '[DesktopEmbedding] Embedding: '
+        '${text.substring(0, text.length > 50 ? 50 : text.length)}...',
+      );
 
-      debugPrint('[DesktopEmbedding] Generating embedding for text: ${text.substring(0, text.length > 50 ? 50 : text.length)}...');
-
-      // Generate embedding using Ollama
       final response = await _client.generateEmbedding(
         request: GenerateEmbeddingRequest(
-          model: _modelType.modelName,
+          model: modelName,
           prompt: text,
         ),
       );
@@ -158,35 +168,29 @@ class DesktopEmbeddingService implements EmbeddingService {
       }
 
       final fullEmbedding = response.embedding!;
-      debugPrint('[DesktopEmbedding] Received embedding with ${fullEmbedding.length} dimensions');
 
-      // Truncate to target dimensions and renormalize
-      final truncatedEmbedding = EmbeddingDimensionHelper.truncate(
+      // Truncate to 256 dimensions (Matryoshka)
+      final truncated = EmbeddingDimensionHelper.truncate(
         fullEmbedding,
-        _targetDimensions,
+        DesktopEmbeddingConfig.targetDimensions,
         renormalize: true,
       );
 
-      debugPrint('[DesktopEmbedding] ✅ Truncated to $_targetDimensions dimensions');
-      return truncatedEmbedding;
+      debugPrint('[DesktopEmbedding] ✅ Generated ${truncated.length}d embedding');
+      return truncated;
     } catch (e) {
       debugPrint('[DesktopEmbedding] ❌ Embedding failed: $e');
       rethrow;
     }
   }
 
-  /// Embed multiple texts in a batch
+  /// Embed multiple texts
   ///
-  /// Note: Ollama doesn't have native batch embedding support,
-  /// so we process texts sequentially. For better performance with large batches,
-  /// consider using isolates for parallel processing in the future.
+  /// Processes sequentially since Ollama doesn't support batch embedding.
   @override
   Future<List<List<double>>> embedBatch(List<String> texts) async {
-    if (texts.isEmpty) {
-      return [];
-    }
+    if (texts.isEmpty) return [];
 
-    // Validate all texts are non-empty
     for (int i = 0; i < texts.length; i++) {
       if (texts[i].trim().isEmpty) {
         throw ArgumentError('Text at index $i is empty');
@@ -196,62 +200,26 @@ class DesktopEmbeddingService implements EmbeddingService {
     debugPrint('[DesktopEmbedding] Embedding batch of ${texts.length} texts...');
 
     try {
-      // Process sequentially
       final embeddings = <List<double>>[];
       for (int i = 0; i < texts.length; i++) {
-        debugPrint('[DesktopEmbedding] Processing text ${i + 1}/${texts.length}');
+        if (i % 10 == 0 || i == texts.length - 1) {
+          debugPrint('[DesktopEmbedding] Progress: ${i + 1}/${texts.length}');
+        }
         final embedding = await embed(texts[i]);
         embeddings.add(embedding);
       }
 
-      debugPrint('[DesktopEmbedding] ✅ Batch embedding complete');
+      debugPrint('[DesktopEmbedding] ✅ Batch complete');
       return embeddings;
     } catch (e) {
-      debugPrint('[DesktopEmbedding] ❌ Batch embedding failed: $e');
+      debugPrint('[DesktopEmbedding] ❌ Batch failed: $e');
       rethrow;
-    }
-  }
-
-  /// Change the embedding model
-  ///
-  /// This allows switching between different Ollama embedding models.
-  /// The new model must be downloaded before use.
-  void setModel(OllamaEmbeddingModelType modelType) {
-    debugPrint('[DesktopEmbedding] Switching to model: ${modelType.modelName}');
-    _modelType = modelType;
-  }
-
-  /// Get the current model type
-  OllamaEmbeddingModelType get modelType => _modelType;
-
-  /// Check if Ollama server is running (utility method)
-  Future<bool> isOllamaAvailable() async {
-    try {
-      await _client.listModels();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Get list of available Ollama models (utility method)
-  Future<List<String>> getAvailableModels() async {
-    try {
-      final response = await _client.listModels();
-      return response.models
-              ?.map((model) => model.model ?? '')
-              .where((name) => name.isNotEmpty)
-              .toList() ??
-          [];
-    } catch (e) {
-      debugPrint('[DesktopEmbedding] Failed to list models: $e');
-      return [];
     }
   }
 
   @override
   Future<void> dispose() async {
-    debugPrint('[DesktopEmbedding] Disposing service');
+    debugPrint('[DesktopEmbedding] Disposing');
     _client.endSession();
   }
 }

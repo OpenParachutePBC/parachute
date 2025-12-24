@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:app/core/services/embedding/embedding_service.dart';
-import 'package:app/core/services/search/chunking/semantic_chunker.dart';
+import 'package:app/core/services/search/chunking/paragraph_chunker.dart';
 import 'package:app/core/services/search/models/indexed_chunk.dart';
 import 'package:app/features/journal/models/journal_entry.dart';
 import 'package:app/features/journal/models/journal_day.dart';
@@ -8,7 +8,7 @@ import 'package:app/features/journal/models/journal_day.dart';
 /// High-level service for chunking journal entries into IndexedChunk objects
 ///
 /// This service handles the complete chunking pipeline for journals:
-/// 1. Chunk the content using semantic boundaries
+/// 1. Chunk the content using paragraph boundaries (fast, no per-sentence embeddings)
 /// 2. Embed single-field content (title)
 /// 3. Return IndexedChunk objects ready for database insertion
 ///
@@ -20,15 +20,15 @@ import 'package:app/features/journal/models/journal_day.dart';
 /// ```
 class JournalChunker {
   final EmbeddingService _embeddingService;
-  final SemanticChunker _semanticChunker;
+  final ParagraphChunker _paragraphChunker;
 
   JournalChunker(
     this._embeddingService, {
-    double similarityThreshold = 0.5,
+    int targetChunkTokens = 300,
     int maxChunkTokens = 500,
-  }) : _semanticChunker = SemanticChunker(
+  }) : _paragraphChunker = ParagraphChunker(
           _embeddingService,
-          similarityThreshold: similarityThreshold,
+          targetChunkTokens: targetChunkTokens,
           maxChunkTokens: maxChunkTokens,
         );
 
@@ -53,10 +53,10 @@ class JournalChunker {
 
     final chunks = <IndexedChunk>[];
 
-    // 1. Chunk the content (main content)
+    // 1. Chunk the content (main content) using paragraph-based chunking
     if (entry.content.isNotEmpty) {
       debugPrint('[JournalChunker] Chunking content...');
-      final contentChunks = await _semanticChunker.chunkTranscript(
+      final contentChunks = await _paragraphChunker.chunkText(
         entry.content,
       );
 

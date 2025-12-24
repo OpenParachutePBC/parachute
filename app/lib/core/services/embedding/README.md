@@ -1,173 +1,96 @@
 # Embedding Service
 
-This directory contains the foundational embedding interface and model management for Parachute's RAG search feature.
+Cross-platform embedding using **EmbeddingGemma** everywhere for compatible embeddings across devices.
 
 ## Architecture
 
-The embedding system follows a platform-adaptive architecture:
-
 ```
 EmbeddingService (abstract interface)
-    ├── MobileEmbeddingService (flutter_gemma) - Issue #20
-    └── DesktopEmbeddingService (Ollama) - Issue #22
+    ├── MobileEmbeddingService (flutter_gemma) - Android/iOS
+    └── DesktopEmbeddingService (Ollama)       - macOS/Linux/Windows
 ```
+
+Both platforms use **EmbeddingGemma** (768d → 256d via Matryoshka) for cross-device compatibility.
+
+## Quick Start
+
+### Desktop (macOS)
+
+```bash
+# Install Ollama (starts automatically)
+brew install ollama
+
+# The app will auto-pull embeddinggemma when you use semantic search
+```
+
+### Mobile
+
+The app downloads EmbeddingGemma (~200MB) when you first use semantic search.
 
 ## Core Components
 
-### 1. EmbeddingService (`embedding_service.dart`)
+### EmbeddingService (`embedding_service.dart`)
 
-Abstract interface that all platform implementations must follow:
-
-- `embed(String)` - Generate embedding for a single text
-- `embedBatch(List<String>)` - Batch embedding for efficiency
-- `downloadModel()` - Stream model download progress
+Abstract interface:
+- `embed(String)` - Generate 256d embedding for text
+- `embedBatch(List<String>)` - Batch embedding
+- `downloadModel()` - Stream download progress
 - `isReady()` - Check if model is loaded
-- `needsDownload()` - Check if model needs downloading
+- `needsDownload()` - Check if download needed
 
-### 2. EmbeddingModelManager (`embedding_model_manager.dart`)
+### EmbeddingDimensionHelper
 
-Manages model lifecycle:
-
-- Auto-download on app startup (non-blocking)
-- Status tracking (notDownloaded → downloading → ready)
-- Error handling
-- Progress reporting for UI
-
-### 3. EmbeddingDimensionHelper
-
-Utility for dimension truncation (Matryoshka embeddings):
-
-- Truncate 768d → 256d for faster search
+Matryoshka truncation utility:
+- Truncate 768d → 256d (preserves ~97% quality)
 - Normalize vectors to unit length
-- Check if vectors are normalized (for testing)
 
-## Models
+## Model: EmbeddingGemma
 
-### Mobile (Android/iOS)
-- **EmbeddingGemma** via flutter_gemma
-- 300 MB model
-- 768d native, truncated to 256d
-- On-device, private, no internet required
+| Platform | Backend | Native Dims | Output Dims |
+|----------|---------|-------------|-------------|
+| Mobile   | flutter_gemma | 768 | 256 |
+| Desktop  | Ollama | 768 | 256 |
 
-### Desktop (macOS/Linux/Windows)
-- **Ollama** with embedding models
-- nomic-embed-text (274 MB, 768d) - Fast
-- mxbai-embed-large (670 MB, 1024d) - Higher quality
-
-## Dimension Strategy
-
-Starting with **256 dimensions** (truncated from 768):
-
-| Dimensions | Storage/chunk | Search Speed | Quality vs 768d |
-|------------|---------------|--------------|-----------------|
-| 768        | 3 KB          | Baseline     | 100%            |
-| 512        | 2 KB          | ~2x faster   | ~98%            |
-| 256        | 1 KB          | ~3x faster   | ~97%            |
-
-Rationale: 256d provides excellent quality with 3x faster search and 1/3 storage.
-
-## Matryoshka Embeddings
-
-EmbeddingGemma supports Matryoshka Representation Learning:
-- Embeddings can be truncated to smaller sizes without retraining
-- Just take the first N dimensions
-- Must renormalize after truncation
-
-See: https://arxiv.org/abs/2205.13147
+**Why EmbeddingGemma?**
+- Same model everywhere = compatible embeddings across devices
+- Matryoshka trained = truncation preserves quality
+- Small (~200MB) and fast
+- Multilingual (100+ languages)
 
 ## Usage
 
-### App Startup (main.dart)
-
 ```dart
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  final container = ProviderContainer();
-
-  // Trigger embedding model download (non-blocking)
-  container.read(embeddingModelManagerProvider).ensureModelReady();
-
-  runApp(ProviderScope(child: ParachuteApp()));
-}
-```
-
-### Generating Embeddings
-
-```dart
-// Get the service
+// Get the service (auto-selects platform)
 final embeddingService = ref.read(embeddingServiceProvider);
 
 // Check if ready
 if (!await embeddingService.isReady()) {
-  // Show download UI or wait for download
+  // Trigger download via UI
   return;
 }
 
-// Embed a single text
+// Embed text
 final embedding = await embeddingService.embed('Hello world');
 // embedding: List<double> of length 256
 
-// Embed multiple texts (more efficient)
+// Batch embed
 final embeddings = await embeddingService.embedBatch([
   'First text',
   'Second text',
-  'Third text',
 ]);
-// embeddings: List<List<double>>, each inner list has 256 elements
 ```
 
-### Monitoring Download Progress
+## Matryoshka Embeddings
 
-```dart
-final manager = ref.read(embeddingModelManagerProvider);
+EmbeddingGemma uses Matryoshka Representation Learning:
+- First N dimensions form a valid smaller embedding
+- 256d retains ~97% of 768d quality
+- 3x faster search, 1/3 storage
 
-// Start download
-await for (final progress in manager.downloadModel()) {
-  print('Download: ${(progress * 100).toStringAsFixed(1)}%');
-  // Update UI progress bar
-}
-
-// Check status
-if (manager.status.isReady) {
-  print('Model ready!');
-} else if (manager.status.hasError) {
-  print('Error: ${manager.error}');
-}
-```
+See: https://arxiv.org/abs/2205.13147
 
 ## Testing
 
-Tests are located in `test/core/services/embedding/`:
-
-- `embedding_models_test.dart` - Model enums and status
-- `embedding_dimension_helper_test.dart` - Dimension truncation
-- `embedding_model_manager_test.dart` - Lifecycle management
-
-Run tests:
 ```bash
 flutter test test/core/services/embedding/
 ```
-
-## Next Steps
-
-This foundation enables:
-
-- **Issue #20**: Mobile embedding implementation (flutter_gemma)
-- **Issue #22**: Desktop embedding implementation (Ollama)
-- **Issue #23**: Chunking service (split documents for embedding)
-- **Issue #4**: Vector search and RAG retrieval
-
-## Platform Detection
-
-The system automatically detects the platform:
-
-```dart
-if (EmbeddingModelManager.isMobile) {
-  // Use flutter_gemma (Android/iOS)
-} else if (EmbeddingModelManager.isDesktop) {
-  // Use Ollama (macOS/Linux/Windows)
-}
-```
-
-This is handled by the `embeddingServiceProvider` in `embedding_provider.dart`.

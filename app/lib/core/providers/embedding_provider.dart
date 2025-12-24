@@ -92,9 +92,10 @@ final embeddingErrorProvider = StateProvider<String?>((ref) {
 
 /// Provider for embedding dimensions
 ///
-/// Returns the number of dimensions for embeddings on this platform:
-/// - Mobile: 256 (truncated from 768)
-/// - Desktop: 768 or 1024 (depends on Ollama model)
+/// Returns the number of dimensions for embeddings on this platform.
+/// All platforms use 256 dimensions for consistency and cross-device sync:
+/// - Mobile: 256 (EmbeddingGemma truncated from 768)
+/// - Desktop: 256 (Ollama models truncated to match mobile)
 final embeddingDimensionsProvider = Provider<int>((ref) {
   final manager = ref.watch(embeddingModelManagerProvider);
   return manager.dimensions;

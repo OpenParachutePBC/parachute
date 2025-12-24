@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/providers/embedding_provider.dart';
 import 'package:app/core/providers/vector_store_provider.dart';
-import 'package:app/core/providers/search_providers.dart';
+import 'package:app/core/providers/search_providers.dart' hide localSessionReaderProvider;
 import 'package:app/core/services/search/search_index_service.dart';
 import 'package:app/core/services/search/models/vector_search_result.dart';
 import 'package:app/core/theme/design_tokens.dart';
@@ -10,12 +10,17 @@ import 'package:app/features/chat/providers/chat_providers.dart';
 import 'package:app/features/chat/screens/chat_screen.dart';
 import 'package:app/features/journal/providers/journal_providers.dart';
 
-/// Search screen for testing and debugging the RAG search system
+/// Search mode enum
+enum SearchMode {
+  keyword, // Simple text search (default, no model needed)
+  semantic, // Vector search (requires embedding model + index)
+}
+
+/// Search screen for vault content
 ///
-/// Displays:
-/// - Search input
-/// - Indexing statistics
-/// - Vector search results with scores and content type
+/// Supports two modes:
+/// - **Keyword**: Simple text matching, works immediately, no setup required
+/// - **Semantic**: AI-powered search, requires embedding model download and indexing
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -27,15 +32,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
 
-  List<VectorSearchResult>? _results;
-  Map<String, dynamic>? _stats;
+  // Search mode - default to keyword (no setup required)
+  SearchMode _searchMode = SearchMode.keyword;
+
+  // Search results (unified for both modes)
+  List<dynamic>? _results; // Can be SimpleSearchResult or VectorSearchResult
   bool _isSearching = false;
-  bool _isLoadingStats = true;
-  bool _isVectorStoreReady = false;
   String? _error;
   int? _searchTimeMs;
 
-  // For embedding model status
+  // For semantic search stats
+  Map<String, dynamic>? _stats;
+  bool _isLoadingStats = true;
+  bool _isVectorStoreReady = false;
+
+  // For embedding model status (semantic mode only)
   bool _isEmbeddingReady = false;
   bool _isCheckingEmbedding = true;
   bool _isDownloadingEmbedding = false;
@@ -235,13 +246,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return;
     }
 
-    if (!_isVectorStoreReady) {
-      setState(() {
-        _error = 'Search index is still loading...';
-      });
-      return;
-    }
-
     setState(() {
       _isSearching = true;
       _error = null;
@@ -250,40 +254,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final stopwatch = Stopwatch()..start();
 
     try {
-      // Get embedding service and vector store
-      final embeddingService = ref.read(embeddingServiceProvider);
-      final vectorStore = ref.read(vectorStoreProvider);
-
-      // Embed the query
-      final queryEmbedding = await embeddingService.embed(query);
-
-      // Search (get more results for deduplication)
-      final allResults = await vectorStore.search(
-        queryEmbedding,
-        limit: 100,
-        minScore: 0.0, // Show all results for debugging
-      );
-
-      // Deduplicate: keep only the best-matching chunk per source
-      final deduped = <String, VectorSearchResult>{};
-      for (final result in allResults) {
-        final sourceId = result.recordingId;
-        if (!deduped.containsKey(sourceId) ||
-            result.score > deduped[sourceId]!.score) {
-          deduped[sourceId] = result;
-        }
+      if (_searchMode == SearchMode.keyword) {
+        await _keywordSearch(query);
+      } else {
+        await _semanticSearch(query);
       }
-
-      // Sort by score and take top results
-      final results = deduped.values.toList()
-        ..sort((a, b) => b.score.compareTo(a.score));
-      final topResults = results.take(30).toList();
-
       stopwatch.stop();
-
       if (mounted) {
         setState(() {
-          _results = topResults;
           _isSearching = false;
           _searchTimeMs = stopwatch.elapsedMilliseconds;
         });
@@ -297,6 +275,64 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           _searchTimeMs = stopwatch.elapsedMilliseconds;
         });
       }
+    }
+  }
+
+  /// Keyword search using simple text matching
+  Future<void> _keywordSearch(String query) async {
+    final simpleSearch = await ref.read(simpleTextSearchProvider.future);
+    final results = await simpleSearch.search(query, limit: 30);
+
+    if (mounted) {
+      setState(() {
+        _results = results;
+      });
+    }
+  }
+
+  /// Semantic search using vector embeddings
+  Future<void> _semanticSearch(String query) async {
+    if (!_isVectorStoreReady) {
+      throw Exception('Search index is still loading...');
+    }
+
+    if (!_isEmbeddingReady) {
+      throw Exception('Embedding model not ready. Please download it first.');
+    }
+
+    // Get embedding service and vector store
+    final embeddingService = ref.read(embeddingServiceProvider);
+    final vectorStore = ref.read(vectorStoreProvider);
+
+    // Embed the query
+    final queryEmbedding = await embeddingService.embed(query);
+
+    // Search (get more results for deduplication)
+    final allResults = await vectorStore.search(
+      queryEmbedding,
+      limit: 100,
+      minScore: 0.0, // Show all results for debugging
+    );
+
+    // Deduplicate: keep only the best-matching chunk per source
+    final deduped = <String, VectorSearchResult>{};
+    for (final result in allResults) {
+      final sourceId = result.recordingId;
+      if (!deduped.containsKey(sourceId) ||
+          result.score > deduped[sourceId]!.score) {
+        deduped[sourceId] = result;
+      }
+    }
+
+    // Sort by score and take top results
+    final results = deduped.values.toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    final topResults = results.take(30).toList();
+
+    if (mounted) {
+      setState(() {
+        _results = topResults;
+      });
     }
   }
 
@@ -318,14 +354,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       body: Column(
         children: [
-          // Embedding model status banner (show if not ready)
-          _buildEmbeddingBanner(isDark),
+          // Search mode toggle
+          _buildModeToggle(isDark),
 
-          // Indexing progress banner
-          _buildIndexingBanner(isDark),
+          // Embedding model status banner (only show in semantic mode)
+          if (_searchMode == SearchMode.semantic) _buildEmbeddingBanner(isDark),
 
-          // Stats card
-          _buildStatsCard(isDark),
+          // Indexing progress banner (only show in semantic mode)
+          if (_searchMode == SearchMode.semantic) _buildIndexingBanner(isDark),
+
+          // Stats card (only show in semantic mode)
+          if (_searchMode == SearchMode.semantic) _buildStatsCard(isDark),
 
           // Search input
           Padding(
@@ -399,7 +438,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemBuilder: (context, index) {
                       final result = _results![index];
-                      return _buildResultCard(result, index, isDark);
+                      if (_searchMode == SearchMode.keyword && result is SimpleSearchResult) {
+                        return _buildSimpleResultCard(result, index, isDark);
+                      } else if (result is VectorSearchResult) {
+                        return _buildResultCard(result, index, isDark);
+                      }
+                      return const SizedBox.shrink();
                     },
                   ),
           ),
@@ -418,8 +462,57 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
+  /// Build the search mode toggle
+  Widget _buildModeToggle(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: SegmentedButton<SearchMode>(
+        segments: [
+          ButtonSegment<SearchMode>(
+            value: SearchMode.keyword,
+            label: const Text('Keyword'),
+            icon: const Icon(Icons.text_fields, size: 18),
+          ),
+          ButtonSegment<SearchMode>(
+            value: SearchMode.semantic,
+            label: const Text('Semantic'),
+            icon: const Icon(Icons.auto_awesome, size: 18),
+          ),
+        ],
+        selected: {_searchMode},
+        onSelectionChanged: (Set<SearchMode> newSelection) {
+          setState(() {
+            _searchMode = newSelection.first;
+            // Clear results when switching modes
+            _results = null;
+            _error = null;
+            _searchTimeMs = null;
+          });
+          // Re-run search if there's a query
+          if (_searchController.text.isNotEmpty) {
+            _search(_searchController.text);
+          }
+        },
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+            if (states.contains(WidgetState.selected)) {
+              return isDark ? BrandColors.nightForest : BrandColors.forest;
+            }
+            return Colors.transparent;
+          }),
+          foregroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+            if (states.contains(WidgetState.selected)) {
+              return Colors.white;
+            }
+            return isDark ? BrandColors.nightText : BrandColors.charcoal;
+          }),
+        ),
+      ),
+    );
+  }
+
   /// Ask AI a question using search results as context
-  void _askWithContext(String query, List<VectorSearchResult> results) {
+  void _askWithContext(String query, List<dynamic> results) {
     // Format search results as context for the AI
     final contextBuffer = StringBuffer();
     contextBuffer.writeln('The following are relevant excerpts from your vault:\n');
@@ -428,11 +521,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final topResults = results.take(10).toList();
     for (var i = 0; i < topResults.length; i++) {
       final result = topResults[i];
-      final sourceType = _contentTypeLabel(result.contentType.name);
-      final sourceId = _formatContentId(result.recordingId);
+
+      String sourceType;
+      String sourceId;
+      String content;
+
+      if (result is SimpleSearchResult) {
+        sourceType = result.type == 'journal' ? 'Journal' : 'Chat';
+        sourceId = result.title;
+        content = result.fullContent;
+      } else if (result is VectorSearchResult) {
+        sourceType = _contentTypeLabel(result.contentType.name);
+        sourceId = _formatContentId(result.recordingId);
+        content = result.chunkText;
+      } else {
+        continue;
+      }
 
       contextBuffer.writeln('--- Source ${i + 1} ($sourceType: $sourceId) ---');
-      contextBuffer.writeln(result.chunkText);
+      contextBuffer.writeln(content);
       contextBuffer.writeln();
     }
 
@@ -510,7 +617,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
-                value: _embeddingDownloadProgress,
+                value: _embeddingDownloadProgress > 0 ? _embeddingDownloadProgress : null,
                 backgroundColor: isDark
                     ? BrandColors.nightTextSecondary.withValues(alpha: 0.2)
                     : BrandColors.driftwood.withValues(alpha: 0.2),
@@ -520,7 +627,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              '${(_embeddingDownloadProgress * 100).toStringAsFixed(0)}% - This may take a few minutes',
+              _embeddingDownloadProgress > 0
+                  ? 'Downloading... ${(_embeddingDownloadProgress * 100).toStringAsFixed(0)}%'
+                  : 'Connecting to Ollama...',
               style: TextStyle(
                 fontSize: 12,
                 color: isDark
@@ -659,7 +768,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         );
       },
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 
@@ -702,13 +811,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
 
-    if (_stats == null) {
-      return const SizedBox.shrink();
-    }
-
-    final totalChunks = _stats!['totalChunks'] ?? 0;
-    final totalRecordings = _stats!['totalRecordings'] ?? 0;
-    final chunksByType = _stats!['chunksByType'] as Map<String, dynamic>? ?? {};
+    final totalChunks = _stats?['totalChunks'] ?? 0;
+    final totalRecordings = _stats?['totalRecordings'] ?? 0;
+    final chunksByType = _stats?['chunksByType'] as Map<String, dynamic>? ?? {};
+    final hasIndex = totalChunks > 0;
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -725,38 +831,206 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Index Statistics',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: isDark ? BrandColors.nightText : BrandColors.charcoal,
-            ),
-          ),
-          const SizedBox(height: 8),
+          // Header with title and build button
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStatChip('Total Chunks', totalChunks.toString(), isDark),
-              const SizedBox(width: 8),
-              _buildStatChip('Content Items', totalRecordings.toString(), isDark),
+              Text(
+                hasIndex ? 'Semantic Search Index' : 'Build Search Index',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                ),
+              ),
+              if (!hasIndex || true) // Always show rebuild option
+                TextButton.icon(
+                  onPressed: _isEmbeddingReady ? _showBuildIndexDialog : null,
+                  icon: Icon(
+                    hasIndex ? Icons.refresh : Icons.build,
+                    size: 16,
+                  ),
+                  label: Text(hasIndex ? 'Rebuild' : 'Build'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+                  ),
+                ),
             ],
           ),
-          if (chunksByType.isNotEmpty) ...[
+
+          if (!hasIndex) ...[
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: chunksByType.entries.map((e) {
-                return _buildStatChip(
-                  _contentTypeLabel(e.key),
-                  e.value.toString(),
-                  isDark,
-                  color: _contentTypeColor(e.key),
-                );
-              }).toList(),
+            Text(
+              'Enable semantic search to find content by meaning, not just keywords.',
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+              ),
             ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Uses ~200MB storage + battery during indexing',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          if (hasIndex) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _buildStatChip('Chunks', totalChunks.toString(), isDark),
+                const SizedBox(width: 8),
+                _buildStatChip('Items', totalRecordings.toString(), isDark),
+              ],
+            ),
+            if (chunksByType.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: chunksByType.entries.map((e) {
+                  return _buildStatChip(
+                    _contentTypeLabel(e.key),
+                    e.value.toString(),
+                    isDark,
+                    color: _contentTypeColor(e.key),
+                  );
+                }).toList(),
+              ),
+            ],
           ],
         ],
       ),
+    );
+  }
+
+  /// Show dialog to confirm building the search index
+  void _showBuildIndexDialog() async {
+    final journalService = await ref.read(journalServiceFutureProvider.future);
+    final journalDates = await journalService.listJournalDates();
+    final journalCount = journalDates.length;
+
+    // Get chat session count
+    final localReader = ref.read(localSessionReaderProvider);
+    final chatSessions = await localReader.getLocalSessions();
+    final chatCount = chatSessions.length;
+
+    if (!mounted) return;
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Build Search Index'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This will index your content for semantic search:',
+              style: TextStyle(
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildIndexOption(
+              'Journals',
+              '$journalCount days',
+              Icons.book,
+              isDark,
+            ),
+            const SizedBox(height: 8),
+            _buildIndexOption(
+              'Chats',
+              '$chatCount sessions',
+              Icons.chat,
+              isDark,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.battery_alert, color: Colors.orange, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This may take several minutes and use significant battery. Consider plugging in.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _triggerSearchIndexSync();
+            },
+            child: const Text('Build Index'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIndexOption(String title, String subtitle, IconData icon, bool isDark) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: isDark ? BrandColors.nightForest : BrandColors.forest,
+        ),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+              ),
+            ),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -816,6 +1090,243 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Build result card for simple keyword search
+  Widget _buildSimpleResultCard(SimpleSearchResult result, int index, bool isDark) {
+    final typeColor = result.type == 'journal' ? BrandColors.forest : BrandColors.turquoise;
+    final typeIcon = result.type == 'journal' ? Icons.book : Icons.chat_bubble;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: isDark ? BrandColors.nightSurface : Colors.white,
+      child: InkWell(
+        onTap: () => _navigateToSimpleResult(result),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row with rank, type, and match count
+              Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? BrandColors.nightTextSecondary.withValues(alpha: 0.2)
+                          : BrandColors.driftwood.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      '${index + 1}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: isDark
+                            ? BrandColors.nightTextSecondary
+                            : BrandColors.driftwood,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: typeColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(typeIcon, size: 12, color: typeColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          result.type == 'journal' ? 'Journal' : 'Chat',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: typeColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  // Match count badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${result.matchCount} matches',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: isDark
+                        ? BrandColors.nightTextSecondary
+                        : BrandColors.driftwood,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // Title
+              Text(
+                result.title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Snippet with query highlighting
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.black.withValues(alpha: 0.2)
+                      : BrandColors.softWhite,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: _buildHighlightedText(
+                  result.snippet,
+                  _searchController.text,
+                  isDark,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Navigate to a simple search result
+  void _navigateToSimpleResult(SimpleSearchResult result) {
+    if (result.type == 'chat') {
+      _navigateToChat(result.id.replaceFirst('chat:', ''));
+    } else if (result.type == 'journal') {
+      // Parse date from id (journal:YYYY-MM-DD:entryId)
+      final parts = result.id.split(':');
+      if (parts.length >= 2) {
+        final dateStr = parts[1];
+        final dateParts = dateStr.split('-');
+        if (dateParts.length == 3) {
+          final year = int.tryParse(dateParts[0]);
+          final month = int.tryParse(dateParts[1]);
+          final day = int.tryParse(dateParts[2]);
+
+          if (year != null && month != null && day != null) {
+            final date = DateTime(year, month, day);
+            ref.read(selectedJournalDateProvider.notifier).state = date;
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Journal date set to $dateStr - switch to Journal tab'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            return;
+          }
+        }
+      }
+    }
+
+    // Fallback: show content preview
+    _showSimpleResultPreview(result);
+  }
+
+  /// Show preview of simple search result
+  void _showSimpleResultPreview(SimpleSearchResult result) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? BrandColors.nightSurface : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => Column(
+          children: [
+            // Handle bar
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? BrandColors.nightTextSecondary.withValues(alpha: 0.5)
+                    : BrandColors.driftwood.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    result.type == 'journal' ? Icons.book : Icons.chat_bubble,
+                    color: result.type == 'journal' ? BrandColors.forest : BrandColors.turquoise,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      result.title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Divider(),
+
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(16),
+                child: _buildHighlightedText(
+                  result.fullContent,
+                  _searchController.text,
+                  isDark,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -86,69 +86,35 @@ enum EmbeddingGemmaModelType {
   }
 }
 
-/// Embedding model types for desktop platforms (macOS/Linux/Windows)
+/// Desktop embedding configuration (macOS/Linux/Windows)
 ///
-/// Uses Ollama with embedding models for high-quality embeddings.
-enum OllamaEmbeddingModelType {
-  /// Nomic Embed Text - Fast and efficient
-  nomicEmbedText(
-    'nomic-embed-text',
-    274,
-    'Fast and efficient embedding model',
-    768,
-  ),
+/// Uses Ollama with EmbeddingGemma for compatibility with mobile.
+/// This is a singleton configuration, not a choice - we use the same
+/// model everywhere for cross-device compatibility.
+class DesktopEmbeddingConfig {
+  /// Model name in Ollama
+  static const String modelName = 'embeddinggemma';
 
-  /// mxbai-embed-large - Higher quality but slower
-  mxbaiEmbedLarge(
-    'mxbai-embed-large',
-    670,
-    'Higher quality embedding model',
-    1024,
-  );
+  /// Approximate download size in MB
+  static const int sizeInMB = 200;
 
-  const OllamaEmbeddingModelType(
-    this.modelName,
-    this.sizeInMB,
-    this.description,
-    this.dimensions,
-  );
+  /// Native dimensions before truncation
+  static const int nativeDimensions = 768;
 
-  final String modelName;
-  final int sizeInMB;
-  final String description;
-  final int dimensions;
+  /// Target dimensions after Matryoshka truncation
+  static const int targetDimensions = 256;
 
-  /// Get formatted size string (e.g., "300 MB", "1.2 GB")
-  String get formattedSize {
-    if (sizeInMB < 1000) {
-      return '$sizeInMB MB';
-    } else {
-      final sizeInGB = sizeInMB / 1000;
-      return '${sizeInGB.toStringAsFixed(1)} GB';
-    }
-  }
+  /// Human-readable description
+  static const String description = 'EmbeddingGemma - same model as mobile';
+
+  /// Get formatted size string
+  static String get formattedSize => '$sizeInMB MB';
 
   /// Get display name for UI
-  String get displayName {
-    return modelName.toUpperCase();
-  }
+  static String get displayName => 'EmbeddingGemma';
 
   /// Get full display text with size
-  String get fullDisplayName {
-    return '$displayName ($formattedSize)';
-  }
-
-  /// Convert string to enum (case-insensitive)
-  static OllamaEmbeddingModelType? fromString(String value) {
-    final normalized = value.toLowerCase();
-    for (final model in OllamaEmbeddingModelType.values) {
-      if (model.modelName == normalized ||
-          model.name.toLowerCase() == normalized) {
-        return model;
-      }
-    }
-    return null;
-  }
+  static String get fullDisplayName => '$displayName ($formattedSize)';
 }
 
 /// Model download progress data

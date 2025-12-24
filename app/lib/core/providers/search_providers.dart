@@ -7,6 +7,7 @@ import 'package:app/core/services/search/chunking/journal_chunker.dart';
 import 'package:app/core/services/search/chunking/chat_chunker.dart';
 import 'package:app/core/services/search/hybrid_search_service.dart';
 import 'package:app/core/services/search/models/search_result.dart';
+import 'package:app/core/services/search/simple_text_search.dart';
 import 'package:app/core/providers/vector_store_provider.dart';
 import 'package:app/core/providers/bm25_provider.dart';
 import 'package:app/core/providers/embedding_provider.dart';
@@ -18,6 +19,7 @@ import 'package:app/core/providers/file_system_provider.dart';
 // Export for convenience
 export 'package:app/core/services/search/search_index_service.dart' show IndexingStatus;
 export 'package:app/core/services/search/models/search_result.dart';
+export 'package:app/core/services/search/simple_text_search.dart';
 
 /// Provider for ContentHasher
 ///
@@ -57,6 +59,26 @@ final chatChunkerProvider = Provider<ChatChunker>((ref) {
 final localSessionReaderProvider = Provider<LocalSessionReader>((ref) {
   final fileSystemService = ref.watch(fileSystemServiceProvider);
   return LocalSessionReader(fileSystemService);
+});
+
+/// Async provider for SimpleTextSearchService
+///
+/// Provides keyword-based search without requiring embedding model or indexing.
+/// Works immediately with no setup - perfect as the default search mode.
+///
+/// **Usage:**
+/// ```dart
+/// final simpleSearch = await ref.read(simpleTextSearchProvider.future);
+/// final results = await simpleSearch.search('my search query');
+/// ```
+final simpleTextSearchProvider = FutureProvider<SimpleTextSearchService>((ref) async {
+  final journalService = await ref.watch(journalServiceFutureProvider.future);
+  final sessionReader = ref.watch(localSessionReaderProvider);
+
+  return SimpleTextSearchService(
+    journalService: journalService,
+    sessionReader: sessionReader,
+  );
 });
 
 /// Provider for SearchIndexService
