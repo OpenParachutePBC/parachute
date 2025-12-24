@@ -9,9 +9,11 @@ import 'package:app/features/recorder/models/speaker_segment.dart';
 class ParakeetService {
   static const _channel = MethodChannel('com.parachute.app/parakeet');
 
-  bool _isInitialized = false;
-  String _version = 'v3';
-  bool _isDiarizerInitialized = false;
+  // Static flags shared across all instances to prevent concurrent initialization
+  static bool _isInitialized = false;
+  static bool _isInitializing = false;
+  static String _version = 'v3';
+  static bool _isDiarizerInitialized = false;
 
   bool get isInitialized => _isInitialized;
   bool get isDiarizerInitialized => _isDiarizerInitialized;
@@ -36,6 +38,20 @@ class ParakeetService {
       return;
     }
 
+    if (_isInitializing) {
+      debugPrint('[ParakeetService] Already initializing, waiting...');
+      // Wait for the existing initialization to complete
+      while (_isInitializing) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      if (_isInitialized) {
+        debugPrint('[ParakeetService] Initialization completed by another caller');
+        return;
+      }
+      // If we get here, the other initialization failed, so we'll try again
+    }
+
+    _isInitializing = true;
     try {
       debugPrint('[ParakeetService] Initializing Parakeet $version...');
       final result = await _channel.invokeMethod<Map>('initialize', {
@@ -52,6 +68,8 @@ class ParakeetService {
     } on PlatformException catch (e) {
       debugPrint('[ParakeetService] ❌ Initialization failed: ${e.message}');
       rethrow;
+    } finally {
+      _isInitializing = false;
     }
   }
 
