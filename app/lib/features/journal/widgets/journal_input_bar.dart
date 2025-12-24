@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../recorder/providers/service_providers.dart';
+import '../../recorder/providers/transcription_progress_provider.dart';
 import '../../settings/screens/settings_screen.dart';
 
 /// Input bar for adding entries to the journal
@@ -218,10 +219,18 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
 
   /// Transcribe audio in background and update the entry
   Future<void> _transcribeInBackground(String audioPath, int durationSeconds) async {
+    // Start progress tracking
+    ref.read(transcriptionProgressProvider.notifier).startTranscription(
+      audioDurationSeconds: durationSeconds,
+    );
+
     try {
       final postProcessingService = ref.read(recordingPostProcessingProvider);
       final result = await postProcessingService.process(audioPath: audioPath);
       final transcript = result.transcript;
+
+      // Mark progress complete
+      ref.read(transcriptionProgressProvider.notifier).complete();
 
       debugPrint('[JournalInputBar] Background transcription complete: ${transcript.length} chars');
 
@@ -253,6 +262,9 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
         await widget.onTranscriptReady!(transcript);
       }
     } catch (e) {
+      // Mark progress as failed
+      ref.read(transcriptionProgressProvider.notifier).fail(e.toString());
+
       debugPrint('[JournalInputBar] Background transcription failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -500,6 +512,8 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
   }
 
   Widget _buildRecordingIndicator(bool isDark) {
+    final progressState = ref.watch(transcriptionProgressProvider);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -512,22 +526,59 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_isProcessing) ...[
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+            // Show actual progress if available
+            if (progressState.isActive) ...[
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  value: progressState.progress,
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+                  backgroundColor: BrandColors.turquoise.withValues(alpha: 0.2),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Transcribing...',
-              style: TextStyle(
-                color: BrandColors.turquoise,
-                fontWeight: FontWeight.w500,
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    progressState.status,
+                    style: TextStyle(
+                      color: BrandColors.turquoise,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                  if (progressState.timeRemainingText.isNotEmpty)
+                    Text(
+                      progressState.timeRemainingText,
+                      style: TextStyle(
+                        color: BrandColors.turquoise.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
+                    ),
+                ],
               ),
-            ),
+            ] else ...[
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Transcribing...',
+                style: TextStyle(
+                  color: BrandColors.turquoise,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ] else ...[
             Container(
               width: 8,
