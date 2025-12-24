@@ -1,10 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
-import 'package:app/services/parakeet_service.dart' as parakeet;
-import 'package:app/services/sherpa_onnx_service.dart' as sherpa;
+import 'package:app/features/recorder/providers/transcription_init_provider.dart';
 import './settings_section_header.dart';
 
 /// Transcription settings section (Parakeet model and toggles)
@@ -20,10 +18,6 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
   bool _autoTranscribe = false;
   bool _autoPauseRecording = false;
   bool _audioDebugOverlay = false;
-  dynamic _parakeetModelInfo;
-  bool _isDownloadingParakeet = false;
-  double _parakeetDownloadProgress = 0.0;
-  String _parakeetDownloadStatus = '';
   bool _isLoading = true;
 
   @override
@@ -38,99 +32,9 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
     _autoTranscribe = await storageService.getAutoTranscribe();
     _autoPauseRecording = await storageService.getAutoPauseRecording();
     _audioDebugOverlay = await storageService.getAudioDebugOverlay();
-    await _loadParakeetModelInfo();
 
     if (mounted) {
       setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _loadParakeetModelInfo() async {
-    try {
-      if (Platform.isIOS || Platform.isMacOS) {
-        final parakeetService = parakeet.ParakeetService();
-        final modelsDownloaded = await parakeetService.areModelsDownloaded();
-
-        if (modelsDownloaded) {
-          _parakeetModelInfo = await parakeetService.getModelInfo();
-          _parakeetModelInfo ??= parakeet.ModelInfo(
-            version: 'v3',
-            languageCount: 25,
-            isInitialized: true,
-          );
-        } else {
-          _parakeetModelInfo = null;
-        }
-      } else if (Platform.isAndroid || Platform.isLinux || Platform.isWindows) {
-        final sherpaService = sherpa.SherpaOnnxService();
-        _parakeetModelInfo = await sherpaService.getModelInfo();
-      }
-    } catch (e) {
-      debugPrint('[Settings] Failed to load Parakeet model info: $e');
-      _parakeetModelInfo = null;
-    }
-  }
-
-  Future<void> _downloadParakeetModel() async {
-    if (_isDownloadingParakeet) return;
-
-    setState(() {
-      _isDownloadingParakeet = true;
-      _parakeetDownloadProgress = 0.0;
-      _parakeetDownloadStatus = 'Starting download...';
-    });
-
-    try {
-      if (Platform.isIOS || Platform.isMacOS) {
-        final parakeetService = parakeet.ParakeetService();
-        await parakeetService.initialize(version: 'v3');
-        _parakeetModelInfo = await parakeetService.getModelInfo();
-      } else if (Platform.isAndroid || Platform.isLinux || Platform.isWindows) {
-        final sherpaService = sherpa.SherpaOnnxService();
-        await sherpaService.initialize(
-          onProgress: (progress) {
-            if (mounted) {
-              setState(() => _parakeetDownloadProgress = progress);
-            }
-          },
-          onStatus: (status) {
-            if (mounted) {
-              setState(() => _parakeetDownloadStatus = status);
-            }
-          },
-        );
-        _parakeetModelInfo = await sherpaService.getModelInfo();
-      }
-
-      if (mounted) {
-        setState(() {
-          _isDownloadingParakeet = false;
-          _parakeetDownloadProgress = 1.0;
-          _parakeetDownloadStatus = 'Download complete!';
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Parakeet model downloaded successfully!'),
-            backgroundColor: BrandColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isDownloadingParakeet = false;
-          _parakeetDownloadProgress = 0.0;
-          _parakeetDownloadStatus = 'Download failed';
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to download Parakeet model: $e'),
-            backgroundColor: BrandColors.error,
-          ),
-        );
-      }
     }
   }
 
@@ -152,6 +56,8 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Watch the transcription init state - this persists across navigation
+    final initState = ref.watch(transcriptionInitProvider);
 
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -169,7 +75,7 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
         SizedBox(height: Spacing.xl),
 
         // Parakeet Model Status Card
-        _buildParakeetModelCard(isDark),
+        _buildParakeetModelCard(isDark, initState),
         SizedBox(height: Spacing.xl),
 
         // Auto-transcribe toggle
@@ -245,11 +151,46 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
     );
   }
 
-  Widget _buildParakeetModelCard(bool isDark) {
-    final isReady = _parakeetModelInfo?.isInitialized ?? false;
-    final version = _parakeetModelInfo?.version ?? 'v3';
-    final languageCount = _parakeetModelInfo?.languageCount ?? 600;
-    final statusColor = isReady ? BrandColors.success : BrandColors.warning;
+  Widget _buildParakeetModelCard(bool isDark, TranscriptionInitState initState) {
+    final isReady = initState.isReady;
+    final isInProgress = initState.isInProgress;
+    final hasFailed = initState.hasFailed;
+
+    // Determine status color
+    Color statusColor;
+    if (isReady) {
+      statusColor = BrandColors.success;
+    } else if (hasFailed) {
+      statusColor = BrandColors.error;
+    } else if (isInProgress) {
+      statusColor = BrandColors.turquoise;
+    } else {
+      statusColor = BrandColors.warning;
+    }
+
+    // Determine status text
+    String statusText;
+    if (isReady) {
+      statusText = 'READY';
+    } else if (hasFailed) {
+      statusText = 'FAILED';
+    } else if (isInProgress) {
+      statusText = 'LOADING';
+    } else {
+      statusText = 'PENDING';
+    }
+
+    // Determine icon
+    IconData icon;
+    if (isReady) {
+      icon = Icons.check_circle;
+    } else if (hasFailed) {
+      icon = Icons.error;
+    } else if (isInProgress) {
+      icon = Icons.downloading;
+    } else {
+      icon = Icons.cloud_download;
+    }
 
     return Container(
       padding: EdgeInsets.all(Spacing.lg),
@@ -263,18 +204,14 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
         children: [
           Row(
             children: [
-              Icon(
-                isReady ? Icons.check_circle : Icons.downloading,
-                color: statusColor,
-                size: 28,
-              ),
+              Icon(icon, color: statusColor, size: 28),
               SizedBox(width: Spacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Parakeet $version',
+                      initState.engineName ?? 'Parakeet v3',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: TypographyTokens.bodyLarge,
@@ -284,8 +221,8 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
                     SizedBox(height: Spacing.xs),
                     Text(
                       isReady
-                          ? 'Model ready • $languageCount languages'
-                          : 'Model downloading or not initialized',
+                          ? 'Model ready • 25 languages supported'
+                          : initState.userFriendlyStatus,
                       style: TextStyle(
                         fontSize: TypographyTokens.bodySmall,
                         color: isDark
@@ -306,7 +243,7 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
                   borderRadius: BorderRadius.circular(Radii.sm),
                 ),
                 child: Text(
-                  isReady ? 'READY' : 'PENDING',
+                  statusText,
                   style: TextStyle(
                     fontSize: TypographyTokens.labelSmall,
                     fontWeight: FontWeight.bold,
@@ -331,7 +268,7 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
               SizedBox(width: Spacing.sm),
               Expanded(
                 child: Text(
-                  'NVIDIA NeMo Parakeet multilingual ASR',
+                  'NVIDIA NeMo Parakeet multilingual ASR (~500MB)',
                   style: TextStyle(
                     fontSize: TypographyTokens.labelSmall,
                     color: isDark
@@ -343,56 +280,107 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
               ),
             ],
           ),
-          if (!isReady) ...[
+
+          // Show progress indicator during download/init
+          if (isInProgress) ...[
             SizedBox(height: Spacing.md),
-            if (_isDownloadingParakeet) ...[
-              Column(
-                children: [
-                  LinearProgressIndicator(
-                    value: _parakeetDownloadProgress,
-                    backgroundColor: BrandColors.stone,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
-                  ),
-                  SizedBox(height: Spacing.sm),
-                  Text(
-                    _parakeetDownloadStatus,
-                    style: TextStyle(
-                      fontSize: TypographyTokens.bodySmall,
-                      color: BrandColors.turquoise,
-                      fontWeight: FontWeight.w600,
+            _buildProgressIndicator(initState),
+          ],
+
+          // Show download button when not ready and not in progress
+          if (!isReady && !isInProgress) ...[
+            SizedBox(height: Spacing.md),
+
+            // Show error message if failed
+            if (hasFailed && initState.errorMessage != null) ...[
+              Container(
+                padding: EdgeInsets.all(Spacing.md),
+                decoration: BoxDecoration(
+                  color: BrandColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(Radii.sm),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning, color: BrandColors.error, size: 20),
+                    SizedBox(width: Spacing.sm),
+                    Expanded(
+                      child: Text(
+                        initState.errorMessage!,
+                        style: TextStyle(
+                          fontSize: TypographyTokens.bodySmall,
+                          color: BrandColors.error,
+                        ),
+                      ),
                     ),
-                  ),
-                  SizedBox(height: Spacing.xs),
-                  Text(
-                    'Progress: ${(_parakeetDownloadProgress * 100).toStringAsFixed(0)}%',
-                    style: TextStyle(
-                      fontSize: TypographyTokens.labelSmall,
-                      color: BrandColors.turquoise,
-                    ),
-                  ),
-                ],
-              ),
-            ] else ...[
-              FilledButton.icon(
-                onPressed: _downloadParakeetModel,
-                icon: const Icon(Icons.download),
-                label: const Text('Download Model Now'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: BrandColors.turquoise,
-                  minimumSize: const Size(double.infinity, 44),
+                  ],
                 ),
               ),
               SizedBox(height: Spacing.md),
-              SettingsInfoBanner(
-                message:
-                    'Download now or models will be downloaded automatically on first use',
-                color: BrandColors.turquoise,
-              ),
             ],
+
+            FilledButton.icon(
+              onPressed: () {
+                ref.read(transcriptionInitProvider.notifier).downloadAndInitialize();
+              },
+              icon: Icon(hasFailed ? Icons.refresh : Icons.download),
+              label: Text(hasFailed ? 'Retry Download' : 'Download Model Now'),
+              style: FilledButton.styleFrom(
+                backgroundColor: BrandColors.turquoise,
+                minimumSize: const Size(double.infinity, 44),
+              ),
+            ),
+            SizedBox(height: Spacing.md),
+            SettingsInfoBanner(
+              message: hasFailed
+                  ? 'Please check your internet connection and try again'
+                  : 'Download now or models will be downloaded automatically on first use',
+              color: hasFailed ? BrandColors.warning : BrandColors.turquoise,
+            ),
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildProgressIndicator(TranscriptionInitState state) {
+    // Use indeterminate progress for iOS/macOS or when progress is -1
+    final isIndeterminate = state.progress < 0;
+
+    return Column(
+      children: [
+        if (isIndeterminate)
+          const LinearProgressIndicator(
+            backgroundColor: BrandColors.stone,
+            valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+          )
+        else
+          LinearProgressIndicator(
+            value: state.progress,
+            backgroundColor: BrandColors.stone,
+            valueColor: const AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+          ),
+        SizedBox(height: Spacing.sm),
+        Text(
+          state.statusMessage.isNotEmpty
+              ? state.statusMessage
+              : state.userFriendlyStatus,
+          style: TextStyle(
+            fontSize: TypographyTokens.bodySmall,
+            color: BrandColors.turquoise,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (!isIndeterminate) ...[
+          SizedBox(height: Spacing.xs),
+          Text(
+            '${(state.progress * 100).toStringAsFixed(0)}%',
+            style: TextStyle(
+              fontSize: TypographyTokens.labelSmall,
+              color: BrandColors.turquoise,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

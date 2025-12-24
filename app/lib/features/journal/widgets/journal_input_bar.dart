@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../recorder/providers/service_providers.dart';
 import '../../recorder/providers/transcription_progress_provider.dart';
+import '../../recorder/providers/transcription_init_provider.dart';
+import '../../recorder/widgets/transcription_not_ready_dialog.dart';
 import '../../settings/screens/settings_screen.dart';
 
 /// Input bar for adding entries to the journal
@@ -67,6 +69,21 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
 
   Future<void> _startRecording() async {
     if (_isRecording || widget.onVoiceRecorded == null) return;
+
+    // Check if transcription models are ready
+    final initState = ref.read(transcriptionInitProvider);
+    if (!initState.isReady) {
+      // Show dialog asking user to download models
+      final shouldContinue = await TranscriptionNotReadyDialog.show(context);
+      if (!shouldContinue) {
+        return; // User cancelled
+      }
+      // Check again after dialog (user may have downloaded)
+      final newState = ref.read(transcriptionInitProvider);
+      if (!newState.isReady) {
+        return; // Still not ready
+      }
+    }
 
     final audioService = ref.read(audioServiceProvider);
 

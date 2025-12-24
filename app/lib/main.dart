@@ -14,9 +14,6 @@ import 'core/services/logging_service.dart';
 import 'core/services/file_system_service.dart';
 import 'core/services/asset_migration_service.dart';
 import 'core/providers/feature_flags_provider.dart';
-import 'features/recorder/providers/model_download_provider.dart';
-import 'features/recorder/services/transcription_service_adapter.dart';
-import 'services/sherpa_onnx_isolate.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 import 'features/chat/screens/agent_hub_screen.dart';
 import 'features/journal/screens/journal_screen.dart';
@@ -156,9 +153,9 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   void initState() {
     super.initState();
     _checkWelcomeScreen();
-    _setupTranscriptionCallbacks();
-    _preInitializeTranscription();
     _runAssetMigration();
+    // Note: Transcription initialization is now handled by transcriptionInitProvider
+    // which auto-checks status on creation and persists across navigation
     // Note: Search indexing is now opt-in via the Search screen
   }
 
@@ -177,57 +174,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         debugPrint('[Main] Asset migration error (non-fatal): $e');
       }
     });
-  }
-
-  /// Pre-initialize transcription model in background isolate to avoid UI freeze
-  void _preInitializeTranscription() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Check if models are downloaded (quick file existence check)
-      final modelsAvailable = await SherpaOnnxIsolate.instance.checkModelsAvailable();
-
-      if (modelsAvailable) {
-        // Initialize in background isolate - won't block UI
-        debugPrint('[Main] Pre-initializing transcription in background isolate...');
-        try {
-          await SherpaOnnxIsolate.instance.initialize();
-          debugPrint('[Main] ✅ Transcription pre-initialized');
-        } catch (e) {
-          debugPrint('[Main] ⚠️ Pre-initialization failed: $e');
-        }
-      } else {
-        debugPrint('[Main] Models not downloaded, skipping pre-init');
-      }
-    });
-  }
-
-  /// Set up global callbacks for lazy transcription initialization
-  /// Models will download when first transcription is attempted
-  void _setupTranscriptionCallbacks() {
-    final downloadNotifier = ref.read(modelDownloadProvider.notifier);
-
-    TranscriptionServiceAdapter.setGlobalProgressCallbacks(
-      onProgress: (progress) {
-        // Update UI with progress - read current state to get status
-        final currentState = ref.read(modelDownloadProvider);
-        downloadNotifier.updateProgress(progress, currentState.status);
-      },
-      onStatus: (status) {
-        // Update UI with status - read current state to get progress
-        debugPrint('[Main] $status');
-        final currentState = ref.read(modelDownloadProvider);
-        downloadNotifier.updateProgress(currentState.progress, status);
-
-        // Start download indicator on first meaningful status
-        if (status.contains('Downloading') || status.contains('Initializing')) {
-          downloadNotifier.startDownload();
-        }
-
-        // Complete when done
-        if (status == 'Ready') {
-          downloadNotifier.complete();
-        }
-      },
-    );
   }
 
   Future<void> _checkWelcomeScreen() async {
