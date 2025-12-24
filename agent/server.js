@@ -19,6 +19,7 @@ import { validateRelativePath, sanitizeFilename } from './lib/path-validator.js'
 import { queryLogs, getLogStats, serverLogger as log } from './lib/logger.js';
 import { initializeUsageTracker, getUsageTracker } from './lib/usage-tracker.js';
 import { getVaultSearchService, ContentType } from './lib/vault-search.js';
+import { getOllamaStatus } from './lib/ollama-service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1727,6 +1728,56 @@ app.get('/api/vault-search/content/:id', async (req, res) => {
 });
 
 /**
+ * GET /api/setup
+ * Get system setup status including Ollama and search index availability
+ *
+ * Returns:
+ * - ollamaStatus: Ollama running status and model availability
+ * - searchIndex: Whether the search database exists
+ * - semanticSearch: Whether semantic (meaning-based) search is available
+ */
+app.get('/api/setup', async (req, res) => {
+  try {
+    // Check Ollama status
+    const ollamaStatus = await getOllamaStatus();
+
+    // Check search index
+    const searchService = getVaultSearchService(CONFIG.vaultPath);
+    const searchIndexAvailable = searchService.isAvailable();
+
+    // Semantic search requires both Ollama + model + search index with embeddings
+    const semanticSearchReady = ollamaStatus.ready && searchIndexAvailable;
+
+    const status = {
+      ready: semanticSearchReady,
+      ollama: {
+        running: ollamaStatus.ollamaRunning,
+        modelAvailable: ollamaStatus.modelAvailable,
+        modelName: ollamaStatus.modelName,
+        url: ollamaStatus.ollamaUrl,
+      },
+      searchIndex: {
+        available: searchIndexAvailable,
+        path: path.join(CONFIG.vaultPath, '.parachute', 'search.db'),
+      },
+      semanticSearch: {
+        available: semanticSearchReady,
+        reason: !ollamaStatus.ollamaRunning ? 'Ollama not running'
+              : !ollamaStatus.modelAvailable ? `Model ${ollamaStatus.modelName} not installed`
+              : !searchIndexAvailable ? 'Search index not built'
+              : 'Ready',
+      },
+      setupInstructions: ollamaStatus.setupInstructions,
+    };
+
+    res.json(status);
+  } catch (error) {
+    log.error('Setup check error', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * GET /api/vault
  * Get vault info
  */
@@ -1890,7 +1941,7 @@ async function start() {
   // Initialize orchestrator
   await orchestrator.initialize();
 
-  server = app.listen(CONFIG.port, CONFIG.host, () => {
+  server = app.listen(CONFIG.port, CONFIG.host, async () => {
     log.info('Server started', {
       host: CONFIG.host,
       port: CONFIG.port,
@@ -1912,10 +1963,42 @@ async function start() {
 ║    GET  /api/chat/sessions   - List sessions (paginated)      ║
 ║    GET  /api/logs            - Query server logs              ║
 ║    GET  /api/agents          - List defined agents            ║
+║    GET  /api/setup           - Check Ollama/search status     ║
 ║                                                               ║
 ║  Graceful shutdown on SIGTERM/SIGINT                          ║
 ╚═══════════════════════════════════════════════════════════════╝
     `);
+
+    // Check Ollama status and provide guidance
+    try {
+      const ollamaStatus = await getOllamaStatus();
+      const searchService = getVaultSearchService(CONFIG.vaultPath);
+      const searchIndexAvailable = searchService.isAvailable();
+
+      console.log('\n📊 Semantic Search Status:');
+
+      if (!ollamaStatus.ollamaRunning) {
+        console.log('  ⚠️  Ollama not running - semantic search disabled');
+        console.log('      Install: brew install ollama (macOS) or https://ollama.com');
+      } else if (!ollamaStatus.modelAvailable) {
+        console.log('  ⚠️  Embedding model not installed');
+        console.log(`      Run: ollama pull ${ollamaStatus.modelName}`);
+      } else if (!searchIndexAvailable) {
+        console.log('  ⚠️  Search index not built');
+        console.log('      Build it in the Flutter app: Search tab → Build Index');
+      } else {
+        console.log('  ✅ Semantic search ready (Ollama + embeddinggemma)');
+      }
+
+      if (!searchIndexAvailable) {
+        console.log('\n📁 Search Index:');
+        console.log('  ⚠️  Not found - build it in the Flutter app (Search tab)');
+      }
+
+      console.log('');
+    } catch (e) {
+      log.warn('Failed to check Ollama status', { error: e.message });
+    }
   });
 }
 

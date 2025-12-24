@@ -5,7 +5,9 @@
  * Reads the SQLite database created by the Flutter app at .parachute/search.db
  *
  * Supports:
- * - Keyword search across all indexed content
+ * - Keyword search across all indexed content (always available)
+ * - Semantic search via embeddings (requires Ollama + embeddinggemma)
+ * - Hybrid search combining both for best results
  * - Filtering by content type (recording, journal, chat)
  * - Returns source paths and context for results
  */
@@ -13,6 +15,13 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import {
+  isOllamaRunning,
+  checkEmbeddingModel,
+  generateEmbedding,
+  cosineSimilarity,
+  getOllamaStatus,
+} from './ollama-service.js';
 
 /**
  * Content types that can be searched
@@ -308,6 +317,221 @@ export class VaultSearchService {
     }
 
     return result;
+  }
+
+  // ============================================================================
+  // SEMANTIC SEARCH (requires Ollama)
+  // ============================================================================
+
+  /**
+   * Check if semantic search is available
+   * @returns {Promise<{available: boolean, reason?: string}>}
+   */
+  async isSemanticSearchAvailable() {
+    const ollamaRunning = await isOllamaRunning();
+    if (!ollamaRunning) {
+      return { available: false, reason: 'Ollama is not running' };
+    }
+
+    const modelCheck = await checkEmbeddingModel();
+    if (!modelCheck.available) {
+      return { available: false, reason: 'embeddinggemma model not installed' };
+    }
+
+    return { available: true };
+  }
+
+  /**
+   * Semantic search using embeddings
+   *
+   * Generates an embedding for the query and finds similar chunks
+   * using cosine similarity.
+   *
+   * @param {string} query - Search query
+   * @param {object} options - Search options
+   * @param {number} options.limit - Max results (default: 20)
+   * @param {string} options.contentType - Filter by content type
+   * @param {number} options.minSimilarity - Minimum similarity threshold (default: 0.3)
+   * @returns {Promise<Array>} Search results sorted by similarity
+   */
+  async semanticSearch(query, options = {}) {
+    if (!this.db) {
+      this.initialize();
+    }
+
+    const { limit = 20, contentType = null, minSimilarity = 0.3 } = options;
+
+    try {
+      // Generate query embedding
+      const queryEmbedding = await generateEmbedding(query);
+
+      // Fetch all chunks with embeddings
+      let sql = `
+        SELECT
+          c.id,
+          c.recording_id as contentId,
+          c.content_type as contentType,
+          c.field,
+          c.chunk_index as chunkIndex,
+          c.chunk_text as text,
+          c.embedding,
+          m.source_path as sourcePath
+        FROM chunks c
+        LEFT JOIN index_manifest m ON c.recording_id = m.recording_id
+        WHERE c.embedding IS NOT NULL
+      `;
+
+      const params = [];
+
+      if (contentType) {
+        sql += ' AND c.content_type = ?';
+        params.push(contentType);
+      }
+
+      const rows = this.db.prepare(sql).all(...params);
+
+      // Calculate similarity scores
+      const results = [];
+      for (const row of rows) {
+        const embedding = this.decodeEmbedding(row.embedding);
+        if (!embedding || embedding.length !== queryEmbedding.length) {
+          continue;
+        }
+
+        const similarity = cosineSimilarity(queryEmbedding, embedding);
+
+        if (similarity >= minSimilarity) {
+          results.push({
+            id: row.id,
+            contentId: row.contentId,
+            contentType: row.contentType || 'recording',
+            field: row.field,
+            chunkIndex: row.chunkIndex,
+            text: row.text,
+            sourcePath: row.sourcePath,
+            similarity,
+            snippet: this.createSnippet(row.text, query),
+            searchType: 'semantic',
+          });
+        }
+      }
+
+      // Sort by similarity (highest first) and limit
+      results.sort((a, b) => b.similarity - a.similarity);
+      return results.slice(0, limit);
+
+    } catch (e) {
+      console.error('[VaultSearch] Semantic search error:', e.message);
+      throw e;
+    }
+  }
+
+  /**
+   * Decode embedding from SQLite BLOB
+   *
+   * The Flutter app stores embeddings as Float64 arrays in BLOBs.
+   * @param {Buffer} blob - The embedding blob from SQLite
+   * @returns {number[]|null} - The decoded embedding array
+   */
+  decodeEmbedding(blob) {
+    if (!blob || blob.length === 0) {
+      return null;
+    }
+
+    try {
+      // The embedding is stored as Float64 (8 bytes per number)
+      const float64Array = new Float64Array(
+        blob.buffer,
+        blob.byteOffset,
+        blob.byteLength / 8
+      );
+      return Array.from(float64Array);
+    } catch (e) {
+      console.error('[VaultSearch] Failed to decode embedding:', e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Hybrid search combining keyword and semantic search
+   *
+   * Always performs keyword search. If Ollama is available,
+   * also performs semantic search and merges results.
+   *
+   * @param {string} query - Search query
+   * @param {object} options - Search options
+   * @param {number} options.limit - Max results (default: 20)
+   * @param {string} options.contentType - Filter by content type
+   * @returns {Promise<{results: Array, searchTypes: string[]}>}
+   */
+  async hybridSearch(query, options = {}) {
+    const { limit = 20, contentType = null } = options;
+    const searchTypes = ['keyword'];
+    const seenIds = new Set();
+
+    // Always do keyword search first
+    const keywordResults = this.search(query, { limit, contentType });
+    const results = keywordResults.map(r => ({
+      ...r,
+      searchType: 'keyword',
+      score: 1.0, // Keyword matches get full score
+    }));
+
+    for (const r of results) {
+      seenIds.add(r.id);
+    }
+
+    // Try semantic search if available
+    const semanticStatus = await this.isSemanticSearchAvailable();
+
+    if (semanticStatus.available) {
+      searchTypes.push('semantic');
+
+      try {
+        const semanticResults = await this.semanticSearch(query, {
+          limit,
+          contentType,
+          minSimilarity: 0.3,
+        });
+
+        // Add semantic results that aren't already in keyword results
+        for (const r of semanticResults) {
+          if (!seenIds.has(r.id)) {
+            results.push({
+              ...r,
+              score: r.similarity,
+            });
+            seenIds.add(r.id);
+          } else {
+            // Boost score for results found by both methods
+            const existing = results.find(x => x.id === r.id);
+            if (existing) {
+              existing.score = Math.min(1.0, existing.score + r.similarity * 0.5);
+              existing.searchType = 'both';
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[VaultSearch] Semantic search failed, using keyword only:', e.message);
+      }
+    }
+
+    // Sort by score and limit
+    results.sort((a, b) => b.score - a.score);
+
+    return {
+      results: results.slice(0, limit),
+      searchTypes,
+      semanticAvailable: semanticStatus.available,
+      semanticReason: semanticStatus.reason,
+    };
+  }
+
+  /**
+   * Get Ollama setup status for the search service
+   */
+  async getSemanticSearchStatus() {
+    return getOllamaStatus();
   }
 }
 

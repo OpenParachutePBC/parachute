@@ -6,10 +6,17 @@
  * Designed to give agents access to past conversations, journals, and captures
  * with smart context management (returns snippets, truncates large content).
  *
+ * Search Modes:
+ * - Keyword search: Always available, finds exact text matches
+ * - Semantic search: Requires Ollama + embeddinggemma, finds similar meaning
+ * - Hybrid search: Combines both for best results (default when Ollama available)
+ *
  * Tools:
- * - vault_search: Search across all indexed content, returns snippets
+ * - vault_search: Search across all indexed content (hybrid when available)
  * - vault_get_content: Get truncated content for a specific item
  * - vault_recent: Get recent content by type
+ * - vault_stats: Get index statistics
+ * - vault_semantic_status: Check if semantic search is available
  *
  * Usage:
  *   VAULT_PATH=/path/to/vault node mcp-vault-search.js
@@ -46,13 +53,16 @@ const server = new McpServer({
 /**
  * vault_search - Search across indexed vault content
  *
+ * Uses hybrid search (keyword + semantic) when Ollama is available.
+ * Falls back to keyword-only search otherwise.
+ *
  * Returns snippets (not full content) to preserve context window.
  * Use vault_get_content to retrieve more detail for specific items.
  */
 server.tool(
   "vault_search",
   {
-    query: z.string().describe("Search query - keywords to find in journals, chats, and captures"),
+    query: z.string().describe("Search query - keywords or natural language to find in journals, chats, and captures"),
     content_type: z.enum(["all", "journal", "chat", "recording"]).optional().describe("Filter by content type (default: all)"),
     limit: z.number().min(1).max(20).optional().describe("Max results to return (default: 10, max: 20)"),
   },
@@ -72,29 +82,45 @@ server.tool(
         contentType: content_type === "all" ? null : content_type,
       };
 
-      const results = searchService.search(query, options);
+      // Use hybrid search (keyword + semantic when available)
+      const { results, searchTypes, semanticAvailable, semanticReason } = await searchService.hybridSearch(query, options);
 
       if (results.length === 0) {
+        let msg = `No results found for "${query}".`;
+        if (!semanticAvailable) {
+          msg += `\n\n*Note: Semantic search unavailable (${semanticReason}). Only keyword matching was used.*`;
+        }
         return {
           content: [{
             type: "text",
-            text: `No results found for "${query}".`
+            text: msg
           }]
         };
       }
 
-      // Format results with snippets
+      // Format results with snippets and search type indicators
       const formatted = results.map((r, i) => {
         const typeLabel = r.contentType === "journal" ? "📓 Journal"
                         : r.contentType === "chat" ? "💬 Chat"
                         : "🎤 Recording";
-        return `### ${i + 1}. ${typeLabel}\n**ID:** \`${r.contentId}\`\n**Snippet:** ${r.snippet}\n`;
+        const matchType = r.searchType === "both" ? "🎯"
+                        : r.searchType === "semantic" ? "🔮"
+                        : "";
+        return `### ${i + 1}. ${typeLabel} ${matchType}\n**ID:** \`${r.contentId}\`\n**Snippet:** ${r.snippet}\n`;
       }).join("\n");
+
+      // Build status note
+      let statusNote = "";
+      if (searchTypes.includes("semantic")) {
+        statusNote = "\n\n*🔮 = semantic match, 🎯 = matched both keyword and meaning*";
+      } else if (!semanticAvailable) {
+        statusNote = `\n\n*Keyword search only. Semantic search unavailable: ${semanticReason}*`;
+      }
 
       return {
         content: [{
           type: "text",
-          text: `Found ${results.length} results for "${query}":\n\n${formatted}\n\nUse \`vault_get_content\` with an ID to get more detail.`
+          text: `Found ${results.length} results for "${query}":\n\n${formatted}\n\nUse \`vault_get_content\` with an ID to get more detail.${statusNote}`
         }]
       };
     } catch (e) {
@@ -296,6 +322,77 @@ server.tool(
         content: [{
           type: "text",
           text: `Error: ${e.message}`
+        }],
+        isError: true
+      };
+    }
+  }
+);
+
+/**
+ * vault_semantic_status - Check if semantic search is available
+ *
+ * Returns Ollama status and setup instructions if not configured.
+ */
+server.tool(
+  "vault_semantic_status",
+  {},
+  async () => {
+    if (!searchService) {
+      return {
+        content: [{
+          type: "text",
+          text: "Search service not initialized."
+        }]
+      };
+    }
+
+    try {
+      const status = await searchService.getSemanticSearchStatus();
+
+      if (status.ready) {
+        return {
+          content: [{
+            type: "text",
+            text: `## Semantic Search Status: ✅ Ready\n\n- Ollama: Running at ${status.ollamaUrl}\n- Model: ${status.modelName} installed\n\nSemantic search is fully operational. Your searches will find content by meaning, not just keywords.`
+          }]
+        };
+      }
+
+      // Build setup instructions
+      let instructions = `## Semantic Search Status: ⚠️ Not Available\n\n`;
+
+      if (!status.ollamaRunning) {
+        instructions += `### Ollama Not Running\n\n`;
+        instructions += `Ollama is required for semantic search (finding content by meaning).\n\n`;
+        instructions += `**Installation:**\n`;
+        for (const step of status.setupInstructions.steps) {
+          instructions += `\n**${step.platform}:**\n`;
+          for (const cmd of step.commands) {
+            instructions += `\`\`\`\n${cmd}\n\`\`\`\n`;
+          }
+        }
+      } else if (!status.modelAvailable) {
+        instructions += `### Embedding Model Not Installed\n\n`;
+        instructions += `Ollama is running, but the \`${status.modelName}\` model is not installed.\n\n`;
+        instructions += `**Install the model:**\n`;
+        instructions += `\`\`\`\nollama pull ${status.modelName}\n\`\`\`\n\n`;
+        instructions += `*This downloads ~200MB. You can also install via the Flutter app (Search tab).*`;
+      }
+
+      instructions += `\n\n---\n*Without Ollama, search will still work using keyword matching.*`;
+
+      return {
+        content: [{
+          type: "text",
+          text: instructions
+        }]
+      };
+    } catch (e) {
+      return {
+        content: [{
+          type: "text",
+          text: `Error checking semantic status: ${e.message}`
         }],
         isError: true
       };
