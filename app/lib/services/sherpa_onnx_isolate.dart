@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'sherpa_onnx_service.dart';
 
 /// Isolate-based wrapper for SherpaOnnxService to prevent UI blocking
@@ -69,12 +70,19 @@ class SherpaOnnxIsolate {
       }
     });
 
+    // Get root isolate token for platform channel access in background isolate
+    final rootIsolateToken = RootIsolateToken.instance;
+    if (rootIsolateToken == null) {
+      throw StateError('RootIsolateToken not available');
+    }
+
     // Spawn isolate
     _isolate = await Isolate.spawn(
       _isolateEntry,
       _IsolateConfig(
         mainSendPort: receivePort.sendPort,
         progressSendPort: progressPort.sendPort,
+        rootIsolateToken: rootIsolateToken,
       ),
     );
 
@@ -171,6 +179,10 @@ class SherpaOnnxIsolate {
 Future<void> _isolateEntry(_IsolateConfig config) async {
   debugPrint('[SherpaOnnxIsolate:Worker] Starting...');
 
+  // Initialize platform channel access for background isolate
+  // This is required for plugins that use platform channels (like path_provider)
+  BackgroundIsolateBinaryMessenger.ensureInitialized(config.rootIsolateToken);
+
   final receivePort = ReceivePort();
   final service = SherpaOnnxService();
 
@@ -247,10 +259,12 @@ Future<void> _handleTranscribe(
 class _IsolateConfig {
   final SendPort mainSendPort;
   final SendPort progressSendPort;
+  final RootIsolateToken rootIsolateToken;
 
   _IsolateConfig({
     required this.mainSendPort,
     required this.progressSendPort,
+    required this.rootIsolateToken,
   });
 }
 
