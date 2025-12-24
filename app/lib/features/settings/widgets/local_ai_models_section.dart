@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/core/providers/embedding_provider.dart';
-import 'package:app/core/models/embedding_models.dart';
 import 'package:app/features/recorder/providers/transcription_init_provider.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import './settings_section_header.dart';
@@ -25,8 +24,8 @@ class _LocalAiModelsSectionState extends ConsumerState<LocalAiModelsSection> {
 
   // Size estimates
   static const int _parakeetSizeMB = 500;
-  static const int _embeddingSizeMB = 300;
-  static const int _totalSizeMB = _parakeetSizeMB + _embeddingSizeMB;
+  int get _embeddingSizeMB => getEmbeddingModelSizeMB(); // Platform-specific
+  int get _totalSizeMB => _parakeetSizeMB + _embeddingSizeMB;
 
   @override
   void initState() {
@@ -58,13 +57,10 @@ class _LocalAiModelsSectionState extends ConsumerState<LocalAiModelsSection> {
         await ref.read(transcriptionInitProvider.notifier).downloadAndInitialize();
       }
 
-      // Download EmbeddingGemma
-      final embeddingManager = ref.read(embeddingModelManagerProvider);
-      final embeddingReady = await embeddingManager.isReady();
-      if (!embeddingReady) {
-        await for (final _ in embeddingManager.downloadModel()) {
-          // Progress updates handled by provider
-        }
+      // Download EmbeddingGemma using the status notifier
+      final embeddingStatus = ref.read(embeddingModelStatusProvider);
+      if (!embeddingStatus.isReady) {
+        await ref.read(embeddingModelStatusProvider.notifier).download();
       }
 
       if (mounted) {
@@ -176,7 +172,7 @@ class _LocalAiModelsSectionState extends ConsumerState<LocalAiModelsSection> {
     required bool parakeetReady,
     required bool embeddingReady,
     required TranscriptionInitState transcriptionState,
-    required EmbeddingModelStatus embeddingStatus,
+    required EmbeddingStatusState embeddingStatus,
   }) {
     return Container(
       padding: EdgeInsets.all(Spacing.lg),
@@ -215,13 +211,10 @@ class _LocalAiModelsSectionState extends ConsumerState<LocalAiModelsSection> {
             icon: Icons.search,
             isReady: embeddingReady,
             isDownloading: embeddingStatus.isDownloading,
-            progress: ref.watch(embeddingDownloadProgressProvider),
+            progress: embeddingStatus.progress,
             onDownload: embeddingReady
                 ? null
-                : () async {
-                    final manager = ref.read(embeddingModelManagerProvider);
-                    await for (final _ in manager.downloadModel()) {}
-                  },
+                : () => ref.read(embeddingModelStatusProvider.notifier).download(),
           ),
         ],
       ),
@@ -311,7 +304,7 @@ class _LocalAiModelsSectionState extends ConsumerState<LocalAiModelsSection> {
   Widget _buildDownloadProgress(
     bool isDark,
     TranscriptionInitState transcriptionState,
-    EmbeddingModelStatus embeddingStatus,
+    EmbeddingStatusState embeddingStatus,
   ) {
     String status = 'Downloading...';
     if (transcriptionState.isInProgress) {

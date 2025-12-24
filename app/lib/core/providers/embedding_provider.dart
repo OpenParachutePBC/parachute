@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/models/embedding_models.dart';
 import 'package:app/core/services/embedding/embedding_service.dart';
@@ -63,31 +64,149 @@ final embeddingModelManagerProvider = Provider<EmbeddingModelManager>((ref) {
   return manager;
 });
 
-/// State provider for embedding model status
+/// Get platform-appropriate model size in MB
+int getEmbeddingModelSizeMB() {
+  if (Platform.isAndroid || Platform.isIOS) {
+    return EmbeddingGemmaModelType.standard.sizeInMB; // 300MB
+  } else {
+    return DesktopEmbeddingConfig.sizeInMB; // 200MB
+  }
+}
+
+/// State for embedding model status notifier
+class EmbeddingStatusState {
+  final EmbeddingModelStatus status;
+  final double progress;
+  final String? error;
+  final bool isReady;
+  final bool isDownloading;
+
+  const EmbeddingStatusState({
+    this.status = EmbeddingModelStatus.notDownloaded,
+    this.progress = 0.0,
+    this.error,
+    this.isReady = false,
+    this.isDownloading = false,
+  });
+
+  EmbeddingStatusState copyWith({
+    EmbeddingModelStatus? status,
+    double? progress,
+    String? error,
+    bool? isReady,
+    bool? isDownloading,
+  }) {
+    return EmbeddingStatusState(
+      status: status ?? this.status,
+      progress: progress ?? this.progress,
+      error: error,
+      isReady: isReady ?? this.isReady,
+      isDownloading: isDownloading ?? this.isDownloading,
+    );
+  }
+}
+
+/// Notifier that tracks actual embedding model status
+class EmbeddingStatusNotifier extends StateNotifier<EmbeddingStatusState> {
+  final Ref _ref;
+
+  EmbeddingStatusNotifier(this._ref) : super(const EmbeddingStatusState()) {
+    // Check status on creation
+    checkStatus();
+  }
+
+  /// Check current model status
+  Future<void> checkStatus() async {
+    try {
+      final manager = _ref.read(embeddingModelManagerProvider);
+      final isReady = await manager.isReady();
+
+      if (isReady) {
+        state = state.copyWith(
+          status: EmbeddingModelStatus.ready,
+          isReady: true,
+          isDownloading: false,
+        );
+      } else {
+        state = state.copyWith(
+          status: EmbeddingModelStatus.notDownloaded,
+          isReady: false,
+          isDownloading: false,
+        );
+      }
+      debugPrint('[EmbeddingStatus] Status check: isReady=$isReady');
+    } catch (e) {
+      debugPrint('[EmbeddingStatus] Error checking status: $e');
+      state = state.copyWith(
+        status: EmbeddingModelStatus.error,
+        error: e.toString(),
+        isReady: false,
+        isDownloading: false,
+      );
+    }
+  }
+
+  /// Download the embedding model
+  Future<void> download() async {
+    if (state.isDownloading) {
+      debugPrint('[EmbeddingStatus] Download already in progress');
+      return;
+    }
+
+    try {
+      state = state.copyWith(
+        status: EmbeddingModelStatus.downloading,
+        isDownloading: true,
+        progress: 0.0,
+        error: null,
+      );
+
+      final manager = _ref.read(embeddingModelManagerProvider);
+      await for (final progress in manager.downloadModel()) {
+        state = state.copyWith(progress: progress);
+        debugPrint('[EmbeddingStatus] Download progress: ${(progress * 100).toStringAsFixed(1)}%');
+      }
+
+      state = state.copyWith(
+        status: EmbeddingModelStatus.ready,
+        isReady: true,
+        isDownloading: false,
+        progress: 1.0,
+      );
+      debugPrint('[EmbeddingStatus] Download complete');
+    } catch (e) {
+      debugPrint('[EmbeddingStatus] Download error: $e');
+      state = state.copyWith(
+        status: EmbeddingModelStatus.error,
+        error: e.toString(),
+        isDownloading: false,
+      );
+    }
+  }
+}
+
+/// Provider for embedding model status with proper state management
 ///
-/// Tracks the current status of the embedding model:
-/// - notDownloaded: Model needs to be downloaded
-/// - downloading: Download in progress
-/// - ready: Model is ready to use
-/// - error: Download or initialization failed
+/// This properly tracks the actual status of the embedding model,
+/// syncing with the underlying service.
 final embeddingModelStatusProvider =
-    StateProvider<EmbeddingModelStatus>((ref) {
-  return EmbeddingModelStatus.notDownloaded;
+    StateNotifierProvider<EmbeddingStatusNotifier, EmbeddingStatusState>((ref) {
+  return EmbeddingStatusNotifier(ref);
 });
 
 /// State provider for download progress
 ///
 /// Tracks download progress from 0.0 to 1.0.
 /// Only meaningful when status is downloading.
-final embeddingDownloadProgressProvider = StateProvider<double>((ref) {
-  return 0.0;
+final embeddingDownloadProgressProvider = Provider<double>((ref) {
+  return ref.watch(embeddingModelStatusProvider).progress;
 });
 
 /// State provider for error message
 ///
 /// Contains error message when status is error.
-final embeddingErrorProvider = StateProvider<String?>((ref) {
-  return null;
+final embeddingErrorProvider = Provider<String?>((ref) {
+  return ref.watch(embeddingModelStatusProvider).error;
 });
 
 /// Provider for embedding dimensions

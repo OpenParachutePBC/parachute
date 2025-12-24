@@ -37,7 +37,8 @@ class _LocalAiStepState extends ConsumerState<LocalAiStep> {
 
   // Size estimates
   static const int _parakeetSizeMB = 500; // ~500MB for Parakeet
-  static const int _embeddingSizeMB = 300; // ~300MB for EmbeddingGemma
+
+  int get _embeddingSizeMB => getEmbeddingModelSizeMB(); // Platform-specific
 
   @override
   void initState() {
@@ -60,9 +61,10 @@ class _LocalAiStepState extends ConsumerState<LocalAiStep> {
         _parakeetReady = newState.isReady;
       }
 
-      // Check EmbeddingGemma status
-      final embeddingManager = ref.read(embeddingModelManagerProvider);
-      _embeddingReady = await embeddingManager.isReady();
+      // Check EmbeddingGemma status - use the status notifier
+      await ref.read(embeddingModelStatusProvider.notifier).checkStatus();
+      final embeddingStatus = ref.read(embeddingModelStatusProvider);
+      _embeddingReady = embeddingStatus.isReady;
     } catch (e) {
       debugPrint('[LocalAiStep] Error checking status: $e');
     }
