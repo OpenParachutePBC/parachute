@@ -219,8 +219,8 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
 
   /// Transcribe audio in background and update the entry
   Future<void> _transcribeInBackground(String audioPath, int durationSeconds) async {
-    // Start progress tracking
-    ref.read(transcriptionProgressProvider.notifier).startTranscription(
+    // Start progress tracking (uses historical data for estimates)
+    await ref.read(transcriptionProgressProvider.notifier).startTranscription(
       audioDurationSeconds: durationSeconds,
     );
 
@@ -229,8 +229,8 @@ class _JournalInputBarState extends ConsumerState<JournalInputBar> {
       final result = await postProcessingService.process(audioPath: audioPath);
       final transcript = result.transcript;
 
-      // Mark progress complete
-      ref.read(transcriptionProgressProvider.notifier).complete();
+      // Mark progress complete and record timing for future estimates
+      await ref.read(transcriptionProgressProvider.notifier).complete();
 
       debugPrint('[JournalInputBar] Background transcription complete: ${transcript.length} chars');
 

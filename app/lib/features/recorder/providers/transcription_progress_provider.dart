@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/transcription_history_service.dart';
 
 /// Progress state for active transcription
 class TranscriptionProgressState {
@@ -9,6 +11,7 @@ class TranscriptionProgressState {
   final Duration? audioDuration;
   final Duration? estimatedTimeRemaining;
   final DateTime? startedAt;
+  final int? audioDurationMs; // For recording history
 
   const TranscriptionProgressState({
     this.isActive = false,
@@ -17,6 +20,7 @@ class TranscriptionProgressState {
     this.audioDuration,
     this.estimatedTimeRemaining,
     this.startedAt,
+    this.audioDurationMs,
   });
 
   TranscriptionProgressState copyWith({
@@ -26,6 +30,7 @@ class TranscriptionProgressState {
     Duration? audioDuration,
     Duration? estimatedTimeRemaining,
     DateTime? startedAt,
+    int? audioDurationMs,
   }) {
     return TranscriptionProgressState(
       isActive: isActive ?? this.isActive,
@@ -34,6 +39,7 @@ class TranscriptionProgressState {
       audioDuration: audioDuration ?? this.audioDuration,
       estimatedTimeRemaining: estimatedTimeRemaining ?? this.estimatedTimeRemaining,
       startedAt: startedAt ?? this.startedAt,
+      audioDurationMs: audioDurationMs ?? this.audioDurationMs,
     );
   }
 
@@ -52,21 +58,29 @@ class TranscriptionProgressState {
   String get progressText => '${(progress * 100).toInt()}%';
 }
 
-/// Notifier for transcription progress
+/// Notifier for transcription progress with historical time estimates
 class TranscriptionProgressNotifier extends StateNotifier<TranscriptionProgressState> {
   Timer? _progressTimer;
-
-  // Transcription speed: audio duration / processing time
-  // Parakeet typically processes at ~10-15x real-time on modern devices
-  static const double _estimatedSpeedRatio = 12.0;
+  final TranscriptionHistoryService _historyService = TranscriptionHistoryService();
 
   TranscriptionProgressNotifier() : super(const TranscriptionProgressState());
 
   /// Start tracking transcription progress
-  void startTranscription({required int audioDurationSeconds}) {
+  ///
+  /// Uses historical data to estimate time remaining more accurately.
+  Future<void> startTranscription({required int audioDurationSeconds}) async {
+    final audioDurationMs = audioDurationSeconds * 1000;
     final audioDuration = Duration(seconds: audioDurationSeconds);
-    final estimatedProcessingTime = Duration(
-      milliseconds: (audioDurationSeconds * 1000 / _estimatedSpeedRatio).round(),
+
+    // Get estimated time from historical data
+    final estimatedProcessingTime = await _historyService.estimateTranscriptionTime(audioDurationMs);
+
+    final stats = _historyService.getStats();
+    debugPrint(
+      '[TranscriptionProgress] Starting transcription: ${audioDurationSeconds}s audio, '
+      'estimated ${estimatedProcessingTime.inSeconds}s processing time '
+      '(based on ${stats.recordCount} historical records, '
+      'median ${stats.medianSpeedRatio.toStringAsFixed(1)}x speed)',
     );
 
     state = TranscriptionProgressState(
@@ -76,6 +90,7 @@ class TranscriptionProgressNotifier extends StateNotifier<TranscriptionProgressS
       audioDuration: audioDuration,
       estimatedTimeRemaining: estimatedProcessingTime,
       startedAt: DateTime.now(),
+      audioDurationMs: audioDurationMs,
     );
 
     // Start progress simulation timer
@@ -119,9 +134,25 @@ class TranscriptionProgressNotifier extends StateNotifier<TranscriptionProgressS
     return 'Almost done...';
   }
 
-  /// Mark transcription as complete
-  void complete() {
+  /// Mark transcription as complete and record timing for future estimates
+  Future<void> complete() async {
     _progressTimer?.cancel();
+
+    // Record the actual transcription time for future estimates
+    if (state.startedAt != null && state.audioDurationMs != null) {
+      final actualTranscriptionTime = DateTime.now().difference(state.startedAt!);
+
+      await _historyService.recordTranscription(
+        audioDurationMs: state.audioDurationMs!,
+        transcriptionTimeMs: actualTranscriptionTime.inMilliseconds,
+      );
+
+      debugPrint(
+        '[TranscriptionProgress] Completed in ${actualTranscriptionTime.inMilliseconds}ms '
+        '(${(state.audioDurationMs! / actualTranscriptionTime.inMilliseconds).toStringAsFixed(1)}x real-time)',
+      );
+    }
+
     state = state.copyWith(
       isActive: false,
       progress: 1.0,
@@ -151,6 +182,9 @@ class TranscriptionProgressNotifier extends StateNotifier<TranscriptionProgressS
     _progressTimer?.cancel();
     state = const TranscriptionProgressState();
   }
+
+  /// Get transcription performance statistics
+  TranscriptionStats getStats() => _historyService.getStats();
 
   @override
   void dispose() {
