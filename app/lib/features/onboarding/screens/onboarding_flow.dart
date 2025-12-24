@@ -6,12 +6,12 @@ import 'package:app/core/theme/design_tokens.dart';
 import 'steps/welcome_step.dart';
 import 'steps/vault_picker_step.dart';
 import 'steps/import_step.dart';
-import 'steps/transcription_setup_step.dart';
-import 'steps/gemma_setup_step.dart';
+import 'steps/local_ai_step.dart';
+import 'steps/ready_step.dart';
 
 /// Multi-step onboarding flow for first-time users
 ///
-/// "Think naturally" - A calm, spacious introduction to Parachute
+/// Simplified flow: Welcome → Vault → Import → LocalAI → Ready
 class OnboardingFlow extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
 
@@ -40,12 +40,13 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
   int _currentStep = 0;
   late AnimationController _progressController;
 
+  // Simplified step structure
   final List<OnboardingStepData> _steps = [
     OnboardingStepData(title: 'Welcome', icon: Icons.waving_hand),
     OnboardingStepData(title: 'Vault', icon: Icons.folder_open),
     OnboardingStepData(title: 'Import', icon: Icons.download_outlined),
-    OnboardingStepData(title: 'Transcription', icon: Icons.record_voice_over),
-    OnboardingStepData(title: 'Get Started', icon: Icons.rocket_launch),
+    OnboardingStepData(title: 'AI', icon: Icons.auto_awesome),
+    OnboardingStepData(title: 'Ready', icon: Icons.rocket_launch),
   ];
 
   @override
@@ -80,6 +81,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
   }
 
   void _skipToEnd() {
+    // Skip to Ready step (last step)
     setState(() => _currentStep = _steps.length - 1);
     _progressController.forward(from: 0);
   }
@@ -120,17 +122,16 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
                     ImportStep(
                       onNext: _nextStep,
                       onBack: _previousStep,
-                      onSkip: _nextStep, // Skip just moves to next step
+                      onSkip: _nextStep, // Skip import just goes to next step
                     ),
-                    TranscriptionSetupStep(
+                    LocalAiStep(
                       onNext: _nextStep,
                       onBack: _previousStep,
-                      onSkip: _skipToEnd,
+                      onSkip: _nextStep, // Skip AI just goes to Ready
                     ),
-                    GemmaSetupStep(
-                      onNext: _completeOnboarding,
+                    ReadyStep(
+                      onComplete: _completeOnboarding,
                       onBack: _previousStep,
-                      onSkip: _completeOnboarding,
                     ),
                   ],
                 ),

@@ -53,6 +53,68 @@ class _ImportStepState extends ConsumerState<ImportStep> {
   int _importedContexts = 0;
   String? _error;
 
+  // Existing imports detection
+  bool _isCheckingExisting = true;
+  int _existingClaudeImports = 0;
+  int _existingChatGPTImports = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkExistingImports();
+  }
+
+  /// Check for existing imported conversations in the vault
+  Future<void> _checkExistingImports() async {
+    try {
+      final fileSystem = ref.read(fileSystemServiceProvider);
+      final sessionsPath = await fileSystem.getSessionsPath();
+      final importedPath = p.join(sessionsPath, 'imported');
+
+      final importedDir = Directory(importedPath);
+      if (await importedDir.exists()) {
+        final files = await importedDir.list().toList();
+
+        int claudeCount = 0;
+        int chatgptCount = 0;
+
+        for (final file in files) {
+          if (file is File && file.path.endsWith('.md')) {
+            final basename = p.basename(file.path);
+            if (basename.startsWith('claude-')) {
+              claudeCount++;
+            } else if (basename.startsWith('chatgpt-')) {
+              chatgptCount++;
+            }
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _existingClaudeImports = claudeCount;
+            _existingChatGPTImports = chatgptCount;
+            _isCheckingExisting = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() => _isCheckingExisting = false);
+        }
+      }
+    } catch (e) {
+      debugPrint('[ImportStep] Error checking existing imports: $e');
+      if (mounted) {
+        setState(() => _isCheckingExisting = false);
+      }
+    }
+  }
+
+  bool get _hasExistingImports =>
+      _existingClaudeImports > 0 || _existingChatGPTImports > 0;
+
+  int get _totalExistingImports =>
+      _existingClaudeImports + _existingChatGPTImports;
+
   /// Ensure AGENTS.md exists before moving to next step
   Future<void> _ensureAgentsMdAndContinue() async {
     try {
@@ -380,6 +442,25 @@ $memory
   }
 
   Widget _buildSourceSelection(bool isDark) {
+    // Show loading state while checking existing imports
+    if (_isCheckingExisting) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(height: Spacing.xxl * 2),
+          const CircularProgressIndicator(),
+          SizedBox(height: Spacing.lg),
+          Text(
+            'Checking for existing imports...',
+            style: TextStyle(
+              fontSize: TypographyTokens.bodyMedium,
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -395,22 +476,76 @@ $memory
         ),
         SizedBox(height: Spacing.md),
 
-        Text(
-          'Bring your Claude conversations, memories, and project context into Parachute. '
-          'Your history becomes searchable and available in all your chats.',
-          style: TextStyle(
-            fontSize: TypographyTokens.bodyLarge,
-            color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
-            height: 1.5,
+        // Show different message if imports already exist
+        if (_hasExistingImports) ...[
+          // Already imported banner
+          Container(
+            padding: EdgeInsets.all(Spacing.md),
+            decoration: BoxDecoration(
+              color: BrandColors.success.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(Radii.md),
+              border: Border.all(color: BrandColors.success, width: 1),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: BrandColors.success, size: 24),
+                SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Imports already synced!',
+                        style: TextStyle(
+                          color: BrandColors.success,
+                          fontWeight: FontWeight.w600,
+                          fontSize: TypographyTokens.bodyMedium,
+                        ),
+                      ),
+                      SizedBox(height: Spacing.xs),
+                      Text(
+                        '$_totalExistingImports conversation${_totalExistingImports == 1 ? '' : 's'} from your vault',
+                        style: TextStyle(
+                          fontSize: TypographyTokens.bodySmall,
+                          color: isDark
+                              ? BrandColors.nightTextSecondary
+                              : BrandColors.driftwood,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+          SizedBox(height: Spacing.lg),
+          Text(
+            'Your conversation history is already available. '
+            'You can import more conversations if you have a new export.',
+            style: TextStyle(
+              fontSize: TypographyTokens.bodyLarge,
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+              height: 1.5,
+            ),
+          ),
+        ] else ...[
+          Text(
+            'Bring your Claude conversations, memories, and project context into Parachute. '
+            'Your history becomes searchable and available in all your chats.',
+            style: TextStyle(
+              fontSize: TypographyTokens.bodyLarge,
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+              height: 1.5,
+            ),
+          ),
+        ],
         SizedBox(height: Spacing.xxl),
 
         // Claude card - now the only option
         _buildSourceCard(
           isDark: isDark,
           source: _ImportSource.claude,
-          title: 'Import Claude Export',
+          title: _hasExistingImports ? 'Import More Conversations' : 'Import Claude Export',
           subtitle: 'Conversations, memories, and project context',
           icon: Icons.psychology_outlined,
           color: BrandColors.forest,
@@ -418,39 +553,42 @@ $memory
 
         SizedBox(height: Spacing.xxl),
 
-        // What gets imported explanation
-        Container(
-          padding: EdgeInsets.all(Spacing.md),
-          decoration: BoxDecoration(
-            color: isDark
-                ? BrandColors.nightSurfaceElevated.withValues(alpha: 0.5)
-                : BrandColors.forestMist.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(Radii.md),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'What gets imported:',
-                style: TextStyle(
-                  fontSize: TypographyTokens.labelMedium,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+        // What gets imported explanation (only show if no existing imports)
+        if (!_hasExistingImports) ...[
+          Container(
+            padding: EdgeInsets.all(Spacing.md),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? BrandColors.nightSurfaceElevated.withValues(alpha: 0.5)
+                  : BrandColors.forestMist.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(Radii.md),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'What gets imported:',
+                  style: TextStyle(
+                    fontSize: TypographyTokens.labelMedium,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                  ),
                 ),
-              ),
-              SizedBox(height: Spacing.sm),
-              _buildImportItem(isDark, 'Conversations', 'Searchable chat history'),
-              _buildImportItem(isDark, 'Memories', 'Context Claude learned about you'),
-              _buildImportItem(isDark, 'Projects', 'Project instructions and context'),
-            ],
+                SizedBox(height: Spacing.sm),
+                _buildImportItem(isDark, 'Conversations', 'Searchable chat history'),
+                _buildImportItem(isDark, 'Memories', 'Context Claude learned about you'),
+                _buildImportItem(isDark, 'Projects', 'Project instructions and context'),
+              ],
+            ),
           ),
-        ),
-
-        SizedBox(height: Spacing.lg),
+          SizedBox(height: Spacing.lg),
+        ],
 
         // Skip note
         Text(
-          'You can always import later from Settings, or skip to start fresh.',
+          _hasExistingImports
+              ? 'You can continue with your existing imports, or add more from a new export.'
+              : 'You can always import later from Settings, or skip to start fresh.',
           style: TextStyle(
             fontSize: TypographyTokens.bodySmall,
             color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
@@ -919,12 +1057,26 @@ $memory
               child: const Text('Back'),
             ),
           const Spacer(),
-          if (_phase == _ImportPhase.selectSource || _phase == _ImportPhase.instructions)
-            TextButton(
-              onPressed: _skipAndContinue,
-              child: const Text('Skip'),
-            ),
-          SizedBox(width: Spacing.md),
+          // Show Skip or Continue based on context
+          if (_phase == _ImportPhase.selectSource || _phase == _ImportPhase.instructions) ...[
+            if (_hasExistingImports && _phase == _ImportPhase.selectSource) ...[
+              // When imports exist, show Continue as primary action
+              FilledButton(
+                onPressed: _skipAndContinue,
+                style: FilledButton.styleFrom(
+                  backgroundColor: isDark ? BrandColors.nightForest : BrandColors.forest,
+                ),
+                child: const Text('Continue'),
+              ),
+            ] else ...[
+              TextButton(
+                onPressed: _skipAndContinue,
+                child: const Text('Skip'),
+              ),
+            ],
+          ],
+          if (_phase == _ImportPhase.instructions)
+            SizedBox(width: Spacing.md),
           if (_phase == _ImportPhase.complete)
             FilledButton(
               onPressed: _ensureAgentsMdAndContinue,

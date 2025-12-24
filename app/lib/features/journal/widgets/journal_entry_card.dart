@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/design_tokens.dart';
+import '../../recorder/providers/transcription_init_provider.dart';
 import '../models/journal_entry.dart';
 
 /// Card widget displaying a single journal entry
@@ -10,12 +12,13 @@ import '../models/journal_entry.dart';
 ///
 /// Special handling for "preamble" and "plain_*" entries which are
 /// markdown content imported from Obsidian without para:IDs.
-class JournalEntryCard extends StatelessWidget {
+class JournalEntryCard extends ConsumerWidget {
   final JournalEntry entry;
   final String? audioPath;
   final VoidCallback? onTap;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onTranscribe;
 
   const JournalEntryCard({
     super.key,
@@ -24,6 +27,7 @@ class JournalEntryCard extends StatelessWidget {
     this.onTap,
     this.onEdit,
     this.onDelete,
+    this.onTranscribe,
   });
 
   /// Check if this is imported markdown content (no para:ID)
@@ -31,9 +35,11 @@ class JournalEntryCard extends StatelessWidget {
       entry.id == 'preamble' || entry.id.startsWith('plain_');
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final transcriptionState = ref.watch(transcriptionInitProvider);
+    final canTranscribe = transcriptionState.isReady && entry.isPendingTranscription && onTranscribe != null;
 
     // Use different layout for imported markdown vs para:ID entries
     if (_isImportedMarkdown) {
@@ -118,6 +124,12 @@ class JournalEntryCard extends StatelessWidget {
               if (entry.hasAudio && audioPath != null) ...[
                 const SizedBox(height: 12),
                 _buildAudioChip(context, isDark),
+              ],
+
+              // Transcribe button for pending entries
+              if (entry.isPendingTranscription) ...[
+                const SizedBox(height: 12),
+                _buildTranscribeButton(context, isDark, canTranscribe),
               ],
             ],
           ),
@@ -381,6 +393,73 @@ class JournalEntryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildTranscribeButton(BuildContext context, bool isDark, bool canTranscribe) {
+    if (canTranscribe) {
+      // Parakeet ready - show actionable transcribe button
+      return InkWell(
+        onTap: onTranscribe,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: BrandColors.forest.withValues(alpha: isDark ? 0.2 : 0.1),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: BrandColors.forest.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.record_voice_over,
+                size: 14,
+                color: BrandColors.forest,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Transcribe',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: BrandColors.forest,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      // Parakeet not ready - show status message
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: BrandColors.warning.withValues(alpha: isDark ? 0.15 : 0.1),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.hourglass_empty,
+              size: 14,
+              color: BrandColors.warning,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Awaiting transcription',
+              style: TextStyle(
+                fontSize: 12,
+                color: BrandColors.warning,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   String _truncateContent(String content) {

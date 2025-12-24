@@ -10,8 +10,7 @@ import '../widgets/ai_chat_section.dart';
 import '../widgets/storage_section.dart';
 import '../widgets/chat_import_section.dart';
 import '../widgets/omi_device_section.dart';
-import '../widgets/transcription_section.dart';
-import '../widgets/title_generation_section.dart';
+import '../widgets/local_ai_models_section.dart';
 import '../widgets/privacy_section.dart';
 import '../widgets/developer_section.dart';
 
@@ -120,14 +119,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildRecordingSection(bool isDark) {
     return ExpandableSettingsSection(
-      title: 'Recording & Transcription',
-      subtitle: 'Voice capture, AI transcription, and title generation',
-      icon: Icons.mic,
+      title: 'Local AI',
+      subtitle: 'Voice transcription and semantic search models',
+      icon: Icons.auto_awesome,
       accentColor: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
       initiallyExpanded: true,
       children: const [
-        TranscriptionSection(),
-        TitleGenerationSection(),
+        LocalAiModelsSection(),
       ],
     );
   }

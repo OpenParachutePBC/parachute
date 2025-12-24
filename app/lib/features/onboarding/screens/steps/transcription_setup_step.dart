@@ -2,11 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
-import 'package:app/features/recorder/providers/service_providers.dart';
-import 'package:app/services/parakeet_service.dart';
+import 'package:app/features/recorder/providers/transcription_init_provider.dart';
 
 /// Platform-adaptive transcription setup step with brand styling
-class TranscriptionSetupStep extends ConsumerStatefulWidget {
+///
+/// Uses transcriptionInitProvider for consistent state across the app.
+class TranscriptionSetupStep extends ConsumerWidget {
   final VoidCallback onNext;
   final VoidCallback onBack;
   final VoidCallback onSkip;
@@ -18,85 +19,12 @@ class TranscriptionSetupStep extends ConsumerStatefulWidget {
     required this.onSkip,
   });
 
-  @override
-  ConsumerState<TranscriptionSetupStep> createState() =>
-      _TranscriptionSetupStepState();
-}
-
-class _TranscriptionSetupStepState
-    extends ConsumerState<TranscriptionSetupStep> {
-  bool _isInitializingParakeet = false;
-  bool _parakeetInitialized = false;
-  String? _parakeetError;
-
-  final bool _isApplePlatform = Platform.isIOS || Platform.isMacOS;
+  bool get _isApplePlatform => Platform.isIOS || Platform.isMacOS;
 
   @override
-  void initState() {
-    super.initState();
-    _checkParakeetStatus();
-  }
-
-  Future<void> _checkParakeetStatus() async {
-    if (_isApplePlatform) {
-      final parakeetService = ParakeetService();
-      // Check if models are downloaded (not just loaded in memory)
-      final isDownloaded = await parakeetService.areModelsDownloaded();
-      if (mounted) {
-        setState(() {
-          _parakeetInitialized = isDownloaded;
-        });
-      }
-    } else {
-      // Android uses Sherpa-ONNX
-      final transcriptionService = ref.read(
-        transcriptionServiceAdapterProvider,
-      );
-      final isReady = await transcriptionService.isReady();
-      if (mounted) {
-        setState(() {
-          _parakeetInitialized = isReady;
-        });
-      }
-    }
-  }
-
-  Future<void> _initializeParakeet() async {
-    setState(() {
-      _isInitializingParakeet = true;
-      _parakeetError = null;
-    });
-
-    try {
-      if (_isApplePlatform) {
-        final parakeetService = ParakeetService();
-        await parakeetService.initialize(version: 'v3');
-      } else {
-        final transcriptionService = ref.read(
-          transcriptionServiceAdapterProvider,
-        );
-        await transcriptionService.initialize();
-      }
-
-      if (mounted) {
-        setState(() {
-          _parakeetInitialized = true;
-          _isInitializingParakeet = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _parakeetError = e.toString();
-          _isInitializingParakeet = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final initState = ref.watch(transcriptionInitProvider);
 
     return Scaffold(
       backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
@@ -106,7 +34,7 @@ class _TranscriptionSetupStepState
             Icons.arrow_back,
             color: isDark ? BrandColors.nightText : BrandColors.charcoal,
           ),
-          onPressed: widget.onBack,
+          onPressed: onBack,
         ),
         title: Text(
           'Transcription Setup',
@@ -153,13 +81,13 @@ class _TranscriptionSetupStepState
                       ),
                       SizedBox(height: Spacing.xxl),
 
-                      _buildParakeetInfo(isDark),
+                      _buildParakeetInfo(context, ref, isDark, initState),
                     ],
                   ),
                 ),
               ),
               SizedBox(height: Spacing.lg),
-              _buildBottomButtons(isDark),
+              _buildBottomButtons(context, isDark, initState),
             ],
           ),
         ),
@@ -167,7 +95,12 @@ class _TranscriptionSetupStepState
     );
   }
 
-  Widget _buildParakeetInfo(bool isDark) {
+  Widget _buildParakeetInfo(
+    BuildContext context,
+    WidgetRef ref,
+    bool isDark,
+    TranscriptionInitState initState,
+  ) {
     return Container(
       padding: EdgeInsets.all(Spacing.xl),
       decoration: BoxDecoration(
@@ -206,7 +139,7 @@ class _TranscriptionSetupStepState
               ),
               SizedBox(width: Spacing.lg),
               Text(
-                'Parakeet v3',
+                initState.engineName ?? 'Parakeet v3',
                 style: TextStyle(
                   fontSize: TypographyTokens.headlineSmall,
                   fontWeight: FontWeight.bold,
@@ -245,7 +178,9 @@ class _TranscriptionSetupStepState
             subtitle: 'Downloads automatically on first use',
             isDark: isDark,
           ),
-          if (_parakeetInitialized) ...[
+
+          // Show ready state
+          if (initState.isReady) ...[
             SizedBox(height: Spacing.xl),
             Container(
               padding: EdgeInsets.all(Spacing.md),
@@ -271,7 +206,9 @@ class _TranscriptionSetupStepState
               ),
             ),
           ],
-          if (_parakeetError != null) ...[
+
+          // Show error state
+          if (initState.hasFailed && initState.errorMessage != null) ...[
             SizedBox(height: Spacing.xl),
             Container(
               padding: EdgeInsets.all(Spacing.md),
@@ -286,7 +223,7 @@ class _TranscriptionSetupStepState
                   SizedBox(width: Spacing.md),
                   Expanded(
                     child: Text(
-                      _parakeetError!,
+                      initState.errorMessage!,
                       style: TextStyle(
                         color: BrandColors.error,
                         fontSize: TypographyTokens.bodySmall,
@@ -297,30 +234,25 @@ class _TranscriptionSetupStepState
               ),
             ),
           ],
-          if (!_parakeetInitialized && _parakeetError == null) ...[
+
+          // Show progress when downloading/initializing
+          if (initState.isInProgress) ...[
+            SizedBox(height: Spacing.xl),
+            _buildProgressIndicator(isDark, initState),
+          ],
+
+          // Show download button when not ready and not in progress
+          if (!initState.isReady && !initState.isInProgress) ...[
             SizedBox(height: Spacing.xl),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: _isInitializingParakeet
-                    ? null
-                    : _initializeParakeet,
-                icon: _isInitializingParakeet
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            isDark
-                                ? BrandColors.nightTurquoise
-                                : BrandColors.turquoise,
-                          ),
-                        ),
-                      )
-                    : const Icon(Icons.download),
+                onPressed: () {
+                  ref.read(transcriptionInitProvider.notifier).downloadAndInitialize();
+                },
+                icon: Icon(initState.hasFailed ? Icons.refresh : Icons.download),
                 label: Text(
-                  _isInitializingParakeet ? 'Downloading...' : 'Download Now',
+                  initState.hasFailed ? 'Retry Download' : 'Download Now',
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: isDark
@@ -350,6 +282,51 @@ class _TranscriptionSetupStepState
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildProgressIndicator(bool isDark, TranscriptionInitState initState) {
+    final isIndeterminate = initState.progress < 0;
+
+    return Column(
+      children: [
+        if (isIndeterminate)
+          LinearProgressIndicator(
+            backgroundColor: BrandColors.stone,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+            ),
+          )
+        else
+          LinearProgressIndicator(
+            value: initState.progress,
+            backgroundColor: BrandColors.stone,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+            ),
+          ),
+        SizedBox(height: Spacing.sm),
+        Text(
+          initState.statusMessage.isNotEmpty
+              ? initState.statusMessage
+              : initState.userFriendlyStatus,
+          style: TextStyle(
+            fontSize: TypographyTokens.bodySmall,
+            color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (!isIndeterminate) ...[
+          SizedBox(height: Spacing.xs),
+          Text(
+            '${(initState.progress * 100).toStringAsFixed(0)}%',
+            style: TextStyle(
+              fontSize: TypographyTokens.labelSmall,
+              color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -397,12 +374,16 @@ class _TranscriptionSetupStepState
     );
   }
 
-  Widget _buildBottomButtons(bool isDark) {
+  Widget _buildBottomButtons(
+    BuildContext context,
+    bool isDark,
+    TranscriptionInitState initState,
+  ) {
     return Row(
       children: [
         Expanded(
           child: OutlinedButton(
-            onPressed: widget.onSkip,
+            onPressed: onSkip,
             style: OutlinedButton.styleFrom(
               foregroundColor: isDark
                   ? BrandColors.nightTextSecondary
@@ -420,7 +401,7 @@ class _TranscriptionSetupStepState
         SizedBox(width: Spacing.md),
         Expanded(
           child: FilledButton(
-            onPressed: widget.onNext,
+            onPressed: onNext,
             style: FilledButton.styleFrom(
               backgroundColor:
                   isDark ? BrandColors.nightForest : BrandColors.forest,
