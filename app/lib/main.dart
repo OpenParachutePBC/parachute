@@ -16,11 +16,11 @@ import 'core/services/asset_migration_service.dart';
 import 'core/providers/feature_flags_provider.dart';
 import 'features/recorder/providers/model_download_provider.dart';
 import 'features/recorder/services/transcription_service_adapter.dart';
+import 'services/sherpa_onnx_isolate.dart';
 import 'features/onboarding/screens/onboarding_flow.dart';
 import 'features/chat/screens/agent_hub_screen.dart';
 import 'features/journal/screens/journal_screen.dart';
 import 'features/vault/screens/vault_screen.dart';
-import 'services/sherpa_onnx_service.dart';
 
 void main() async {
   // Ensure Flutter bindings are initialized
@@ -179,13 +179,24 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     });
   }
 
-  /// Pre-initialize transcription model after first frame to avoid UI freeze during recording
+  /// Pre-initialize transcription model in background isolate to avoid UI freeze
   void _preInitializeTranscription() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Pre-initialize Sherpa-ONNX if models are already downloaded
-      // This runs on the main thread but after the UI has rendered,
-      // so the user sees the Journal screen before any potential model loading
-      SherpaOnnxService().preInitializeIfReady();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Check if models are downloaded (quick file existence check)
+      final modelsAvailable = await SherpaOnnxIsolate.instance.checkModelsAvailable();
+
+      if (modelsAvailable) {
+        // Initialize in background isolate - won't block UI
+        debugPrint('[Main] Pre-initializing transcription in background isolate...');
+        try {
+          await SherpaOnnxIsolate.instance.initialize();
+          debugPrint('[Main] ✅ Transcription pre-initialized');
+        } catch (e) {
+          debugPrint('[Main] ⚠️ Pre-initialization failed: $e');
+        }
+      } else {
+        debugPrint('[Main] Models not downloaded, skipping pre-init');
+      }
     });
   }
 

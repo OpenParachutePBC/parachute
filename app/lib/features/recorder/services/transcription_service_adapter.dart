@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:app/services/parakeet_service.dart';
 import 'package:app/services/sherpa_onnx_service.dart';
+import 'package:app/services/sherpa_onnx_isolate.dart';
 
 /// Platform-adaptive transcription service using Parakeet v3
 ///
@@ -13,6 +14,9 @@ import 'package:app/services/sherpa_onnx_service.dart';
 /// This provides fast, offline transcription with 25-language support.
 class TranscriptionServiceAdapter {
   final ParakeetService _parakeetService = ParakeetService();
+  // Use isolate-based service for Sherpa-ONNX to prevent UI blocking
+  final SherpaOnnxIsolate _sherpaIsolate = SherpaOnnxIsolate.instance;
+  // Keep direct service reference for compatibility checks
   final SherpaOnnxService _sherpaService = SherpaOnnxService();
 
   // Global progress callbacks (set by main.dart)
@@ -39,7 +43,7 @@ class TranscriptionServiceAdapter {
       _sherpaService.isSupported || _parakeetService.isSupported;
 
   String get engineName {
-    if (_sherpaService.isInitialized) {
+    if (_sherpaIsolate.isInitialized) {
       return 'Parakeet v3 (Sherpa-ONNX)';
     } else if (_parakeetService.isSupported && _parakeetService.isInitialized) {
       return 'Parakeet v3 (FluidAudio)';
@@ -78,14 +82,14 @@ class TranscriptionServiceAdapter {
       }
     }
 
-    // Android (or fallback): Use Sherpa-ONNX
+    // Android (or fallback): Use Sherpa-ONNX via background isolate
     if (_sherpaService.isSupported) {
       debugPrint(
-        '[TranscriptionAdapter] Initializing Parakeet (Sherpa-ONNX)...',
+        '[TranscriptionAdapter] Initializing Parakeet (Sherpa-ONNX) in background isolate...',
       );
       onStatus?.call('Initializing Parakeet (Sherpa-ONNX)...');
       try {
-        await _sherpaService.initialize(
+        await _sherpaIsolate.initialize(
           onProgress: onProgress,
           onStatus: onStatus,
         );
@@ -117,7 +121,7 @@ class TranscriptionServiceAdapter {
   }) async {
     // Lazy initialization - initialize on first use if not already done
     final needsInit =
-        !_sherpaService.isInitialized && !_parakeetService.isInitialized;
+        !_sherpaIsolate.isInitialized && !_parakeetService.isInitialized;
 
     if (needsInit) {
       debugPrint('[TranscriptionAdapter] Lazy-initializing...');
@@ -133,8 +137,8 @@ class TranscriptionServiceAdapter {
       return await _transcribeWithParakeet(audioPath, onProgress: onProgress);
     }
 
-    // Android (or fallback): Use Sherpa-ONNX
-    if (_sherpaService.isInitialized) {
+    // Android (or fallback): Use Sherpa-ONNX via background isolate
+    if (_sherpaIsolate.isInitialized) {
       return await _transcribeWithSherpa(audioPath, onProgress: onProgress);
     }
 
@@ -174,7 +178,7 @@ class TranscriptionServiceAdapter {
     }
   }
 
-  /// Transcribe using Parakeet via Sherpa-ONNX (Android)
+  /// Transcribe using Parakeet via Sherpa-ONNX in background isolate (Android)
   Future<AdapterTranscriptionResult> _transcribeWithSherpa(
     String audioPath, {
     Function(TranscriptionProgress)? onProgress,
@@ -183,8 +187,8 @@ class TranscriptionServiceAdapter {
       // Start progress
       _updateProgress(0.1, 'Transcribing with Parakeet...', onProgress);
 
-      // Transcribe
-      final result = await _sherpaService.transcribeAudio(audioPath);
+      // Transcribe in background isolate (non-blocking)
+      final result = await _sherpaIsolate.transcribeAudio(audioPath);
 
       // Complete
       _updateProgress(
@@ -235,9 +239,9 @@ class TranscriptionServiceAdapter {
 
   /// Check if transcription service is ready
   Future<bool> isReady() async {
-    // Check Sherpa-ONNX first (all platforms)
-    if (_sherpaService.isSupported) {
-      return await _sherpaService.isReady();
+    // Check isolate-based Sherpa-ONNX first
+    if (_sherpaIsolate.isInitialized) {
+      return true;
     }
 
     // Fallback to FluidAudio (iOS/macOS)
@@ -250,6 +254,8 @@ class TranscriptionServiceAdapter {
 
   void dispose() {
     _transcriptionProgressController.close();
+    // Note: Don't dispose _sherpaIsolate here as it's a singleton
+    // that may be reused by other instances
   }
 }
 
