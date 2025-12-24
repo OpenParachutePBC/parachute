@@ -369,11 +369,19 @@ class SherpaOnnxService {
     debugPrint('[SherpaOnnxService] ✅ Extraction complete: $extractedCount files');
   }
 
+  // Chunking configuration
+  static const int _sampleRate = 16000;
+  static const int _chunkDurationSeconds = 30; // 30 second chunks
+  static const int _overlapSeconds = 2; // 2 second overlap to avoid cutting words
+  static const int _samplesPerChunk = _sampleRate * _chunkDurationSeconds;
+  static const int _overlapSamples = _sampleRate * _overlapSeconds;
+
   /// Transcribe audio file
   ///
   /// [audioPath] - Absolute path to WAV file (16kHz mono PCM16)
   ///
   /// Returns transcribed text with automatic language detection.
+  /// For long audio files, processes in chunks to avoid OOM.
   Future<TranscriptionResult> transcribeAudio(String audioPath) async {
     if (!_isInitialized) {
       throw StateError('SherpaOnnx not initialized. Call initialize() first.');
@@ -393,44 +401,45 @@ class SherpaOnnxService {
       debugPrint('[SherpaOnnxService] Transcribing: $audioPath');
       final startTime = DateTime.now();
 
-      // Create stream for this audio file
-      final stream = _recognizer!.createStream();
+      // Get file size to determine if chunking is needed
+      final fileSize = await file.length();
+      final estimatedSamples = (fileSize - 44) ~/ 2; // WAV header is 44 bytes, 2 bytes per sample
+      final estimatedDurationSec = estimatedSamples / _sampleRate;
 
-      // Load audio file
-      // Note: sherpa-onnx expects audio samples as Float32List
-      // We need to read the WAV file and convert to samples
-      final samples = await _loadWavFile(audioPath);
+      debugPrint('[SherpaOnnxService] Audio duration: ${estimatedDurationSec.toStringAsFixed(1)}s, samples: $estimatedSamples');
 
-      // Accept waveform (16kHz sample rate)
-      stream.acceptWaveform(samples: samples, sampleRate: 16000);
+      String fullText;
+      List<String> allTokens = [];
+      List<double> allTimestamps = [];
 
-      // Decode (single call for offline recognition)
-      _recognizer!.decode(stream);
-
-      // Get result
-      final result = _recognizer!.getResult(stream);
-      final text = result.text;
-      final tokens = result.tokens;
-      final timestamps = result.timestamps;
-
-      // Free stream
-      stream.free();
+      if (estimatedSamples <= _samplesPerChunk * 1.5) {
+        // Short audio - process in one go (up to ~45 seconds)
+        debugPrint('[SherpaOnnxService] Short audio, processing in one chunk');
+        final result = await _transcribeChunk(audioPath, 0, estimatedSamples);
+        fullText = result.text;
+        allTokens = result.tokens ?? [];
+        allTimestamps = result.timestamps ?? [];
+      } else {
+        // Long audio - process in chunks with overlap
+        debugPrint('[SherpaOnnxService] Long audio, processing in ${(_samplesPerChunk / _sampleRate).toInt()}s chunks');
+        final results = await _transcribeInChunks(audioPath, estimatedSamples);
+        fullText = results.map((r) => r.text).join(' ').trim();
+        // Note: tokens/timestamps from chunked processing would need offset adjustment
+        // For now, we don't merge them for chunked audio
+      }
 
       final duration = DateTime.now().difference(startTime);
 
       debugPrint(
-        '[SherpaOnnxService] ✅ Transcribed in ${duration.inMilliseconds}ms: "$text"',
-      );
-      debugPrint(
-        '[SherpaOnnxService] Tokens: ${tokens.length}, Timestamps: ${timestamps.length}',
+        '[SherpaOnnxService] ✅ Transcribed in ${duration.inMilliseconds}ms: "${fullText.substring(0, fullText.length.clamp(0, 100))}..."',
       );
 
       return TranscriptionResult(
-        text: text,
+        text: fullText,
         language: 'auto', // Parakeet auto-detects language
         duration: duration,
-        tokens: tokens.isNotEmpty ? tokens : null,
-        timestamps: timestamps.isNotEmpty ? timestamps : null,
+        tokens: allTokens.isNotEmpty ? allTokens : null,
+        timestamps: allTimestamps.isNotEmpty ? allTimestamps : null,
       );
     } catch (e, stackTrace) {
       debugPrint('[SherpaOnnxService] ❌ Transcription failed: $e');
@@ -439,37 +448,177 @@ class SherpaOnnxService {
     }
   }
 
-  /// Load WAV file and convert to Float32List samples
+  /// Transcribe audio in chunks to avoid OOM on long recordings
+  Future<List<TranscriptionResult>> _transcribeInChunks(
+    String audioPath,
+    int totalSamples,
+  ) async {
+    final results = <TranscriptionResult>[];
+    int chunkStart = 0;
+    int chunkIndex = 0;
+
+    while (chunkStart < totalSamples) {
+      // Calculate chunk bounds
+      int chunkEnd = (chunkStart + _samplesPerChunk).clamp(0, totalSamples);
+
+      debugPrint('[SherpaOnnxService] Processing chunk ${chunkIndex + 1}: samples $chunkStart-$chunkEnd');
+
+      // Transcribe this chunk
+      final result = await _transcribeChunk(audioPath, chunkStart, chunkEnd);
+
+      if (result.text.isNotEmpty) {
+        results.add(result);
+        debugPrint('[SherpaOnnxService] Chunk ${chunkIndex + 1} result: "${result.text.substring(0, result.text.length.clamp(0, 50))}..."');
+      }
+
+      // Move to next chunk, with overlap to avoid cutting words
+      chunkStart = chunkEnd - _overlapSamples;
+      if (chunkStart >= totalSamples - _overlapSamples) {
+        break; // Don't process tiny remaining chunks
+      }
+      chunkIndex++;
+
+      // Small delay to allow GC to reclaim memory
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
+    // Remove duplicate words from overlapping regions
+    return _deduplicateChunkResults(results);
+  }
+
+  /// Transcribe a single chunk of audio
+  Future<TranscriptionResult> _transcribeChunk(
+    String audioPath,
+    int startSample,
+    int endSample,
+  ) async {
+    final startTime = DateTime.now();
+
+    // Load only this chunk of samples
+    final samples = await _loadWavChunk(audioPath, startSample, endSample);
+
+    // Create stream for this chunk
+    final stream = _recognizer!.createStream();
+
+    // Accept waveform (16kHz sample rate)
+    stream.acceptWaveform(samples: samples, sampleRate: _sampleRate);
+
+    // Decode
+    _recognizer!.decode(stream);
+
+    // Get result
+    final result = _recognizer!.getResult(stream);
+    final text = result.text.trim();
+    final tokens = result.tokens;
+    final timestamps = result.timestamps;
+
+    // Free stream immediately to release memory
+    stream.free();
+
+    final duration = DateTime.now().difference(startTime);
+
+    return TranscriptionResult(
+      text: text,
+      language: 'auto',
+      duration: duration,
+      tokens: tokens.isNotEmpty ? tokens : null,
+      timestamps: timestamps.isNotEmpty ? timestamps : null,
+    );
+  }
+
+  /// Remove duplicate words that appear due to chunk overlap
+  List<TranscriptionResult> _deduplicateChunkResults(List<TranscriptionResult> results) {
+    if (results.length <= 1) return results;
+
+    final deduped = <TranscriptionResult>[results.first];
+
+    for (int i = 1; i < results.length; i++) {
+      final prevText = results[i - 1].text;
+      final currText = results[i].text;
+
+      // Find overlap by checking if end of previous matches start of current
+      final dedupedText = _removeOverlap(prevText, currText);
+
+      deduped.add(TranscriptionResult(
+        text: dedupedText,
+        language: results[i].language,
+        duration: results[i].duration,
+        tokens: results[i].tokens,
+        timestamps: results[i].timestamps,
+      ));
+    }
+
+    return deduped;
+  }
+
+  /// Remove overlapping words between consecutive chunks
+  String _removeOverlap(String prevText, String currText) {
+    if (prevText.isEmpty || currText.isEmpty) return currText;
+
+    final prevWords = prevText.split(' ');
+    final currWords = currText.split(' ');
+
+    if (prevWords.isEmpty || currWords.isEmpty) return currText;
+
+    // Look for overlap in last few words of prev and first few words of curr
+    // Check up to 10 words for overlap
+    final maxOverlapCheck = 10.clamp(0, prevWords.length).clamp(0, currWords.length);
+
+    for (int overlapLen = maxOverlapCheck; overlapLen >= 2; overlapLen--) {
+      final prevEnd = prevWords.sublist(prevWords.length - overlapLen).join(' ').toLowerCase();
+      final currStart = currWords.sublist(0, overlapLen).join(' ').toLowerCase();
+
+      if (prevEnd == currStart) {
+        // Found overlap, remove it from current
+        debugPrint('[SherpaOnnxService] Removing $overlapLen word overlap: "$currStart"');
+        return currWords.sublist(overlapLen).join(' ');
+      }
+    }
+
+    // No exact overlap found, return as-is
+    return currText;
+  }
+
+  /// Load a chunk of WAV file and convert to Float32List samples
   ///
-  /// Assumes 16kHz mono PCM16 WAV format (same as used by Whisper)
-  Future<Float32List> _loadWavFile(String audioPath) async {
+  /// [startSample] and [endSample] specify the range of samples to load.
+  /// This avoids loading the entire file into memory for long recordings.
+  Future<Float32List> _loadWavChunk(
+    String audioPath,
+    int startSample,
+    int endSample,
+  ) async {
     final file = File(audioPath);
-    final bytes = await file.readAsBytes();
+    final raf = await file.open(mode: FileMode.read);
 
-    // WAV file format:
-    // - First 44 bytes: WAV header
-    // - Remaining bytes: PCM16 audio data (2 bytes per sample)
+    try {
+      // WAV header is 44 bytes, then PCM16 data (2 bytes per sample)
+      const headerSize = 44;
+      final startByte = headerSize + (startSample * 2);
+      final numSamples = endSample - startSample;
+      final numBytes = numSamples * 2;
 
-    if (bytes.length < 44) {
-      throw ArgumentError('Invalid WAV file: too short');
+      // Seek to start position and read only the needed bytes
+      await raf.setPosition(startByte);
+      final bytes = await raf.read(numBytes);
+
+      // Convert to Float32List
+      final samples = Float32List(numSamples);
+      for (int i = 0; i < numSamples && (i * 2 + 1) < bytes.length; i++) {
+        final byteIndex = i * 2;
+        // Read 16-bit signed integer (little-endian)
+        final sample = (bytes[byteIndex + 1] << 8) | bytes[byteIndex];
+        // Convert to signed int16
+        final signedSample = sample > 32767 ? sample - 65536 : sample;
+        // Normalize to [-1.0, 1.0]
+        samples[i] = signedSample / 32768.0;
+      }
+
+      debugPrint('[SherpaOnnxService] Loaded chunk: $numSamples samples (${(numSamples / _sampleRate).toStringAsFixed(1)}s)');
+      return samples;
+    } finally {
+      await raf.close();
     }
-
-    // Skip 44-byte header, read PCM16 samples
-    final numSamples = (bytes.length - 44) ~/ 2;
-    final samples = Float32List(numSamples);
-
-    for (int i = 0; i < numSamples; i++) {
-      final byteIndex = 44 + (i * 2);
-      // Read 16-bit signed integer (little-endian)
-      final sample = (bytes[byteIndex + 1] << 8) | bytes[byteIndex];
-      // Convert to signed int16
-      final signedSample = sample > 32767 ? sample - 65536 : sample;
-      // Normalize to [-1.0, 1.0]
-      samples[i] = signedSample / 32768.0;
-    }
-
-    debugPrint('[SherpaOnnxService] Loaded ${samples.length} samples from WAV');
-    return samples;
   }
 
   /// Check if SherpaOnnx is ready
