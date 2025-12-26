@@ -10,6 +10,13 @@ final fileSystemServiceProvider = Provider<FileSystemService>((ref) {
   return FileSystemService();
 });
 
+/// Provider for the vault root path
+final vaultPathProvider = FutureProvider<String>((ref) async {
+  final fileSystem = ref.watch(fileSystemServiceProvider);
+  await fileSystem.initialize();
+  return fileSystem.getRootPath();
+});
+
 /// Provider for the ExportDetectionService
 final exportDetectionServiceProvider = Provider<ExportDetectionService>((ref) {
   final fileSystem = ref.watch(fileSystemServiceProvider);
