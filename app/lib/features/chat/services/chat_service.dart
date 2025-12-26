@@ -7,6 +7,7 @@ import '../models/chat_message.dart';
 import '../models/agent.dart';
 import '../models/stream_event.dart';
 import '../models/context_file.dart';
+import '../models/system_prompt_info.dart';
 
 /// Service for communicating with the parachute-agent backend
 class ChatService {
@@ -198,6 +199,76 @@ class ChatService {
           .toList();
     } catch (e) {
       debugPrint('[ChatService] Error getting contexts: $e');
+      rethrow;
+    }
+  }
+
+  // ============================================================
+  // System Prompt
+  // ============================================================
+
+  /// Get the built-in default system prompt
+  ///
+  /// Returns information about the default prompt including:
+  /// - content: The actual prompt text
+  /// - isActive: Whether it's currently being used (no AGENTS.md override)
+  /// - overrideFile: Name of override file if present
+  Future<DefaultPromptInfo> getDefaultPrompt() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$baseUrl/api/default-prompt'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to get default prompt: ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return DefaultPromptInfo.fromJson(data);
+    } catch (e) {
+      debugPrint('[ChatService] Error getting default prompt: $e');
+      rethrow;
+    }
+  }
+
+  /// Get the current AGENTS.md content (if exists)
+  Future<AgentsMdInfo> getAgentsMd() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$baseUrl/api/agents-md'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to get AGENTS.md: ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return AgentsMdInfo.fromJson(data);
+    } catch (e) {
+      debugPrint('[ChatService] Error getting AGENTS.md: $e');
+      rethrow;
+    }
+  }
+
+  /// Save AGENTS.md content
+  ///
+  /// Creates or updates the AGENTS.md file in the vault root.
+  /// This will override the built-in default system prompt.
+  Future<void> saveAgentsMd(String content) async {
+    try {
+      final response = await _client.put(
+        Uri.parse('$baseUrl/api/agents-md'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'content': content}),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to save AGENTS.md: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('[ChatService] Error saving AGENTS.md: $e');
       rethrow;
     }
   }

@@ -21,6 +21,7 @@ import { loadMcpServers, resolveMcpServers, listMcpServers, addMcpServer, remove
 import { discoverSkills, loadSkill, createSkill, deleteSkill, ensureSkillsDir } from './skills-loader.js';
 import { EventEmitter } from 'events';
 import { orchestratorLogger as log } from './logger.js';
+import { PARACHUTE_DEFAULT_PROMPT } from './default-prompt.js';
 
 /**
  * Default orchestrator configuration
@@ -1403,47 +1404,17 @@ The user is now continuing this conversation with you. Respond naturally as if y
 
   /**
    * Build default vault prompt (fallback when no AGENTS.md)
+   *
+   * Uses the built-in Parachute default prompt constant.
+   * Users can override this entirely by creating AGENTS.md in their vault.
    */
   async buildDefaultVaultPrompt(context = {}) {
+    let prompt = PARACHUTE_DEFAULT_PROMPT;
+
+    // Add specialized agents if any exist
     const agents = await loadAllAgents(this.vaultPath);
-    const files = await this.listVaultFiles();
-
-    let prompt = `You are a knowledge companion helping the user with their personal vault.
-
-You are NOT primarily a coding assistant. Your core purpose is to help the user:
-- Think through ideas and problems
-- Find and connect information in their vault
-- Remember context from past conversations
-
-## Environment
-
-VAULT LOCATION: ${this.vaultPath}
-
-VAULT FILES (${files.length} total):
-${files.slice(0, 20).join('\n')}
-${files.length > 20 ? `\n... and ${files.length - 20} more` : ''}
-
-## Available Tools
-
-You have access to tools for reading, searching, and modifying files in the vault.
-
-### Memory & Search (vault-search MCP)
-You have access to vault-search tools that let you search through the user's past conversations, journal entries, and captures:
-- \`mcp__vault-search__vault_search\` - Search for keywords across all indexed content
-- \`mcp__vault-search__vault_get_content\` - Get more detail on a specific item by ID
-- \`mcp__vault-search__vault_recent\` - List recently added content
-
-**Use these tools when:**
-- The user asks about something you discussed before ("what did we talk about...")
-- The user references past conversations or notes
-- You need context from their journal or previous chats
-- The user asks you to find or remember something
-
-Be helpful and concise. Ask clarifying questions when needed.`;
-
-    // Add agent info if any exist
     if (agents.length > 0) {
-      prompt += `\n\n## Specialized Agents Available\n${agents.map(a => `- ${a.path}: ${a.description || a.name}`).join('\n')}`;
+      prompt += `\n\n## Specialized Agents Available\n\nYou can suggest these agents for specific tasks:\n${agents.map(a => `- ${a.path}: ${a.description || a.name}`).join('\n')}`;
     }
 
     return prompt;

@@ -187,4 +187,47 @@ class FileBrowserService {
       return null;
     }
   }
+
+  /// Write content to a file
+  /// Creates the file if it doesn't exist
+  Future<void> writeFile(String path, String content) async {
+    try {
+      // Safety check: must be within vault
+      if (!await isWithinVault(path)) {
+        throw Exception('Cannot write files outside the vault');
+      }
+
+      final file = File(path);
+      await file.writeAsString(content);
+      debugPrint('[FileBrowserService] Wrote ${content.length} chars to: $path');
+    } catch (e) {
+      debugPrint('[FileBrowserService] Error writing file $path: $e');
+      rethrow;
+    }
+  }
+
+  /// Create a new file with initial content
+  /// Returns the path of the created file
+  Future<String> createFile(String directory, String filename, String content) async {
+    try {
+      // Safety check: must be within vault
+      if (!await isWithinVault(directory)) {
+        throw Exception('Cannot create files outside the vault');
+      }
+
+      final path = '$directory/$filename';
+      final file = File(path);
+
+      if (await file.exists()) {
+        throw Exception('File already exists: $filename');
+      }
+
+      await file.writeAsString(content);
+      debugPrint('[FileBrowserService] Created file: $path');
+      return path;
+    } catch (e) {
+      debugPrint('[FileBrowserService] Error creating file: $e');
+      rethrow;
+    }
+  }
 }

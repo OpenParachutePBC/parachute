@@ -13,6 +13,7 @@ import '../widgets/omi_device_section.dart';
 import '../widgets/local_ai_models_section.dart';
 import '../widgets/privacy_section.dart';
 import '../widgets/developer_section.dart';
+import '../widgets/system_prompt_section.dart';
 
 /// Settings screen with expandable sections
 ///
@@ -186,8 +187,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       accentColor: BrandColors.driftwood,
       children: [
         const AiChatSection(),
-        // Only show import section when AI Chat is enabled
-        if (aiChatEnabled) const ChatImportSection(),
+        // Only show these sections when AI Chat is enabled
+        if (aiChatEnabled) ...[
+          const SystemPromptSection(),
+          const ChatImportSection(),
+        ],
         const PrivacySection(),
       ],
     );

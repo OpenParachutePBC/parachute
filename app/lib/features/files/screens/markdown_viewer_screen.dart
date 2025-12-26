@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:yaml/yaml.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import '../models/file_item.dart';
+import '../providers/file_browser_provider.dart';
 
-/// Screen for viewing markdown files with frontmatter support
-class MarkdownViewerScreen extends StatefulWidget {
+/// Screen for viewing and editing markdown files with frontmatter support
+class MarkdownViewerScreen extends ConsumerStatefulWidget {
   final FileItem file;
 
   const MarkdownViewerScreen({
@@ -15,28 +17,47 @@ class MarkdownViewerScreen extends StatefulWidget {
   });
 
   @override
-  State<MarkdownViewerScreen> createState() => _MarkdownViewerScreenState();
+  ConsumerState<MarkdownViewerScreen> createState() => _MarkdownViewerScreenState();
 }
 
-class _MarkdownViewerScreenState extends State<MarkdownViewerScreen> {
+class _MarkdownViewerScreenState extends ConsumerState<MarkdownViewerScreen> {
   String? _error;
   bool _isLoading = true;
   bool _frontmatterExpanded = true;
+  bool _isEditMode = false;
+  bool _hasUnsavedChanges = false;
+  bool _isSaving = false;
 
-  // Parsed content
+  // Original content for detecting changes
+  String _originalContent = '';
+
+  // Parsed content for view mode
   Map<String, dynamic>? _frontmatter;
   String _body = '';
+
+  // Editor controller
+  late TextEditingController _editController;
 
   @override
   void initState() {
     super.initState();
+    _editController = TextEditingController();
     _loadFile();
+  }
+
+  @override
+  void dispose() {
+    _editController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFile() async {
     try {
       final file = File(widget.file.path);
       final content = await file.readAsString();
+
+      _originalContent = content;
+      _editController.text = content;
 
       // Parse frontmatter and body
       final parsed = _parseContent(content);
@@ -101,32 +122,261 @@ class _MarkdownViewerScreenState extends State<MarkdownViewerScreen> {
     return {};
   }
 
+  void _enterEditMode() {
+    setState(() {
+      _isEditMode = true;
+      _editController.text = _originalContent;
+      _hasUnsavedChanges = false;
+    });
+  }
+
+  void _cancelEdit() {
+    if (_hasUnsavedChanges) {
+      _showDiscardChangesDialog();
+    } else {
+      _exitEditMode();
+    }
+  }
+
+  void _exitEditMode() {
+    setState(() {
+      _isEditMode = false;
+      _editController.text = _originalContent;
+      _hasUnsavedChanges = false;
+    });
+  }
+
+  Future<void> _showDiscardChangesDialog() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final shouldDiscard = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? BrandColors.nightSurfaceElevated : BrandColors.softWhite,
+        title: const Text('Discard changes?'),
+        content: const Text('You have unsaved changes. Are you sure you want to discard them?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: BrandColors.error),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDiscard == true) {
+      _exitEditMode();
+    }
+  }
+
+  Future<void> _saveFile() async {
+    if (_isSaving) return;
+
+    setState(() => _isSaving = true);
+
+    try {
+      final service = ref.read(fileBrowserServiceProvider);
+      await service.writeFile(widget.file.path, _editController.text);
+
+      // Update the original content and parsed view
+      _originalContent = _editController.text;
+      final parsed = _parseContent(_originalContent);
+
+      if (mounted) {
+        setState(() {
+          _frontmatter = parsed.frontmatter;
+          _body = parsed.body;
+          _hasUnsavedChanges = false;
+          _isEditMode = false;
+          _isSaving = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('File saved'),
+            backgroundColor: BrandColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save: $e'),
+            backgroundColor: BrandColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _onTextChanged() {
+    final hasChanges = _editController.text != _originalContent;
+    if (hasChanges != _hasUnsavedChanges) {
+      setState(() => _hasUnsavedChanges = hasChanges);
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_isEditMode && _hasUnsavedChanges) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+
+      final result = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: isDark ? BrandColors.nightSurfaceElevated : BrandColors.softWhite,
+          title: const Text('Unsaved changes'),
+          content: const Text('Do you want to save your changes before leaving?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'discard'),
+              child: Text(
+                'Discard',
+                style: TextStyle(color: BrandColors.error),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'cancel'),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 'save'),
+              style: FilledButton.styleFrom(
+                backgroundColor: isDark ? BrandColors.nightForest : BrandColors.forest,
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      );
+
+      if (result == 'save') {
+        await _saveFile();
+        return true;
+      } else if (result == 'discard') {
+        return true;
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
-      appBar: AppBar(
+    return PopScope(
+      canPop: !(_isEditMode && _hasUnsavedChanges),
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop) {
+          final canPop = await _onWillPop();
+          if (canPop && mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
+      child: Scaffold(
         backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
-        surfaceTintColor: Colors.transparent,
-        title: Text(
-          widget.file.name,
-          style: TextStyle(
-            color: isDark ? BrandColors.nightText : BrandColors.charcoal,
-            fontSize: TypographyTokens.titleMedium,
+        appBar: AppBar(
+          backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
+          surfaceTintColor: Colors.transparent,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.file.name,
+                style: TextStyle(
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                  fontSize: TypographyTokens.titleMedium,
+                ),
+              ),
+              if (_isEditMode && _hasUnsavedChanges)
+                Text(
+                  'Unsaved changes',
+                  style: TextStyle(
+                    color: BrandColors.warning,
+                    fontSize: TypographyTokens.labelSmall,
+                  ),
+                ),
+            ],
           ),
-        ),
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+          leading: IconButton(
+            icon: Icon(
+              Icons.arrow_back,
+              color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+            ),
+            onPressed: () async {
+              final canPop = await _onWillPop();
+              if (canPop && mounted) {
+                Navigator.pop(context);
+              }
+            },
           ),
-          onPressed: () => Navigator.pop(context),
+          actions: _buildAppBarActions(isDark),
         ),
+        body: _buildBody(isDark),
       ),
-      body: _buildBody(isDark),
     );
+  }
+
+  List<Widget> _buildAppBarActions(bool isDark) {
+    if (_isEditMode) {
+      return [
+        // Cancel button
+        TextButton(
+          onPressed: _cancelEdit,
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+            ),
+          ),
+        ),
+        // Save button
+        Padding(
+          padding: const EdgeInsets.only(right: Spacing.sm),
+          child: FilledButton.icon(
+            onPressed: _hasUnsavedChanges && !_isSaving ? _saveFile : null,
+            icon: _isSaving
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.save, size: 18),
+            label: Text(_isSaving ? 'Saving...' : 'Save'),
+            style: FilledButton.styleFrom(
+              backgroundColor: _hasUnsavedChanges
+                  ? (isDark ? BrandColors.nightForest : BrandColors.forest)
+                  : (isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood),
+              padding: const EdgeInsets.symmetric(horizontal: Spacing.md),
+            ),
+          ),
+        ),
+      ];
+    } else {
+      return [
+        // Edit button
+        IconButton(
+          icon: Icon(
+            Icons.edit,
+            color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
+          ),
+          onPressed: _enterEditMode,
+          tooltip: 'Edit file',
+        ),
+      ];
+    }
   }
 
   Widget _buildBody(bool isDark) {
@@ -138,6 +388,41 @@ class _MarkdownViewerScreenState extends State<MarkdownViewerScreen> {
       return _buildErrorState(isDark);
     }
 
+    if (_isEditMode) {
+      return _buildEditor(isDark);
+    }
+
+    return _buildViewer(isDark);
+  }
+
+  Widget _buildEditor(bool isDark) {
+    return Container(
+      color: isDark ? BrandColors.nightSurfaceElevated : BrandColors.softWhite,
+      child: TextField(
+        controller: _editController,
+        onChanged: (_) => _onTextChanged(),
+        maxLines: null,
+        expands: true,
+        textAlignVertical: TextAlignVertical.top,
+        style: TextStyle(
+          fontFamily: 'monospace',
+          fontSize: TypographyTokens.bodyMedium,
+          color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+          height: 1.5,
+        ),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.all(Spacing.md),
+          hintText: 'Start typing...',
+          hintStyle: TextStyle(
+            color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewer(bool isDark) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(Spacing.md),
       child: Column(
