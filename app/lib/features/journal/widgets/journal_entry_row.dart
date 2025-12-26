@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../models/journal_entry.dart';
 
@@ -236,6 +237,12 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
               entry.durationSeconds! > 0)
             _buildDurationBadge(isDark),
 
+          // Copy button - show for entries with content
+          if (widget.entry.content.isNotEmpty && !widget.isEditing) ...[
+            const SizedBox(width: 8),
+            _buildCopyButton(context, isDark),
+          ],
+
           // AI enhance button - show for entries with content
           if (_canEnhance) ...[
             const SizedBox(width: 8),
@@ -257,6 +264,55 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
       !widget.entry.isPendingTranscription &&
       widget.entry.content.isNotEmpty &&
       widget.onEnhance != null;
+
+  Widget _buildCopyButton(BuildContext context, bool isDark) {
+    return Tooltip(
+      message: 'Copy text',
+      child: InkWell(
+        onTap: () => _copyToClipboard(context),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: 28,
+          height: 28,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: BrandColors.forest.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(
+            Icons.copy_outlined,
+            size: 16,
+            color: BrandColors.forest,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _copyToClipboard(BuildContext context) {
+    if (widget.entry.content.isEmpty) return;
+
+    Clipboard.setData(ClipboardData(text: widget.entry.content));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            const Text('Copied to clipboard'),
+          ],
+        ),
+        backgroundColor: BrandColors.forest,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
+  }
 
   Widget _buildEnhanceButton(bool isDark) {
     if (widget.isEnhancing) {

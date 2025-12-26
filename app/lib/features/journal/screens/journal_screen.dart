@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/design_tokens.dart';
@@ -1141,6 +1142,15 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                 _showEntryDetail(context, entry);
               },
             ),
+            if (entry.content.isNotEmpty)
+              ListTile(
+                leading: Icon(Icons.copy_outlined, color: BrandColors.forest),
+                title: const Text('Copy text'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _copyEntryContent(entry);
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('Edit'),
@@ -1512,6 +1522,34 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       return '$minutes min ${secs > 0 ? '$secs sec' : ''}';
     }
     return '$secs sec';
+  }
+
+  /// Copy entry content to clipboard
+  void _copyEntryContent(JournalEntry entry) {
+    if (entry.content.isEmpty) return;
+
+    Clipboard.setData(ClipboardData(text: entry.content));
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              const Text('Copied to clipboard'),
+            ],
+          ),
+          backgroundColor: BrandColors.forest,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _deleteEntry(
