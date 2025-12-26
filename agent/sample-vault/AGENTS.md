@@ -15,8 +15,12 @@ You are a **thinking partner and memory extension**, not primarily a coding assi
 This vault contains:
 
 ```
-journals/           # Daily journal entries with voice transcripts
+Daily/              # Daily journal entries with voice transcripts
   YYYY-MM-DD.md     # One file per day, includes recordings and reflections
+
+assets/             # Audio files organized by month
+  YYYY-MM/          # Audio files for that month
+    *.opus          # Compressed audio recordings
 
 agent-sessions/     # Chat conversation history
   {session-id}.md   # Searchable record of past conversations
@@ -25,10 +29,7 @@ contexts/           # User context (imported from Claude, etc.)
   general-context.md  # Core context about the user (auto-loaded)
   {project}.md        # Project-specific context (read on-demand)
 
-captures/           # Voice recordings and documents
-  {timestamp}.md    # Captured thoughts, transcripts, uploads
-
-agents/             # Custom agent definitions (optional)
+.agents/            # Custom agent definitions (optional)
   {agent-name}.md   # Specialized agents for specific tasks
 ```
 

@@ -10,11 +10,13 @@ import 'package:just_audio/just_audio.dart';
 
 /// Local-first storage service for recording management
 ///
-/// New recordings are stored in ~/Parachute/captures/YYYY-MM/ as:
-/// - Markdown file (.md) in month folder
-/// - Audio file (.wav) in month/_audio/ subfolder
+/// Current architecture (journal system):
+/// - Daily journals: ~/Parachute/Daily/YYYY-MM-DD.md
+/// - Audio files: ~/Parachute/assets/YYYY-MM/*.opus
 ///
-/// Legacy recordings in flat captures/ folder are also supported for backward compatibility.
+/// Legacy support (read-only):
+/// - Old captures in ~/Parachute/captures/ are still readable
+/// - New recordings should use the journal system via JournalService
 class StorageService {
   final Ref? _ref; // Optional ref for accessing providers (like Git sync)
 
@@ -124,12 +126,11 @@ class StorageService {
 
       final prefs = await SharedPreferences.getInstance();
 
-      // Create sample recordings on first launch
+      // Note: Sample recordings disabled - they were creating the legacy
+      // captures/ folder structure. New recordings use the journal system
+      // (Daily/ for markdown, assets/ for audio files).
       final hasInitialized = prefs.getBool(_hasInitializedKey) ?? false;
-      debugPrint('StorageService: Has initialized: $hasInitialized');
       if (!hasInitialized) {
-        debugPrint('StorageService: Creating sample recordings...');
-        await _createSampleRecordings();
         await prefs.setBool(_hasInitializedKey, true);
       }
 

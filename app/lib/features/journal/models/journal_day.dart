@@ -4,8 +4,8 @@ import 'entry_metadata.dart';
 
 /// A full day's journal containing multiple entries.
 ///
-/// Corresponds to a single markdown file in the journals/ folder.
-/// File naming: `journals/2025-12-14.md`
+/// Corresponds to a single markdown file in the Daily/ folder.
+/// File naming: `Daily/2025-12-14.md`
 @immutable
 class JournalDay {
   /// The date this journal represents
@@ -46,7 +46,7 @@ class JournalDay {
       date: DateTime(date.year, date.month, date.day),
       entries: const [],
       entryMetadata: const {},
-      filePath: 'journals/$dateStr.md',
+      filePath: 'Daily/$dateStr.md',
     );
   }
 

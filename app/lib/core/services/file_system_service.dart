@@ -9,10 +9,14 @@ import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
 /// Unified file system service for Parachute
 ///
 /// Manages the ~/Parachute/ folder structure:
-/// - assets/       - All media files (audio, images) organized by YYYY-MM
-/// - captures/     - Voice recording transcripts (markdown)
-/// - Daily/        - Daily journal entries
+/// - Daily/          - Daily journal entries (YYYY-MM-DD.md)
+/// - assets/         - All media files (audio, images) organized by YYYY-MM
 /// - agent-sessions/ - AI chat sessions
+/// - contexts/       - User context files for AI
+/// - imports/        - Imported chat history (Claude, ChatGPT)
+///
+/// Legacy (read-only, no longer created):
+/// - captures/       - Old voice recording transcripts
 ///
 /// Also manages temporary audio files:
 /// - Temp folder for WAV files during recording/playback
