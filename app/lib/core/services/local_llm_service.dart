@@ -32,6 +32,9 @@ class LocalLlmService {
   /// Fixes transcription errors, improves grammar and punctuation,
   /// adds paragraph structure, removes filler words.
   ///
+  /// For long transcripts (>1500 words), processes in chunks to avoid
+  /// token limits while preserving all content.
+  ///
   /// [context] helps understand the purpose/setting (e.g., "morning journal", "meeting notes")
   /// to inform structure and formatting decisions, but is NOT added to the output.
   Future<String?> cleanupTranscript(
@@ -42,8 +45,84 @@ class LocalLlmService {
       return null;
     }
 
-    final prompt = _buildCleanupPrompt(rawTranscript, context: context);
-    return await _generateCompletion(prompt, maxTokens: 2048);
+    // Check if we need to chunk (roughly 1500 words = ~2000 tokens input)
+    final words = rawTranscript.split(RegExp(r'\s+'));
+    if (words.length <= 1500) {
+      // Short transcript - process directly
+      final prompt = _buildCleanupPrompt(rawTranscript, context: context);
+      return await _generateCompletion(prompt, maxTokens: 4096);
+    }
+
+    // Long transcript - process in chunks
+    debugPrint('[LocalLlm] Long transcript (${words.length} words), processing in chunks...');
+    return await _cleanupInChunks(rawTranscript, context: context);
+  }
+
+  /// Process long transcripts in chunks to avoid token limits
+  Future<String?> _cleanupInChunks(
+    String rawTranscript, {
+    String? context,
+  }) async {
+    // Split into chunks of ~1200 words (leaves room for prompt + output)
+    const chunkSize = 1200;
+    final sentences = _splitIntoSentences(rawTranscript);
+    final chunks = <String>[];
+    var currentChunk = StringBuffer();
+    var currentWordCount = 0;
+
+    for (final sentence in sentences) {
+      final sentenceWords = sentence.split(RegExp(r'\s+')).length;
+
+      if (currentWordCount + sentenceWords > chunkSize && currentChunk.isNotEmpty) {
+        // Save current chunk and start new one
+        chunks.add(currentChunk.toString().trim());
+        currentChunk = StringBuffer();
+        currentWordCount = 0;
+      }
+
+      currentChunk.write(sentence);
+      currentChunk.write(' ');
+      currentWordCount += sentenceWords;
+    }
+
+    // Don't forget the last chunk
+    if (currentChunk.isNotEmpty) {
+      chunks.add(currentChunk.toString().trim());
+    }
+
+    debugPrint('[LocalLlm] Split into ${chunks.length} chunks');
+
+    // Process each chunk
+    final cleanedChunks = <String>[];
+    for (var i = 0; i < chunks.length; i++) {
+      debugPrint('[LocalLlm] Processing chunk ${i + 1}/${chunks.length}...');
+
+      final chunkContext = context != null
+          ? '$context (part ${i + 1} of ${chunks.length})'
+          : 'part ${i + 1} of ${chunks.length}';
+
+      final prompt = _buildCleanupPrompt(chunks[i], context: chunkContext);
+      final cleaned = await _generateCompletion(prompt, maxTokens: 4096);
+
+      if (cleaned != null && cleaned.trim().isNotEmpty) {
+        cleanedChunks.add(cleaned.trim());
+      } else {
+        // If cleanup failed, use original chunk to avoid data loss
+        debugPrint('[LocalLlm] Chunk ${i + 1} cleanup failed, using original');
+        cleanedChunks.add(chunks[i]);
+      }
+    }
+
+    // Join chunks with paragraph breaks
+    return cleanedChunks.join('\n\n');
+  }
+
+  /// Split text into sentences for chunking
+  List<String> _splitIntoSentences(String text) {
+    // Split on sentence-ending punctuation followed by space
+    final sentencePattern = RegExp(r'(?<=[.!?])\s+');
+    final sentences = text.split(sentencePattern);
+    return sentences.where((s) => s.trim().isNotEmpty).toList();
   }
 
   /// Generate a title for a transcript
@@ -82,6 +161,25 @@ class LocalLlmService {
     return await _generateCompletion(prompt, maxTokens: 512);
   }
 
+  /// Answer a question using journal context (RAG)
+  ///
+  /// Uses retrieved journal excerpts as context to answer the user's question.
+  /// Returns a concise answer based only on the provided context.
+  ///
+  /// [question] is the user's query
+  /// [journalContext] is the concatenated relevant journal excerpts
+  Future<String?> generateAnswer(
+    String question, {
+    required String journalContext,
+  }) async {
+    if (question.trim().isEmpty) {
+      return null;
+    }
+
+    final prompt = _buildAnswerPrompt(question, journalContext);
+    return await _generateCompletion(prompt, maxTokens: 512);
+  }
+
   /// Generate a completion using the appropriate backend
   Future<String?> _generateCompletion(
     String prompt, {
@@ -106,11 +204,30 @@ class LocalLlmService {
     try {
       debugPrint('[LocalLlm] Using flutter_gemma (mobile)...');
 
-      // Get the preferred model
-      final modelType = await _getPreferredGemmaModel();
+      // Get the preferred model (default to gemma1b if not set)
+      var modelType = await _getPreferredGemmaModel();
+
+      // If no model preference set, try to use gemma1b as default
       if (modelType == null) {
+        debugPrint('[LocalLlm] No model preference set, checking for gemma1b...');
+        final gemma1bDownloaded = await _gemmaManager.isModelDownloaded(GemmaModelType.gemma1b);
+        if (gemma1bDownloaded) {
+          modelType = GemmaModelType.gemma1b;
+          debugPrint('[LocalLlm] Using gemma1b as default');
+        } else {
+          throw Exception(
+            'No AI model configured.\n\n'
+            'Please go to Settings → Local AI and download the Gemma 1B model.',
+          );
+        }
+      }
+
+      // Check if model is actually downloaded
+      final isDownloaded = await _gemmaManager.isModelDownloaded(modelType);
+      if (!isDownloaded) {
         throw Exception(
-          'No Gemma model configured. Please download and select a model in Settings.',
+          'AI model not downloaded.\n\n'
+          'Please go to Settings → Local AI and download the ${modelType.displayName} model.',
         );
       }
 
@@ -199,15 +316,22 @@ ${contextSection}Your task:
    - Keep the same meaning and content
    - Use the context information (if provided) to inform structure choices
 
-3. Maintain authenticity:
+3. Maintain authenticity and PRESERVE ALL CONTENT:
    - Preserve the speaker's natural, conversational tone
    - Keep the original voice and style
    - DO NOT add new information or interpretations
-   - DO NOT summarize or shorten content
+   - DO NOT summarize or shorten the content
+   - DO NOT skip or omit ANY sentences or ideas
    - DO NOT over-formalize casual speech
    - DO NOT include the context information in the output
+   - The cleaned version should contain ALL the same information as the original
+   - If in doubt, include more rather than less
 
-CRITICAL: Output ONLY the cleaned transcript text itself. Do not include any preamble like "Here's the cleaned version" or "Cleaned transcript:" or any explanations. Start directly with the first word of the cleaned transcript.
+CRITICAL REQUIREMENTS:
+1. Output ONLY the cleaned transcript text itself
+2. Do not include any preamble like "Here's the cleaned version" or explanations
+3. Start directly with the first word of the cleaned transcript
+4. The output MUST contain all the content from the original - do not cut anything off
 
 Original transcript:
 $transcript''';
@@ -219,14 +343,11 @@ $transcript''';
     // This keeps token count low for mobile LLMs
     final truncatedTranscript = _truncateForTitle(transcript);
 
-    final contextHint = context != null && context.trim().isNotEmpty
-        ? ' about $context'
-        : '';
+    // Very direct prompt - small models follow simple instructions better
+    // Emphasize: output ONLY the title, nothing else
+    return '''Create a 3-6 word title for this text. Output ONLY the title, no explanation.
 
-    // Very simple prompt - small models follow simple instructions better
-    return '''Write a short title (5-8 words) for this voice note$contextHint:
-
-"$truncatedTranscript"
+Text: "$truncatedTranscript"
 
 Title:''';
   }
@@ -234,6 +355,20 @@ Title:''';
   /// Clean up title output from LLM (extract just the title)
   String _cleanTitleOutput(String rawOutput) {
     var title = rawOutput.trim();
+
+    // Remove common preamble patterns that LLMs add
+    final preamblePatterns = [
+      RegExp(r"^here'?s?\s+(a\s+)?(few\s+)?(options?|suggestions?|titles?).*?:\s*", caseSensitive: false),
+      RegExp(r'^(the\s+)?title\s*(is|could be|would be)?:?\s*', caseSensitive: false),
+      RegExp(r'^(a\s+)?(short\s+)?title\s*:?\s*', caseSensitive: false),
+      RegExp(r'^(i\s+)?(would\s+)?(suggest|recommend).*?:\s*', caseSensitive: false),
+      RegExp(r'^(based on|for this).*?:\s*', caseSensitive: false),
+    ];
+
+    for (final pattern in preamblePatterns) {
+      title = title.replaceFirst(pattern, '');
+    }
+    title = title.trim();
 
     // Remove markdown formatting (bold, italic)
     title = title.replaceAll(RegExp(r'\*+'), '');
@@ -245,9 +380,24 @@ Title:''';
       title = title.substring(1, title.length - 1);
     }
 
-    // If it's multiple lines, take just the first line
+    // If it's multiple lines, take the first non-empty line that looks like a title
     if (title.contains('\n')) {
-      title = title.split('\n').first.trim();
+      final lines = title.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+      for (final line in lines) {
+        // Skip lines that look like list markers or explanations
+        if (line.startsWith(RegExp(r'^\d+[.):]\s*'))) {
+          // This is a numbered list item - extract just the title part
+          final extracted = line.replaceFirst(RegExp(r'^\d+[.):]\s*'), '').trim();
+          if (extracted.isNotEmpty && extracted.length <= 80) {
+            title = extracted;
+            break;
+          }
+        } else if (line.length <= 80 && !line.contains(':')) {
+          // This looks like a clean title
+          title = line;
+          break;
+        }
+      }
     }
 
     // If it's too long (model wrote a summary), truncate to first sentence
@@ -263,6 +413,13 @@ Title:''';
 
     // Remove trailing punctuation
     title = title.replaceAll(RegExp(r'[.!?]+$'), '');
+
+    // Remove leading/trailing quotes again after all processing
+    title = title.trim();
+    if ((title.startsWith('"') && title.endsWith('"')) ||
+        (title.startsWith("'") && title.endsWith("'"))) {
+      title = title.substring(1, title.length - 1);
+    }
 
     return title.trim();
   }
@@ -329,5 +486,23 @@ Transcript:
 $transcript
 
 Summary:''';
+  }
+
+  /// Build prompt for answering questions about journals (RAG)
+  String _buildAnswerPrompt(String question, String journalContext) {
+    return '''You are answering a question about the user's personal journal entries.
+
+IMPORTANT: Use ONLY the journal excerpts provided below to answer. If the answer is not clearly in the excerpts, say "I couldn't find information about that in your recent journals."
+
+## Journal Excerpts
+$journalContext
+
+## Question
+$question
+
+## Answer
+Provide a concise, helpful answer based on the journal excerpts above. Reference specific dates when relevant. Use second person ("you wrote", "you mentioned").
+
+Answer:''';
   }
 }

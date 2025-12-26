@@ -10,14 +10,14 @@ import 'package:ollama_dart/ollama_dart.dart';
 /// Requires:
 /// - Ollama installed: brew install ollama (macOS)
 /// - Ollama server running: ollama serve
-/// - Model downloaded: ollama pull gemma2:2b
+/// - Model downloaded: ollama pull gemma3:4b
 class OllamaCleanupService {
   final OllamaClient _client;
   final String _defaultModel;
 
   OllamaCleanupService({
     OllamaClient? client,
-    String defaultModel = 'gemma2:2b',
+    String defaultModel = 'gemma3:4b',
   }) : _client = client ?? OllamaClient(),
        _defaultModel = defaultModel;
 
@@ -72,7 +72,7 @@ class OllamaCleanupService {
           'Then start the server:\n'
           '  ollama serve\n\n'
           'And download a model:\n'
-          '  ollama pull gemma2:2b',
+          '  ollama pull gemma3:4b',
         );
       }
 

@@ -223,8 +223,8 @@ class _LocalAiStepState extends ConsumerState<LocalAiStep> {
                             SizedBox(height: Spacing.lg),
                             Text(
                               _allReady
-                                  ? 'Voice transcription and semantic search are ready to use.'
-                                  : 'Download local AI models for offline voice transcription and semantic search. '
+                                  ? 'Voice transcription, semantic search, and journal Q&A are ready to use.'
+                                  : 'Download local AI models for offline voice transcription, semantic search, and asking questions about your journals. '
                                       'Your data stays on your device.',
                               style: TextStyle(
                                 fontSize: TypographyTokens.bodyLarge,
@@ -248,8 +248,8 @@ class _LocalAiStepState extends ConsumerState<LocalAiStep> {
                             SizedBox(height: Spacing.md),
                             _buildModelCard(
                               isDark: isDark,
-                              title: 'Semantic Search',
-                              subtitle: 'EmbeddingGemma - Find by meaning',
+                              title: 'Search & Ask',
+                              subtitle: 'EmbeddingGemma - Search and Q&A',
                               icon: Icons.search,
                               isReady: _embeddingReady,
                               sizeMB: _embeddingSizeMB,

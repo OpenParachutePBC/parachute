@@ -24,6 +24,7 @@ class StorageService {
   static const String _transcriptionModeKey = 'transcription_mode';
   static const String _preferredWhisperModelKey = 'preferred_whisper_model';
   static const String _autoTranscribeKey = 'auto_transcribe';
+  static const String _autoEnhanceKey = 'auto_enhance';
   static const String _autoPauseRecordingKey = 'auto_pause_recording';
   static const String _audioDebugOverlayKey = 'audio_debug_overlay';
   static const String _titleGenerationModeKey = 'title_generation_mode';
@@ -1387,6 +1388,28 @@ class StorageService {
     }
   }
 
+  /// Get auto-enhance setting (AI cleanup + title generation after transcription)
+  Future<bool> getAutoEnhance() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_autoEnhanceKey) ?? true; // Default: ON
+    } catch (e) {
+      debugPrint('Error getting auto-enhance setting: $e');
+      return true; // Default: ON
+    }
+  }
+
+  /// Set auto-enhance setting
+  Future<bool> setAutoEnhance(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setBool(_autoEnhanceKey, enabled);
+    } catch (e) {
+      debugPrint('Error setting auto-enhance: $e');
+      return false;
+    }
+  }
+
   /// Get auto-pause recording setting (VAD-based auto-chunking)
   Future<bool> getAutoPauseRecording() async {
     try {
@@ -1483,10 +1506,10 @@ class StorageService {
   Future<String?> getOllamaModel() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_preferredOllamaModelKey) ?? 'gemma2:2b';
+      return prefs.getString(_preferredOllamaModelKey) ?? 'gemma3:4b';
     } catch (e) {
       debugPrint('Error getting preferred Ollama model: $e');
-      return 'gemma2:2b'; // Default model
+      return 'gemma3:4b'; // Default model
     }
   }
 

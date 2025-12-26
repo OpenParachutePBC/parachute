@@ -16,6 +16,7 @@ class TranscriptionSection extends ConsumerStatefulWidget {
 
 class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
   bool _autoTranscribe = false;
+  bool _autoEnhance = true;
   bool _autoPauseRecording = false;
   bool _audioDebugOverlay = false;
   bool _isLoading = true;
@@ -30,6 +31,7 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
     final storageService = ref.read(storageServiceProvider);
 
     _autoTranscribe = await storageService.getAutoTranscribe();
+    _autoEnhance = await storageService.getAutoEnhance();
     _autoPauseRecording = await storageService.getAutoPauseRecording();
     _audioDebugOverlay = await storageService.getAudioDebugOverlay();
 
@@ -41,6 +43,11 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
   Future<void> _setAutoTranscribe(bool enabled) async {
     await ref.read(storageServiceProvider).setAutoTranscribe(enabled);
     setState(() => _autoTranscribe = enabled);
+  }
+
+  Future<void> _setAutoEnhance(bool enabled) async {
+    await ref.read(storageServiceProvider).setAutoEnhance(enabled);
+    setState(() => _autoEnhance = enabled);
   }
 
   Future<void> _setAutoPauseRecording(bool enabled) async {
@@ -84,6 +91,16 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
           subtitle: 'Automatically transcribe after recording stops',
           value: _autoTranscribe,
           onChanged: _setAutoTranscribe,
+          isDark: isDark,
+        ),
+        SizedBox(height: Spacing.md),
+
+        // Auto-enhance toggle
+        _buildToggleListTile(
+          title: 'AI enhance transcriptions',
+          subtitle: 'Clean up text and generate titles using local AI',
+          value: _autoEnhance,
+          onChanged: _setAutoEnhance,
           isDark: isDark,
         ),
         SizedBox(height: Spacing.md),

@@ -15,6 +15,7 @@ import '../widgets/journal_entry_row.dart';
 import '../widgets/journal_input_bar.dart';
 import '../widgets/mini_audio_player.dart';
 import '../../settings/screens/settings_screen.dart';
+import '../../../core/providers/title_generation_provider.dart';
 
 /// Main journal screen showing today's journal entries
 ///
@@ -46,6 +47,9 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
   // Track entries that are actively transcribing
   final Set<String> _transcribingEntryIds = {};
+
+  // Track entries that are being AI-enhanced
+  final Set<String> _enhancingEntryIds = {};
 
   // Audio playback state
   String? _currentlyPlayingAudioPath;
@@ -295,6 +299,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
   }
 
   /// Update the pending entry with transcription result (streaming audio)
+  /// After saving the transcript, automatically triggers AI enhancement
   Future<void> _updatePendingTranscription(String transcript) async {
     if (_pendingTranscriptionEntryId == null) {
       debugPrint('[JournalScreen] No pending entry to update');
@@ -333,6 +338,22 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
       // Also refresh provider in background
       ref.invalidate(selectedJournalProvider);
+
+      // Auto-enhance: cleanup transcript and generate title (if enabled)
+      if (transcript.isNotEmpty) {
+        final storageService = ref.read(storageServiceProvider);
+        final autoEnhance = await storageService.getAutoEnhance();
+        if (autoEnhance) {
+          debugPrint('[JournalScreen] Auto-enhancing transcription...');
+          // Small delay to let UI update first
+          await Future.delayed(const Duration(milliseconds: 100));
+          if (mounted) {
+            _handleEnhance(entry);
+          }
+        } else {
+          debugPrint('[JournalScreen] Auto-enhance disabled, skipping...');
+        }
+      }
     } catch (e, st) {
       debugPrint('[JournalScreen] Error updating transcription: $e');
       debugPrint('$st');
@@ -648,10 +669,12 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                   // Show transcribing for both manual transcribe and background transcription
                   isTranscribing: _transcribingEntryIds.contains(entry.id) ||
                       _pendingTranscriptionEntryId == entry.id,
+                  isEnhancing: _enhancingEntryIds.contains(entry.id),
                   onTap: () => _handleEntryTap(entry),
                   onLongPress: () => _showEntryActions(context, journal, entry),
                   onPlayAudio: (path) => _playAudio(path, entryTitle: entry.title),
                   onTranscribe: () => _handleTranscribe(entry, journal),
+                  onEnhance: () => _handleEnhance(entry),
                   onContentChanged: (content) => _handleContentChanged(entry.id, content),
                   onTitleChanged: (title) => _handleTitleChanged(entry.id, title),
                   onEditingComplete: _saveCurrentEdit,
@@ -915,6 +938,19 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
             ),
           );
         }
+
+        // Auto-enhance: cleanup transcript and generate title (if enabled)
+        final storageService = ref.read(storageServiceProvider);
+        final autoEnhance = await storageService.getAutoEnhance();
+        if (autoEnhance) {
+          debugPrint('[JournalScreen] Auto-enhancing transcription...');
+          await Future.delayed(const Duration(milliseconds: 100));
+          if (mounted) {
+            _handleEnhance(updatedEntry);
+          }
+        } else {
+          debugPrint('[JournalScreen] Auto-enhance disabled, skipping...');
+        }
       }
     } catch (e) {
       debugPrint('[JournalScreen] Transcription failed: $e');
@@ -931,6 +967,115 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       if (mounted) {
         setState(() {
           _transcribingEntryIds.remove(entry.id);
+        });
+      }
+    }
+  }
+
+  /// Handle AI enhancement for an entry (cleanup + title generation)
+  Future<void> _handleEnhance(JournalEntry entry) async {
+    if (_enhancingEntryIds.contains(entry.id)) return;
+
+    // Mark as enhancing
+    setState(() {
+      _enhancingEntryIds.add(entry.id);
+    });
+
+    debugPrint('[JournalScreen] Starting AI enhancement for entry ${entry.id}');
+
+    try {
+      final llmService = ref.read(localLlmServiceProvider);
+
+      // 1. Clean up the transcript
+      debugPrint('[JournalScreen] Cleaning up transcript...');
+      final cleanedContent = await llmService.cleanupTranscript(
+        entry.content,
+        context: 'journal entry',
+      );
+
+      if (cleanedContent == null || cleanedContent.trim().isEmpty) {
+        throw Exception('Cleanup returned empty content');
+      }
+
+      debugPrint('[JournalScreen] Cleanup complete: ${cleanedContent.length} chars');
+
+      // 2. Generate a title from the cleaned content
+      debugPrint('[JournalScreen] Generating title...');
+      final generatedTitle = await llmService.generateTitle(
+        cleanedContent,
+        context: 'personal journal entry',
+      );
+
+      // 3. Build the new title: keep timestamp, append generated title
+      // Entry title is typically in "HH:MM" format
+      String newTitle = entry.title;
+      if (generatedTitle != null && generatedTitle.trim().isNotEmpty) {
+        // Extract just the time portion if present (HH:MM format)
+        final timeMatch = RegExp(r'^(\d{1,2}:\d{2})').firstMatch(entry.title);
+        if (timeMatch != null) {
+          final timestamp = timeMatch.group(1)!;
+          newTitle = '$timestamp - ${generatedTitle.trim()}';
+        } else {
+          // If no timestamp in title, just use generated title
+          newTitle = generatedTitle.trim();
+        }
+        debugPrint('[JournalScreen] New title: $newTitle');
+      }
+
+      // 4. Update the entry with cleaned content and new title
+      final service = await ref.read(journalServiceFutureProvider.future);
+      final selectedDate = ref.read(selectedJournalDateProvider);
+      final updatedEntry = entry.copyWith(
+        content: cleanedContent,
+        title: newTitle,
+      );
+      await service.updateEntry(selectedDate, updatedEntry);
+
+      // Update cache immediately to show the enhancement
+      if (mounted && _cachedJournal != null) {
+        setState(() {
+          _cachedJournal = _cachedJournal!.updateEntry(updatedEntry);
+        });
+      }
+
+      // Refresh the journal provider in background
+      ref.invalidate(selectedJournalProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                const Text('Enhanced with AI'),
+              ],
+            ),
+            backgroundColor: BrandColors.turquoise,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[JournalScreen] Enhancement failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Enhancement failed: ${e.toString().split('\n').first}'),
+            backgroundColor: BrandColors.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _enhancingEntryIds.remove(entry.id);
         });
       }
     }
@@ -983,6 +1128,17 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                 setState(() => _editingEntryId = entry.id);
               },
             ),
+            // Re-transcribe option for voice entries with audio
+            if (entry.type == JournalEntryType.voice && entry.hasAudio)
+              ListTile(
+                leading: Icon(Icons.transcribe, color: BrandColors.turquoise),
+                title: const Text('Re-transcribe audio'),
+                subtitle: const Text('Replace text with fresh transcription'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _handleTranscribe(entry, journal);
+                },
+              ),
             ListTile(
               leading: Icon(Icons.delete_outline, color: BrandColors.error),
               title: Text('Delete', style: TextStyle(color: BrandColors.error)),

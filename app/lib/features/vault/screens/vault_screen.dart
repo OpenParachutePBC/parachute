@@ -4,9 +4,10 @@ import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/settings/screens/settings_screen.dart';
 import 'package:app/features/vault/widgets/search_content.dart';
 import 'package:app/features/vault/widgets/browse_content.dart';
+import 'package:app/features/vault/widgets/ask_content.dart';
 
 /// Tab options for the Vault screen
-enum VaultTab { search, browse }
+enum VaultTab { search, ask, browse }
 
 /// Provider for current vault tab
 final vaultTabProvider = StateProvider<VaultTab>((ref) => VaultTab.search);
@@ -72,6 +73,11 @@ class VaultScreen extends ConsumerWidget {
                     icon: const Icon(Icons.search, size: 18),
                   ),
                   ButtonSegment<VaultTab>(
+                    value: VaultTab.ask,
+                    label: const Text('Ask'),
+                    icon: const Icon(Icons.auto_awesome, size: 18),
+                  ),
+                  ButtonSegment<VaultTab>(
                     value: VaultTab.browse,
                     label: const Text('Browse'),
                     icon: const Icon(Icons.folder_outlined, size: 18),
@@ -101,9 +107,11 @@ class VaultScreen extends ConsumerWidget {
 
           // Tab content
           Expanded(
-            child: currentTab == VaultTab.search
-                ? const SearchContent()
-                : const BrowseContent(),
+            child: switch (currentTab) {
+              VaultTab.search => const SearchContent(),
+              VaultTab.ask => const AskContent(),
+              VaultTab.browse => const BrowseContent(),
+            },
           ),
         ],
       ),

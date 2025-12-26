@@ -18,7 +18,9 @@ class JournalEntryRow extends StatefulWidget {
   final VoidCallback? onDelete;
   final Future<void> Function(String audioPath)? onPlayAudio;
   final Future<void> Function()? onTranscribe;
+  final Future<void> Function()? onEnhance;
   final bool isTranscribing;
+  final bool isEnhancing;
 
   const JournalEntryRow({
     super.key,
@@ -33,7 +35,9 @@ class JournalEntryRow extends StatefulWidget {
     this.onDelete,
     this.onPlayAudio,
     this.onTranscribe,
+    this.onEnhance,
     this.isTranscribing = false,
+    this.isEnhancing = false,
   });
 
   @override
@@ -226,9 +230,64 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
               entry.durationSeconds! > 0)
             _buildDurationBadge(isDark),
 
+          // AI enhance button - show for entries with content
+          if (_canEnhance) ...[
+            const SizedBox(width: 8),
+            _buildEnhanceButton(isDark),
+          ],
+
           // Pre-Parachute badge for imported content
           if (_isImportedMarkdown) _buildImportedBadge(isDark),
         ],
+      ),
+    );
+  }
+
+  /// Check if this entry can be enhanced with AI
+  /// Only voice entries benefit from cleanup (typed text is already clean)
+  bool get _canEnhance =>
+      widget.entry.type == JournalEntryType.voice &&
+      !_isImportedMarkdown &&
+      !widget.entry.isPendingTranscription &&
+      widget.entry.content.isNotEmpty &&
+      widget.onEnhance != null;
+
+  Widget _buildEnhanceButton(bool isDark) {
+    if (widget.isEnhancing) {
+      return Container(
+        width: 28,
+        height: 28,
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: BrandColors.turquoise.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+        ),
+      );
+    }
+
+    return Tooltip(
+      message: 'AI enhance: clean up text & generate title',
+      child: InkWell(
+        onTap: widget.onEnhance,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: 28,
+          height: 28,
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: BrandColors.turquoise.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(
+            Icons.auto_awesome,
+            size: 16,
+            color: BrandColors.turquoise,
+          ),
+        ),
       ),
     );
   }
@@ -317,62 +376,83 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
       );
     }
 
-    // Show transcription UI for voice entries with empty content
-    if (widget.entry.isPendingTranscription) {
-      if (widget.isTranscribing) {
-        // Actively transcribing
-        return Row(
-          children: [
-            SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+    // Show transcription progress (for both initial and re-transcription)
+    if (widget.isTranscribing) {
+      final isRetranscribing = widget.entry.content.isNotEmpty;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Transcribing...',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: BrandColors.turquoise,
-                fontStyle: FontStyle.italic,
+              const SizedBox(width: 8),
+              Text(
+                isRetranscribing ? 'Re-transcribing...' : 'Transcribing...',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: BrandColors.turquoise,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
-            ),
-          ],
-        );
-      } else {
-        // Pending - show transcribe button
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Audio recorded but not transcribed',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: BrandColors.driftwood,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
+            ],
+          ),
+          // Show existing content dimmed during re-transcription
+          if (isRetranscribing) ...[
             const SizedBox(height: 8),
-            if (widget.onTranscribe != null)
-              OutlinedButton.icon(
-                onPressed: widget.onTranscribe,
-                icon: Icon(Icons.transcribe, size: 18, color: BrandColors.forest),
-                label: Text(
-                  'Transcribe',
-                  style: TextStyle(color: BrandColors.forest),
+            Opacity(
+              opacity: 0.5,
+              child: Text(
+                widget.entry.content,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: isDark ? BrandColors.stone : BrandColors.charcoal,
+                  height: 1.6,
                 ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: BrandColors.forest),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
+    // Show pending transcription UI for voice entries with empty content
+    if (widget.entry.isPendingTranscription) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Audio recorded but not transcribed',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: BrandColors.driftwood,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (widget.onTranscribe != null)
+            OutlinedButton.icon(
+              onPressed: widget.onTranscribe,
+              icon: Icon(Icons.transcribe, size: 18, color: BrandColors.forest),
+              label: Text(
+                'Transcribe',
+                style: TextStyle(color: BrandColors.forest),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: BrandColors.forest),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
               ),
-          ],
-        );
-      }
+            ),
+        ],
+      );
     }
 
     return Text(
