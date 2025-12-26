@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 
 import { Orchestrator } from './lib/orchestrator.js';
+import { PARACHUTE_DEFAULT_PROMPT } from './lib/default-prompt.js';
 import { listVaultFiles, readDocument, searchVault } from './lib/vault-utils.js';
 import { validateRelativePath, sanitizeFilename } from './lib/path-validator.js';
 import { queryLogs, getLogStats, serverLogger as log } from './lib/logger.js';
@@ -886,17 +887,64 @@ app.get('/api/agents-md', async (req, res) => {
 /**
  * PUT /api/agents-md
  * Update the AGENTS.md content
- * Body: { content: string }
+ * Body: { content: string } OR { fromDefault: true }
+ *
+ * If fromDefault is true, copies the built-in default prompt to AGENTS.md.
+ * This works even if AGENTS.md already exists, allowing users to reset to default.
  */
 app.put('/api/agents-md', async (req, res) => {
   try {
-    const { content } = req.body;
-    if (typeof content !== 'string') {
-      return res.status(400).json({ error: 'Content must be a string' });
-    }
+    const { content, fromDefault } = req.body;
     const agentsMdPath = path.join(CONFIG.vaultPath, 'AGENTS.md');
-    await fs.writeFile(agentsMdPath, content, 'utf-8');
-    res.json({ saved: true, path: agentsMdPath });
+
+    let contentToWrite;
+    if (fromDefault === true) {
+      // Copy the default prompt to AGENTS.md
+      contentToWrite = PARACHUTE_DEFAULT_PROMPT;
+      log.info('Copying default prompt to AGENTS.md');
+    } else if (typeof content === 'string') {
+      contentToWrite = content;
+    } else {
+      return res.status(400).json({ error: 'Content must be a string, or set fromDefault: true' });
+    }
+
+    await fs.writeFile(agentsMdPath, contentToWrite, 'utf-8');
+    res.json({
+      saved: true,
+      path: agentsMdPath,
+      fromDefault: fromDefault === true
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/default-prompt
+ * Get the built-in Parachute default system prompt
+ *
+ * This is the prompt used when no AGENTS.md exists in the vault.
+ * Users can view this to understand what behaviors are built-in,
+ * then optionally create AGENTS.md to override it.
+ */
+app.get('/api/default-prompt', async (req, res) => {
+  try {
+    // Check if AGENTS.md exists (to show if override is active)
+    const agentsMdPath = path.join(CONFIG.vaultPath, 'AGENTS.md');
+    let hasOverride = false;
+    try {
+      await fs.access(agentsMdPath);
+      hasOverride = true;
+    } catch {
+      // No AGENTS.md, using default
+    }
+
+    res.json({
+      content: PARACHUTE_DEFAULT_PROMPT,
+      isActive: !hasOverride,
+      overrideFile: hasOverride ? 'AGENTS.md' : null,
+      description: 'Built-in Parachute system prompt. Create AGENTS.md in your vault to override.'
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

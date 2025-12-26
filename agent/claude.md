@@ -83,7 +83,9 @@ VAULT_PATH=/path/to/vault npm start  # Custom vault
 | `/api/skills/:name` | POST | Create or update a skill |
 | `/api/skills/:name` | DELETE | Delete a skill |
 | `/api/agents-md` | GET | Get AGENTS.md content |
-| `/api/agents-md` | PUT | Update AGENTS.md content |
+| `/api/agents-md` | PUT | Update AGENTS.md (body: `{content}` or `{fromDefault: true}` to reset) |
+| `/api/default-prompt` | GET | Get built-in default system prompt |
+| `/api/contexts` | GET | List available context files from contexts/ |
 | `/api/analytics` | GET | Get session and agent analytics |
 | `/api/logs` | GET | Query recent logs (params: `level`, `component`, `since`, `limit`) |
 | `/api/logs/stats` | GET | Get log statistics |
@@ -108,6 +110,40 @@ system_prompt: |
 
 Additional context for the agent.
 ```
+
+## System Prompt Architecture
+
+Parachute uses a layered system prompt architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 1: System Prompt (defines HOW the agent behaves)     │
+│                                                             │
+│  ┌─────────────────────┐    ┌─────────────────────┐        │
+│  │  Built-in Default   │ OR │     AGENTS.md       │        │
+│  │  (ships with app)   │    │  (user override)    │        │
+│  └─────────────────────┘    └─────────────────────┘        │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 2: Context Files (defines WHO the user is)           │
+│                                                             │
+│  contexts/                                                  │
+│  ├── general-context.md    ← imported memories, preferences │
+│  ├── work-project.md       ← project-specific context       │
+│  └── health-goals.md       ← domain-specific context        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Built-in Default Prompt**: The agent ships with a default system prompt (in `lib/default-prompt.js`) that defines Parachute's core identity - a thinking partner and memory extension.
+
+**AGENTS.md Override**: If the user creates `AGENTS.md` in their vault root, it completely replaces the built-in default. This gives power users full control over agent behavior.
+
+**Context Files**: Personal context about the user is loaded from `contexts/` folder. The `general-context.md` file is selected by default and contains imported memories from Claude/ChatGPT conversations. Additional contexts can be selected via the UI.
+
+**API Endpoints**:
+- `GET /api/default-prompt` - View the built-in default prompt
+- `GET /api/agents-md` - View/check if AGENTS.md exists
+- `PUT /api/agents-md` - Create/update AGENTS.md, or `{fromDefault: true}` to reset to default
+- `GET /api/contexts` - List available context files
 
 ## Session Storage
 
