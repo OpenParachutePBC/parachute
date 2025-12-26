@@ -5,6 +5,8 @@ import 'package:app/core/services/gemma_model_manager.dart';
 import 'package:app/core/services/transcript_cleanup_service.dart';
 import 'package:app/core/services/ollama_cleanup_service.dart';
 import 'package:app/core/services/local_llm_service.dart';
+import 'package:app/core/services/enhancement_service.dart';
+import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 
 /// Provider for the Gemma model manager
@@ -98,3 +100,44 @@ final titleGenerationServiceProvider = Provider<TitleGenerationService>((ref) {
 
   return service;
 });
+
+/// Provider for the enhancement service (remote/local AI enhancement)
+final enhancementServiceProvider = Provider<EnhancementService>((ref) {
+  final localLlmService = ref.watch(localLlmServiceProvider);
+  final storageService = ref.watch(storageServiceProvider);
+
+  // Create a synchronous getter for the server URL
+  // The service will call this when needed
+  String getServerUrl() {
+    // This is a bit of a hack - we need synchronous access but aiServerUrlProvider is async
+    // We'll cache the last known URL
+    return _cachedServerUrl ?? 'http://localhost:3333';
+  }
+
+  // Watch the server URL and update cache
+  ref.listen(aiServerUrlProvider, (previous, next) {
+    next.whenData((url) {
+      _cachedServerUrl = url;
+    });
+  });
+
+  // Initial fetch of server URL
+  ref.read(aiServerUrlProvider.future).then((url) {
+    _cachedServerUrl = url;
+  });
+
+  final service = EnhancementService(
+    localLlmService: localLlmService,
+    storageService: storageService,
+    getAgentServerUrl: getServerUrl,
+  );
+
+  ref.onDispose(() {
+    service.dispose();
+  });
+
+  return service;
+});
+
+// Cache for server URL (module-level for simplicity)
+String? _cachedServerUrl;

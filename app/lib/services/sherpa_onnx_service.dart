@@ -379,10 +379,14 @@ class SherpaOnnxService {
   /// Transcribe audio file
   ///
   /// [audioPath] - Absolute path to WAV file (16kHz mono PCM16)
+  /// [onProgress] - Optional callback for progress updates (0.0-1.0)
   ///
   /// Returns transcribed text with automatic language detection.
   /// For long audio files, processes in chunks to avoid OOM.
-  Future<TranscriptionResult> transcribeAudio(String audioPath) async {
+  Future<TranscriptionResult> transcribeAudio(
+    String audioPath, {
+    Function(double progress)? onProgress,
+  }) async {
     if (!_isInitialized) {
       throw StateError('SherpaOnnx not initialized. Call initialize() first.');
     }
@@ -415,14 +419,20 @@ class SherpaOnnxService {
       if (estimatedSamples <= _samplesPerChunk * 1.5) {
         // Short audio - process in one go (up to ~45 seconds)
         debugPrint('[SherpaOnnxService] Short audio, processing in one chunk');
+        onProgress?.call(0.1); // Start progress
         final result = await _transcribeChunk(audioPath, 0, estimatedSamples);
         fullText = result.text;
         allTokens = result.tokens ?? [];
         allTimestamps = result.timestamps ?? [];
+        onProgress?.call(0.9); // Near complete
       } else {
         // Long audio - process in chunks with overlap
         debugPrint('[SherpaOnnxService] Long audio, processing in ${(_samplesPerChunk / _sampleRate).toInt()}s chunks');
-        final results = await _transcribeInChunks(audioPath, estimatedSamples);
+        final results = await _transcribeInChunks(
+          audioPath,
+          estimatedSamples,
+          onProgress: onProgress,
+        );
         fullText = results.map((r) => r.text).join(' ').trim();
         // Note: tokens/timestamps from chunked processing would need offset adjustment
         // For now, we don't merge them for chunked audio
@@ -451,17 +461,25 @@ class SherpaOnnxService {
   /// Transcribe audio in chunks to avoid OOM on long recordings
   Future<List<TranscriptionResult>> _transcribeInChunks(
     String audioPath,
-    int totalSamples,
-  ) async {
+    int totalSamples, {
+    Function(double progress)? onProgress,
+  }) async {
     final results = <TranscriptionResult>[];
     int chunkStart = 0;
     int chunkIndex = 0;
+
+    // Calculate total number of chunks for progress reporting
+    final effectiveChunkSize = _samplesPerChunk - _overlapSamples;
+    final totalChunks = ((totalSamples - _overlapSamples) / effectiveChunkSize).ceil();
+    debugPrint('[SherpaOnnxService] Estimated $totalChunks chunks to process');
+
+    onProgress?.call(0.05); // Starting
 
     while (chunkStart < totalSamples) {
       // Calculate chunk bounds
       int chunkEnd = (chunkStart + _samplesPerChunk).clamp(0, totalSamples);
 
-      debugPrint('[SherpaOnnxService] Processing chunk ${chunkIndex + 1}: samples $chunkStart-$chunkEnd');
+      debugPrint('[SherpaOnnxService] Processing chunk ${chunkIndex + 1}/$totalChunks: samples $chunkStart-$chunkEnd');
 
       // Transcribe this chunk
       final result = await _transcribeChunk(audioPath, chunkStart, chunkEnd);
@@ -470,6 +488,10 @@ class SherpaOnnxService {
         results.add(result);
         debugPrint('[SherpaOnnxService] Chunk ${chunkIndex + 1} result: "${result.text.substring(0, result.text.length.clamp(0, 50))}..."');
       }
+
+      // Report progress based on chunks completed (reserve 10% for post-processing)
+      final progress = 0.05 + ((chunkIndex + 1) / totalChunks) * 0.85;
+      onProgress?.call(progress.clamp(0.0, 0.9));
 
       // Move to next chunk, with overlap to avoid cutting words
       chunkStart = chunkEnd - _overlapSamples;
@@ -481,6 +503,8 @@ class SherpaOnnxService {
       // Small delay to allow GC to reclaim memory
       await Future.delayed(const Duration(milliseconds: 50));
     }
+
+    onProgress?.call(0.92); // Deduplicating
 
     // Remove duplicate words from overlapping regions
     return _deduplicateChunkResults(results);

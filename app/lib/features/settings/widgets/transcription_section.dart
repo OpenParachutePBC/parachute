@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/features/recorder/providers/service_providers.dart';
 import 'package:app/features/recorder/providers/transcription_init_provider.dart';
+import 'package:app/features/recorder/services/storage_service.dart';
 import './settings_section_header.dart';
 
 /// Transcription settings section (Parakeet model and toggles)
@@ -16,7 +17,8 @@ class TranscriptionSection extends ConsumerStatefulWidget {
 
 class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
   bool _autoTranscribe = false;
-  bool _autoEnhance = true;
+  bool _autoEnhance = false;
+  AiEnhancementMode _enhancementMode = AiEnhancementMode.remoteWithFallback;
   bool _autoPauseRecording = false;
   bool _audioDebugOverlay = false;
   bool _isLoading = true;
@@ -32,6 +34,7 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
 
     _autoTranscribe = await storageService.getAutoTranscribe();
     _autoEnhance = await storageService.getAutoEnhance();
+    _enhancementMode = await storageService.getAiEnhancementMode();
     _autoPauseRecording = await storageService.getAutoPauseRecording();
     _audioDebugOverlay = await storageService.getAudioDebugOverlay();
 
@@ -48,6 +51,11 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
   Future<void> _setAutoEnhance(bool enabled) async {
     await ref.read(storageServiceProvider).setAutoEnhance(enabled);
     setState(() => _autoEnhance = enabled);
+  }
+
+  Future<void> _setEnhancementMode(AiEnhancementMode mode) async {
+    await ref.read(storageServiceProvider).setAiEnhancementMode(mode);
+    setState(() => _enhancementMode = mode);
   }
 
   Future<void> _setAutoPauseRecording(bool enabled) async {
@@ -98,12 +106,18 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
         // Auto-enhance toggle
         _buildToggleListTile(
           title: 'AI enhance transcriptions',
-          subtitle: 'Clean up text and generate titles using local AI',
+          subtitle: 'Clean up text and generate titles after transcription',
           value: _autoEnhance,
           onChanged: _setAutoEnhance,
           isDark: isDark,
         ),
         SizedBox(height: Spacing.md),
+
+        // Enhancement mode selector (only show when auto-enhance is enabled)
+        if (_autoEnhance) ...[
+          _buildEnhancementModeSelector(isDark),
+          SizedBox(height: Spacing.md),
+        ],
 
         // Auto-pause toggle
         _buildToggleListTile(
@@ -164,6 +178,92 @@ class _TranscriptionSectionState extends ConsumerState<TranscriptionSection> {
         onChanged: onChanged,
         activeTrackColor: BrandColors.forest,
         contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  Widget _buildEnhancementModeSelector(bool isDark) {
+    return Container(
+      padding: EdgeInsets.all(Spacing.md),
+      decoration: BoxDecoration(
+        color: isDark
+            ? BrandColors.nightSurfaceElevated
+            : BrandColors.softWhite,
+        borderRadius: BorderRadius.circular(Radii.sm),
+        border: Border.all(
+          color: isDark ? BrandColors.charcoal : BrandColors.stone,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'AI Provider',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+            ),
+          ),
+          SizedBox(height: Spacing.sm),
+          ...AiEnhancementMode.values.map((mode) => _buildModeOption(mode, isDark)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeOption(AiEnhancementMode mode, bool isDark) {
+    final isSelected = _enhancementMode == mode;
+
+    return InkWell(
+      onTap: () => _setEnhancementMode(mode),
+      borderRadius: BorderRadius.circular(Radii.sm),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: Spacing.sm, vertical: Spacing.md),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? BrandColors.turquoise.withValues(alpha: 0.1)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(Radii.sm),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: isSelected
+                  ? BrandColors.turquoise
+                  : (isDark ? BrandColors.driftwood : BrandColors.stone),
+              size: 20,
+            ),
+            SizedBox(width: Spacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    mode.displayName,
+                    style: TextStyle(
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      color: isSelected
+                          ? BrandColors.turquoise
+                          : (isDark ? BrandColors.nightText : BrandColors.charcoal),
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    mode.description,
+                    style: TextStyle(
+                      fontSize: TypographyTokens.bodySmall,
+                      color: isDark
+                          ? BrandColors.nightTextSecondary
+                          : BrandColors.driftwood,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

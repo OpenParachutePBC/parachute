@@ -32,6 +32,7 @@ class StorageService {
   static const String _preferredSmolLMModelKey = 'preferred_smollm_model';
   static const String _preferredOllamaModelKey = 'preferred_ollama_model';
   static const String _huggingfaceTokenKey = 'huggingface_token';
+  static const String _aiEnhancementModeKey = 'ai_enhancement_mode';
 
   final FileSystemService _fileSystem = FileSystemService();
   bool _isInitialized = false;
@@ -1392,10 +1393,10 @@ class StorageService {
   Future<bool> getAutoEnhance() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_autoEnhanceKey) ?? true; // Default: ON
+      return prefs.getBool(_autoEnhanceKey) ?? false; // Default: OFF (local LLM quality varies)
     } catch (e) {
       debugPrint('Error getting auto-enhance setting: $e');
-      return true; // Default: ON
+      return false; // Default: OFF
     }
   }
 
@@ -1406,6 +1407,34 @@ class StorageService {
       return await prefs.setBool(_autoEnhanceKey, enabled);
     } catch (e) {
       debugPrint('Error setting auto-enhance: $e');
+      return false;
+    }
+  }
+
+  /// Get AI enhancement mode setting
+  /// Determines whether to use local LLM, remote agent, or remote with fallback
+  Future<AiEnhancementMode> getAiEnhancementMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(_aiEnhancementModeKey);
+      if (value == null) return AiEnhancementMode.remoteWithFallback; // Default
+      return AiEnhancementMode.values.firstWhere(
+        (m) => m.name == value,
+        orElse: () => AiEnhancementMode.remoteWithFallback,
+      );
+    } catch (e) {
+      debugPrint('Error getting AI enhancement mode: $e');
+      return AiEnhancementMode.remoteWithFallback;
+    }
+  }
+
+  /// Set AI enhancement mode setting
+  Future<bool> setAiEnhancementMode(AiEnhancementMode mode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return await prefs.setString(_aiEnhancementModeKey, mode.name);
+    } catch (e) {
+      debugPrint('Error setting AI enhancement mode: $e');
       return false;
     }
   }
@@ -1770,6 +1799,40 @@ class StorageService {
     } catch (e) {
       debugPrint('Error setting Git sync enabled: $e');
       return false;
+    }
+  }
+}
+
+/// AI enhancement mode options
+enum AiEnhancementMode {
+  /// Always use local LLM (Gemma/Ollama)
+  local,
+
+  /// Always use remote agent (fail if unavailable)
+  remote,
+
+  /// Try remote first, fall back to local if unavailable
+  remoteWithFallback;
+
+  String get displayName {
+    switch (this) {
+      case AiEnhancementMode.local:
+        return 'Local AI only';
+      case AiEnhancementMode.remote:
+        return 'Remote agent only';
+      case AiEnhancementMode.remoteWithFallback:
+        return 'Remote with local fallback';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case AiEnhancementMode.local:
+        return 'Uses on-device AI (Gemma). Slower but works offline.';
+      case AiEnhancementMode.remote:
+        return 'Uses your configured agent server. Faster and better quality.';
+      case AiEnhancementMode.remoteWithFallback:
+        return 'Tries remote agent first, falls back to local if unavailable.';
     }
   }
 }

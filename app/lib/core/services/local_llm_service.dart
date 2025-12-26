@@ -50,7 +50,8 @@ class LocalLlmService {
     if (words.length <= 1500) {
       // Short transcript - process directly
       final prompt = _buildCleanupPrompt(rawTranscript, context: context);
-      return await _generateCompletion(prompt, maxTokens: 4096);
+      final result = await _generateCompletion(prompt, maxTokens: 4096);
+      return _cleanTranscriptOutput(result);
     }
 
     // Long transcript - process in chunks
@@ -102,7 +103,8 @@ class LocalLlmService {
           : 'part ${i + 1} of ${chunks.length}';
 
       final prompt = _buildCleanupPrompt(chunks[i], context: chunkContext);
-      final cleaned = await _generateCompletion(prompt, maxTokens: 4096);
+      final rawCleaned = await _generateCompletion(prompt, maxTokens: 4096);
+      final cleaned = _cleanTranscriptOutput(rawCleaned);
 
       if (cleaned != null && cleaned.trim().isNotEmpty) {
         cleanedChunks.add(cleaned.trim());
@@ -350,6 +352,82 @@ $transcript''';
 Text: "$truncatedTranscript"
 
 Title:''';
+  }
+
+  /// Clean up transcript output from LLM (remove preamble/postamble)
+  ///
+  /// Small models often add things like "Here's the cleaned version:" despite
+  /// instructions not to. This strips common preamble patterns.
+  String? _cleanTranscriptOutput(String? rawOutput) {
+    if (rawOutput == null || rawOutput.trim().isEmpty) {
+      return null;
+    }
+
+    var cleaned = rawOutput.trim();
+
+    // Common preamble patterns that small models add despite instructions
+    final preamblePatterns = [
+      // "Here's the cleaned/corrected/improved transcript/version:"
+      RegExp(
+        r"^here'?s?\s+(the\s+)?(cleaned|corrected|improved|fixed|revised|updated)?\s*(transcript|version|text)?[:\s]*",
+        caseSensitive: false,
+      ),
+      // "The cleaned transcript is:"
+      RegExp(
+        r'^the\s+(cleaned|corrected|improved)\s+(transcript|version|text)\s*(is)?[:\s]*',
+        caseSensitive: false,
+      ),
+      // "Cleaned transcript:" or "Cleaned version:"
+      RegExp(
+        r'^(cleaned|corrected|improved|fixed)\s+(transcript|version|text)?[:\s]*',
+        caseSensitive: false,
+      ),
+      // "Sure, here's..." or "Of course, here's..."
+      RegExp(
+        r"^(sure|of course|certainly|okay)[,.]?\s*(here'?s?)?[:\s]*",
+        caseSensitive: false,
+      ),
+      // "I've cleaned up the transcript:"
+      RegExp(
+        r"^i'?ve\s+(cleaned|corrected|improved|fixed).*?[:\s]*",
+        caseSensitive: false,
+      ),
+    ];
+
+    // Try each pattern
+    for (final pattern in preamblePatterns) {
+      final match = pattern.firstMatch(cleaned);
+      if (match != null) {
+        cleaned = cleaned.substring(match.end).trim();
+        debugPrint('[LocalLlm] Stripped preamble from cleanup output');
+        break;
+      }
+    }
+
+    // Also check for common postamble patterns
+    final postamblePatterns = [
+      // "Let me know if you need anything else"
+      RegExp(
+        r'\n+let me know if.*$',
+        caseSensitive: false,
+      ),
+      // "I hope this helps"
+      RegExp(
+        r'\n+i hope this helps.*$',
+        caseSensitive: false,
+      ),
+      // "Is there anything else..."
+      RegExp(
+        r'\n+is there anything else.*$',
+        caseSensitive: false,
+      ),
+    ];
+
+    for (final pattern in postamblePatterns) {
+      cleaned = cleaned.replaceFirst(pattern, '').trim();
+    }
+
+    return cleaned.isEmpty ? null : cleaned;
   }
 
   /// Clean up title output from LLM (extract just the title)

@@ -20,7 +20,10 @@ class JournalEntryRow extends StatefulWidget {
   final Future<void> Function()? onTranscribe;
   final Future<void> Function()? onEnhance;
   final bool isTranscribing;
+  final double transcriptionProgress; // 0.0-1.0, only relevant when isTranscribing
   final bool isEnhancing;
+  final double? enhancementProgress; // 0.0-1.0, null for indeterminate
+  final String? enhancementStatus; // Status message during enhancement
 
   const JournalEntryRow({
     super.key,
@@ -37,7 +40,10 @@ class JournalEntryRow extends StatefulWidget {
     this.onTranscribe,
     this.onEnhance,
     this.isTranscribing = false,
+    this.transcriptionProgress = 0.0,
     this.isEnhancing = false,
+    this.enhancementProgress,
+    this.enhancementStatus,
   });
 
   @override
@@ -254,17 +260,48 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
 
   Widget _buildEnhanceButton(bool isDark) {
     if (widget.isEnhancing) {
-      return Container(
-        width: 28,
-        height: 28,
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: BrandColors.turquoise.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+      final hasProgress = widget.enhancementProgress != null;
+      final progressPercent = hasProgress ? (widget.enhancementProgress! * 100).toInt() : 0;
+
+      return Tooltip(
+        message: widget.enhancementStatus ?? 'Enhancing...',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: BrandColors.turquoise.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: hasProgress
+                    ? CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value: widget.enhancementProgress,
+                        valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+                        backgroundColor: BrandColors.turquoise.withValues(alpha: 0.2),
+                      )
+                    : CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+                      ),
+              ),
+              if (hasProgress) ...[
+                const SizedBox(width: 4),
+                Text(
+                  '$progressPercent%',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: BrandColors.turquoise,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       );
     }
@@ -379,22 +416,35 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
     // Show transcription progress (for both initial and re-transcription)
     if (widget.isTranscribing) {
       final isRetranscribing = widget.entry.content.isNotEmpty;
+      final progressPercent = (widget.transcriptionProgress * 100).toInt();
+      final progressText = progressPercent > 0
+          ? (isRetranscribing ? 'Re-transcribing... $progressPercent%' : 'Transcribing... $progressPercent%')
+          : (isRetranscribing ? 'Re-transcribing...' : 'Transcribing...');
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              // Show determinate progress when we have progress data
               SizedBox(
                 width: 14,
                 height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
-                ),
+                child: widget.transcriptionProgress > 0
+                    ? CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value: widget.transcriptionProgress,
+                        valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+                        backgroundColor: BrandColors.turquoise.withValues(alpha: 0.2),
+                      )
+                    : CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+                      ),
               ),
               const SizedBox(width: 8),
               Text(
-                isRetranscribing ? 'Re-transcribing...' : 'Transcribing...',
+                progressText,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: BrandColors.turquoise,
                   fontStyle: FontStyle.italic,
@@ -402,6 +452,19 @@ class _JournalEntryRowState extends State<JournalEntryRow> {
               ),
             ],
           ),
+          // Show linear progress bar for visual feedback
+          if (widget.transcriptionProgress > 0) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: widget.transcriptionProgress,
+                backgroundColor: BrandColors.turquoise.withValues(alpha: 0.2),
+                valueColor: AlwaysStoppedAnimation<Color>(BrandColors.turquoise),
+                minHeight: 3,
+              ),
+            ),
+          ],
           // Show existing content dimmed during re-transcription
           if (isRetranscribing) ...[
             const SizedBox(height: 8),

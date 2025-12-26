@@ -47,9 +47,15 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
   // Track entries that are actively transcribing
   final Set<String> _transcribingEntryIds = {};
+  // Track transcription progress per entry (0.0-1.0)
+  final Map<String, double> _transcriptionProgress = {};
 
   // Track entries that are being AI-enhanced
   final Set<String> _enhancingEntryIds = {};
+  // Track enhancement progress per entry (0.0-1.0, null for indeterminate)
+  final Map<String, double?> _enhancementProgress = {};
+  // Track enhancement status message per entry
+  final Map<String, String> _enhancementStatus = {};
 
   // Audio playback state
   String? _currentlyPlayingAudioPath;
@@ -669,7 +675,10 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                   // Show transcribing for both manual transcribe and background transcription
                   isTranscribing: _transcribingEntryIds.contains(entry.id) ||
                       _pendingTranscriptionEntryId == entry.id,
+                  transcriptionProgress: _transcriptionProgress[entry.id] ?? 0.0,
                   isEnhancing: _enhancingEntryIds.contains(entry.id),
+                  enhancementProgress: _enhancementProgress[entry.id],
+                  enhancementStatus: _enhancementStatus[entry.id],
                   onTap: () => _handleEntryTap(entry),
                   onLongPress: () => _showEntryActions(context, journal, entry),
                   onPlayAudio: (path) => _playAudio(path, entryTitle: entry.title),
@@ -866,9 +875,10 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       return;
     }
 
-    // Mark as transcribing
+    // Mark as transcribing with initial progress
     setState(() {
       _transcribingEntryIds.add(entry.id);
+      _transcriptionProgress[entry.id] = 0.0;
     });
 
     debugPrint('[JournalScreen] Starting transcription for entry ${entry.id}');
@@ -885,9 +895,19 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
         throw Exception('Audio file not found at $fullAudioPath');
       }
 
-      // Transcribe
+      // Transcribe with progress tracking
       final postProcessingService = ref.read(recordingPostProcessingProvider);
-      final result = await postProcessingService.process(audioPath: fullAudioPath);
+      final result = await postProcessingService.process(
+        audioPath: fullAudioPath,
+        onProgress: (status, progress) {
+          // Update progress in UI
+          if (mounted) {
+            setState(() {
+              _transcriptionProgress[entry.id] = progress;
+            });
+          }
+        },
+      );
       final transcript = result.transcript;
 
       debugPrint('[JournalScreen] Transcription complete: ${transcript.length} chars');
@@ -967,6 +987,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       if (mounted) {
         setState(() {
           _transcribingEntryIds.remove(entry.id);
+          _transcriptionProgress.remove(entry.id);
         });
       }
     }
@@ -976,57 +997,54 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
   Future<void> _handleEnhance(JournalEntry entry) async {
     if (_enhancingEntryIds.contains(entry.id)) return;
 
-    // Mark as enhancing
+    // Mark as enhancing with initial progress
     setState(() {
       _enhancingEntryIds.add(entry.id);
+      _enhancementProgress[entry.id] = null; // Indeterminate initially
+      _enhancementStatus[entry.id] = 'Starting...';
     });
 
     debugPrint('[JournalScreen] Starting AI enhancement for entry ${entry.id}');
 
     try {
-      final llmService = ref.read(localLlmServiceProvider);
+      final enhancementService = ref.read(enhancementServiceProvider);
 
-      // 1. Clean up the transcript
-      debugPrint('[JournalScreen] Cleaning up transcript...');
-      final cleanedContent = await llmService.cleanupTranscript(
+      // Use enhancement service with progress callback
+      final result = await enhancementService.enhance(
         entry.content,
         context: 'journal entry',
+        onProgress: (status, progress) {
+          if (mounted) {
+            setState(() {
+              _enhancementProgress[entry.id] = progress;
+              _enhancementStatus[entry.id] = status;
+            });
+          }
+        },
       );
 
-      if (cleanedContent == null || cleanedContent.trim().isEmpty) {
-        throw Exception('Cleanup returned empty content');
+      if (!result.isSuccess) {
+        throw Exception(result.error ?? 'Enhancement failed');
       }
 
-      debugPrint('[JournalScreen] Cleanup complete: ${cleanedContent.length} chars');
-
-      // 2. Generate a title from the cleaned content
-      debugPrint('[JournalScreen] Generating title...');
-      final generatedTitle = await llmService.generateTitle(
-        cleanedContent,
-        context: 'personal journal entry',
-      );
-
-      // 3. Build the new title: keep timestamp, append generated title
-      // Entry title is typically in "HH:MM" format
+      // Build the new title: keep timestamp, append generated title
       String newTitle = entry.title;
-      if (generatedTitle != null && generatedTitle.trim().isNotEmpty) {
-        // Extract just the time portion if present (HH:MM format)
+      if (result.generatedTitle != null && result.generatedTitle!.trim().isNotEmpty) {
         final timeMatch = RegExp(r'^(\d{1,2}:\d{2})').firstMatch(entry.title);
         if (timeMatch != null) {
           final timestamp = timeMatch.group(1)!;
-          newTitle = '$timestamp - ${generatedTitle.trim()}';
+          newTitle = '$timestamp - ${result.generatedTitle!.trim()}';
         } else {
-          // If no timestamp in title, just use generated title
-          newTitle = generatedTitle.trim();
+          newTitle = result.generatedTitle!.trim();
         }
         debugPrint('[JournalScreen] New title: $newTitle');
       }
 
-      // 4. Update the entry with cleaned content and new title
+      // Update the entry with cleaned content and new title
       final service = await ref.read(journalServiceFutureProvider.future);
       final selectedDate = ref.read(selectedJournalDateProvider);
       final updatedEntry = entry.copyWith(
-        content: cleanedContent,
+        content: result.cleanedContent,
         title: newTitle,
       );
       await service.updateEntry(selectedDate, updatedEntry);
@@ -1042,13 +1060,14 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       ref.invalidate(selectedJournalProvider);
 
       if (mounted) {
+        final snackMessage = result.usedRemote ? 'Enhanced with remote AI' : 'Enhanced with local AI';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
                 Icon(Icons.auto_awesome, color: Colors.white, size: 18),
                 const SizedBox(width: 8),
-                const Text('Enhanced with AI'),
+                Text(snackMessage),
               ],
             ),
             backgroundColor: BrandColors.turquoise,
@@ -1076,6 +1095,8 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
       if (mounted) {
         setState(() {
           _enhancingEntryIds.remove(entry.id);
+          _enhancementProgress.remove(entry.id);
+          _enhancementStatus.remove(entry.id);
         });
       }
     }

@@ -185,10 +185,21 @@ class TranscriptionServiceAdapter {
   }) async {
     try {
       // Start progress
-      _updateProgress(0.1, 'Transcribing with Parakeet...', onProgress);
+      _updateProgress(0.05, 'Transcribing with Parakeet...', onProgress);
 
-      // Transcribe in background isolate (non-blocking)
-      final result = await _sherpaIsolate.transcribeAudio(audioPath);
+      // Transcribe in background isolate (non-blocking) with progress tracking
+      final result = await _sherpaIsolate.transcribeAudio(
+        audioPath,
+        onProgress: (progress) {
+          // Map chunk progress (0-1) to overall progress (0.05-0.95)
+          final overallProgress = 0.05 + (progress * 0.9);
+          _updateProgress(
+            overallProgress,
+            'Transcribing... ${(overallProgress * 100).toInt()}%',
+            onProgress,
+          );
+        },
+      );
 
       // Complete
       _updateProgress(
