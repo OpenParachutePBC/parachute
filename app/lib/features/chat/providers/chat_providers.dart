@@ -557,9 +557,41 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             }
             break;
 
+          case StreamEventType.toolResult:
+            // Tool result - attach to the corresponding tool call
+            final toolUseId = event.toolUseId;
+            final resultContent = event.toolResultContent;
+            if (toolUseId != null && resultContent != null) {
+              // Find the tool call with this ID and update it with the result
+              for (int i = 0; i < accumulatedContent.length; i++) {
+                final content = accumulatedContent[i];
+                if (content.type == ContentType.toolUse &&
+                    content.toolCall?.id == toolUseId) {
+                  // Replace with updated tool call that has the result
+                  final updatedToolCall = content.toolCall!.withResult(
+                    resultContent,
+                    isError: event.toolResultIsError,
+                  );
+                  accumulatedContent[i] = MessageContent.toolUse(updatedToolCall);
+                  _updateAssistantMessage(accumulatedContent, isStreaming: true);
+                  break;
+                }
+              }
+            }
+            break;
+
           case StreamEventType.done:
             // Stream complete
             _updateAssistantMessage(accumulatedContent, isStreaming: false);
+
+            // CRITICAL: Capture session ID from done event (for new sessions, this is the first time we get the real ID)
+            final doneSessionId = event.sessionId;
+            if (doneSessionId != null && doneSessionId.isNotEmpty && doneSessionId != actualSessionId) {
+              debugPrint('[ChatMessagesNotifier] Done event has new session ID: $doneSessionId (was: $actualSessionId)');
+              actualSessionId = doneSessionId;
+              _ref.read(currentSessionIdProvider.notifier).state = doneSessionId;
+            }
+
             // Capture session title if present in done event
             final doneTitle = event.sessionTitle;
             // Also capture resume info from done event (may have more complete info)
@@ -598,6 +630,15 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
               [MessageContent.text('Error: $errorMsg')],
               isStreaming: false,
             );
+            break;
+
+          case StreamEventType.thinking:
+            // Extended thinking content from Claude
+            final thinkingText = event.thinkingContent;
+            if (thinkingText != null && thinkingText.isNotEmpty) {
+              accumulatedContent.add(MessageContent.thinking(thinkingText));
+              _updateAssistantMessage(accumulatedContent, isStreaming: true);
+            }
             break;
 
           case StreamEventType.init:

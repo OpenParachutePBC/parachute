@@ -1,12 +1,15 @@
 import 'dart:convert';
 import 'chat_message.dart';
+import 'session_resume_info.dart';
 
 /// Type of SSE stream event from the agent backend
 enum StreamEventType {
   session,
   init,
   text,
+  thinking,
   toolUse,
+  toolResult,
   done,
   error,
   unknown,
@@ -50,8 +53,14 @@ class StreamEvent {
         case 'text':
           type = StreamEventType.text;
           break;
+        case 'thinking':
+          type = StreamEventType.thinking;
+          break;
         case 'tool_use':
           type = StreamEventType.toolUse;
+          break;
+        case 'tool_result':
+          type = StreamEventType.toolResult;
           break;
         case 'done':
           type = StreamEventType.done;
@@ -81,6 +90,9 @@ class StreamEvent {
   /// Get text content from text event
   String? get textContent => data['content'] as String?;
 
+  /// Get thinking content from thinking event
+  String? get thinkingContent => data['content'] as String?;
+
   /// Get tool call from tool_use event
   ToolCall? get toolCall {
     final tool = data['tool'] as Map<String, dynamic>?;
@@ -91,6 +103,22 @@ class StreamEvent {
   /// Get error message from error event
   String? get errorMessage => data['error'] as String?;
 
+  /// Get tool use ID from tool_result event (links to original tool_use)
+  String? get toolUseId => data['toolUseId'] as String?;
+
+  /// Get tool result content from tool_result event
+  String? get toolResultContent => data['content'] as String?;
+
+  /// Whether the tool result is an error
+  bool get toolResultIsError => data['isError'] as bool? ?? false;
+
   /// Get duration from done event
   int? get durationMs => data['durationMs'] as int?;
+
+  /// Get session resume info from session or done event
+  SessionResumeInfo? get sessionResumeInfo {
+    final resumeData = data['sessionResume'] as Map<String, dynamic>?;
+    if (resumeData == null) return null;
+    return SessionResumeInfo.fromJson(resumeData);
+  }
 }

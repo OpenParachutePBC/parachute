@@ -708,8 +708,22 @@ export class Orchestrator extends EventEmitter {
 
       let capturedSessionId = null;
       let currentText = '';
+      let lastTextBlockIndex = -1; // Track which text block we're updating
 
       for await (const msg of response) {
+        // Debug: log all message types to understand SDK output
+        if (msg.type === 'user') {
+          const contentTypes = msg.message?.content?.map(c => c.type) || [];
+          console.log(`[Orchestrator] SDK user msg:`, JSON.stringify({
+            hasMessage: !!msg.message,
+            contentTypes,
+            parentToolUseId: msg.parent_tool_use_id,
+            keys: Object.keys(msg)
+          }));
+        } else if (msg.type !== 'assistant') {
+          console.log(`[Orchestrator] SDK msg type=${msg.type} subtype=${msg.subtype}`);
+        }
+
         if (msg.session_id) {
           capturedSessionId = msg.session_id;
         }
@@ -724,7 +738,16 @@ export class Orchestrator extends EventEmitter {
 
         if (msg.type === 'assistant' && msg.message?.content) {
           for (const block of msg.message.content) {
-            if (block.type === 'text') {
+            // Handle thinking blocks (extended thinking / chain of thought)
+            if (block.type === 'thinking') {
+              yield {
+                type: 'thinking',
+                content: block.thinking
+              };
+              // Thinking is NOT included in the final result text
+            }
+            // Handle regular text output
+            else if (block.type === 'text') {
               const newText = block.text;
               if (newText !== currentText) {
                 yield {
@@ -733,11 +756,19 @@ export class Orchestrator extends EventEmitter {
                   delta: newText.slice(currentText.length)
                 };
                 currentText = newText;
-                textBlocks.push(newText);
+                // In streaming, block.text is the FULL accumulated text, not a delta
+                // So we update/replace the current text block, not push a new one
+                if (lastTextBlockIndex === -1 || textBlocks.length === 0) {
+                  textBlocks.push(newText);
+                  lastTextBlockIndex = 0;
+                } else {
+                  textBlocks[lastTextBlockIndex] = newText;
+                }
                 result = textBlocks.join('\n\n');
               }
             }
-            if (block.type === 'tool_use') {
+            // Handle tool use
+            else if (block.type === 'tool_use') {
               const toolCall = {
                 id: block.id,
                 name: block.name,
@@ -747,6 +778,44 @@ export class Orchestrator extends EventEmitter {
               yield {
                 type: 'tool_use',
                 tool: toolCall
+              };
+              // Reset for next text block (after tool result)
+              currentText = '';
+              lastTextBlockIndex = -1;
+            }
+          }
+        } else if (msg.type === 'user' && msg.message?.content) {
+          // Tool results come inside user messages as tool_result blocks in message.content
+          // Format: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id, content }] } }
+          for (const block of msg.message.content) {
+            if (block.type === 'tool_result') {
+              const toolUseId = block.tool_use_id;
+              console.log(`[Orchestrator] Tool result received for ${toolUseId}:`,
+                typeof block.content === 'string'
+                  ? block.content.substring(0, 100) + '...'
+                  : JSON.stringify(block.content).substring(0, 200));
+
+              // Format the result content
+              let resultContent;
+              if (typeof block.content === 'string') {
+                resultContent = block.content;
+              } else if (Array.isArray(block.content)) {
+                // Content array like [{ type: 'text', text: '...' }]
+                resultContent = block.content
+                  .map(c => c.text || c.toString())
+                  .join('\n');
+              } else if (block.content) {
+                resultContent = JSON.stringify(block.content, null, 2);
+              } else {
+                resultContent = '';
+              }
+
+              console.log(`[Orchestrator] Yielding tool_result for ${toolUseId}, content length: ${resultContent.length}`);
+              yield {
+                type: 'tool_result',
+                toolUseId: toolUseId,
+                content: resultContent,
+                isError: block.is_error || false
               };
             }
           }
@@ -772,6 +841,8 @@ export class Orchestrator extends EventEmitter {
       }
 
       // Add messages to our markdown mirror (for human readability)
+      console.log(`[Orchestrator] Saving to markdown: user msg=${actualMessage.length} chars, assistant result=${result.length} chars`);
+      console.log(`[Orchestrator] textBlocks count=${textBlocks.length}, first 200 chars of result:`, result.substring(0, 200));
       await this.sessionManager.addMessage(session, 'user', actualMessage);
       await this.sessionManager.addMessage(session, 'assistant', result);
 

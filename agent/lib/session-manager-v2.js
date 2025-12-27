@@ -240,8 +240,9 @@ export class SessionManager {
    * Called after first SDK response with the session_id
    */
   async finalizeSession(session, sdkSessionId) {
+    console.log(`[SessionManager] finalizeSession called with SDK ID: ${sdkSessionId?.slice(0, 12) || 'null'}`);
     if (!sdkSessionId || typeof sdkSessionId !== 'string') {
-      console.error(`[SessionManager] Cannot finalize session: invalid SDK ID`);
+      console.error(`[SessionManager] Cannot finalize session: invalid SDK ID (got ${typeof sdkSessionId})`);
       return;
     }
 
@@ -427,15 +428,24 @@ export class SessionManager {
    * Save session to markdown file
    */
   async saveSession(session) {
+    console.log(`[SessionManager] saveSession called:`, {
+      hasFilePath: !!session.filePath,
+      hasSdkSessionId: !!session.sdkSessionId,
+      filePath: session.filePath,
+      sdkSessionId: session.sdkSessionId?.slice(0, 12)
+    });
+
     if (!session.filePath || !session.sdkSessionId) {
-      console.warn(`[SessionManager] Cannot save - session not finalized`);
+      console.warn(`[SessionManager] Cannot save - session not finalized (filePath=${session.filePath}, sdkId=${session.sdkSessionId})`);
       return;
     }
 
     try {
+      console.log(`[SessionManager] Writing to: ${session.filePath}`);
       await fs.mkdir(path.dirname(session.filePath), { recursive: true });
       const markdown = this.sessionToMarkdown(session);
       await fs.writeFile(session.filePath, markdown, 'utf-8');
+      console.log(`[SessionManager] Successfully wrote session file`);
 
       // Update index
       const agentName = (session.agentPath || 'vault-agent').replace('agents/', '').replace('.md', '');

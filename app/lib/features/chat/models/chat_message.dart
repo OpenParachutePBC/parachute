@@ -2,7 +2,7 @@
 enum MessageRole { user, assistant }
 
 /// Type of content within a message
-enum ContentType { text, toolUse }
+enum ContentType { text, toolUse, thinking }
 
 /// A tool call made by the assistant
 class ToolCall {
@@ -10,10 +10,18 @@ class ToolCall {
   final String name;
   final Map<String, dynamic> input;
 
+  /// The result of the tool execution (populated after tool_result event)
+  final String? result;
+
+  /// Whether the tool execution resulted in an error
+  final bool isError;
+
   const ToolCall({
     required this.id,
     required this.name,
     required this.input,
+    this.result,
+    this.isError = false,
   });
 
   factory ToolCall.fromJson(Map<String, dynamic> json) {
@@ -21,6 +29,19 @@ class ToolCall {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       input: json['input'] as Map<String, dynamic>? ?? {},
+      result: json['result'] as String?,
+      isError: json['isError'] as bool? ?? false,
+    );
+  }
+
+  /// Create a copy with the result attached
+  ToolCall withResult(String resultContent, {bool isError = false}) {
+    return ToolCall(
+      id: id,
+      name: name,
+      input: input,
+      result: resultContent,
+      isError: isError,
     );
   }
 
@@ -82,6 +103,10 @@ class MessageContent {
 
   factory MessageContent.toolUse(ToolCall toolCall) {
     return MessageContent(type: ContentType.toolUse, toolCall: toolCall);
+  }
+
+  factory MessageContent.thinking(String text) {
+    return MessageContent(type: ContentType.thinking, text: text);
   }
 }
 
