@@ -51,6 +51,15 @@ class _AgentHubScreenState extends ConsumerState<AgentHubScreen> {
           ),
         ),
         actions: [
+          // Refresh button (useful for desktop where pull-to-refresh isn't natural)
+          IconButton(
+            onPressed: _refreshSessions,
+            icon: Icon(
+              Icons.refresh,
+              color: isDark ? BrandColors.nightTextSecondary : BrandColors.driftwood,
+            ),
+            tooltip: 'Refresh',
+          ),
           // Quick prompts button
           IconButton(
             onPressed: () => _showPromptsSheet(context),
@@ -223,8 +232,13 @@ class _AgentHubScreenState extends ConsumerState<AgentHubScreen> {
   }
 
   Future<void> _refreshSessions() async {
+    // First, tell the server to reload its session index from disk
+    // This ensures we get fresh data even if files changed externally
+    final chatService = ref.read(chatServiceProvider);
+    await chatService.reloadSessionIndex();
+
+    // Then invalidate the provider to fetch the updated list
     ref.invalidate(chatSessionsProvider);
-    // Wait for the provider to refresh
     await ref.read(chatSessionsProvider.future);
   }
 

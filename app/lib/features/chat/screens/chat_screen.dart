@@ -12,6 +12,7 @@ import '../widgets/chat_input.dart';
 import '../widgets/session_selector.dart';
 import '../widgets/connection_status_banner.dart';
 import '../widgets/resume_marker.dart';
+import '../widgets/session_resume_banner.dart';
 
 /// Main chat screen for AI conversations
 ///
@@ -52,6 +53,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _hasAutoRun = false;
   bool _showReflectionBanner = false;
   bool _reflectionBannerDismissed = false;
+  bool _resumeBannerDismissed = false;
   int _lastMessageCount = 0;
 
   @override
@@ -144,6 +146,11 @@ If you have suggestions, show me the specific edits you'd recommend.''';
         _scrollToBottom();
       }
 
+      // Reset resume banner when session changes
+      if (previous?.sessionId != next.sessionId) {
+        _resumeBannerDismissed = false;
+      }
+
       // Show reflection banner when streaming ends and we have enough exchanges
       final wasStreaming = previous?.isStreaming ?? false;
       final isNowStreaming = next.isStreaming;
@@ -183,6 +190,17 @@ If you have suggestions, show me the specific edits you'd recommend.''';
               Navigator.of(context).pushNamed('/settings');
             },
           ),
+
+          // Session resume banner (shows when context was rebuilt)
+          if (chatState.sessionResumeInfo != null && !_resumeBannerDismissed)
+            SessionResumeBanner(
+              resumeInfo: chatState.sessionResumeInfo!,
+              onDismiss: () {
+                setState(() {
+                  _resumeBannerDismissed = true;
+                });
+              },
+            ),
 
           // Context banner (if initial context provided)
           if (_pendingInitialContext != null)

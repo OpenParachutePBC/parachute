@@ -703,15 +703,26 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         final progress = searchIndex.progress;
         final total = searchIndex.totalToIndex;
         final count = searchIndex.indexedCount;
+        final statusMessage = searchIndex.statusMessage;
+        final scanTotal = searchIndex.scanTotal;
+        final scanProgress = searchIndex.scanProgress;
 
         // Only show when actively indexing
         if (status != IndexingStatus.indexing && status != IndexingStatus.syncing) {
           return const SizedBox.shrink();
         }
 
-        final statusText = status == IndexingStatus.syncing
-            ? 'Checking for changes...'
-            : 'Indexing $count of $total items...';
+        // Use the detailed status message if available
+        final statusText = statusMessage.isNotEmpty
+            ? statusMessage
+            : (status == IndexingStatus.syncing
+                ? 'Checking for changes...'
+                : 'Indexing $count of $total items...');
+
+        // Calculate scan progress for syncing phase
+        final scanProgressValue = (status == IndexingStatus.syncing && scanTotal > 0)
+            ? scanProgress / scanTotal
+            : null;
 
         return Container(
           margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -735,7 +746,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     height: 16,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      value: status == IndexingStatus.indexing ? progress : null,
+                      value: status == IndexingStatus.indexing
+                          ? progress
+                          : scanProgressValue,
                       color: isDark ? BrandColors.nightTurquoise : BrandColors.turquoise,
                     ),
                   ),
@@ -751,12 +764,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
                 ],
               ),
-              if (status == IndexingStatus.indexing && total > 0) ...[
+              // Show progress bar for both syncing (scan) and indexing phases
+              if ((status == IndexingStatus.indexing && total > 0) ||
+                  (status == IndexingStatus.syncing && scanTotal > 0)) ...[
                 const SizedBox(height: 8),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: progress,
+                    value: status == IndexingStatus.indexing
+                        ? progress
+                        : scanProgressValue,
                     backgroundColor: isDark
                         ? BrandColors.nightTextSecondary.withValues(alpha: 0.2)
                         : BrandColors.driftwood.withValues(alpha: 0.2),
@@ -766,7 +783,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'This runs once, then only new content is indexed',
+                  status == IndexingStatus.syncing
+                      ? 'Scanning for changes...'
+                      : 'This runs once, then only new content is indexed',
                   style: TextStyle(
                     fontSize: 11,
                     color: isDark

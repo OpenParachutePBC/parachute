@@ -14,6 +14,7 @@ import '../widgets/local_ai_models_section.dart';
 import '../widgets/privacy_section.dart';
 import '../widgets/developer_section.dart';
 import '../widgets/system_prompt_section.dart';
+import '../widgets/generation_section.dart';
 
 /// Settings screen with expandable sections
 ///
@@ -182,7 +183,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     return ExpandableSettingsSection(
       title: 'Advanced',
-      subtitle: 'AI chat, import, and privacy settings',
+      subtitle: 'AI chat, generation, and privacy settings',
       icon: Icons.tune,
       accentColor: BrandColors.driftwood,
       children: [
@@ -190,6 +191,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         // Only show these sections when AI Chat is enabled
         if (aiChatEnabled) ...[
           const SystemPromptSection(),
+          const GenerationSection(),
           const ChatImportSection(),
         ],
         const PrivacySection(),
