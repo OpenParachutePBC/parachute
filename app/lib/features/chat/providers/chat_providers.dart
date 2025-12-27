@@ -6,6 +6,7 @@ import '../models/chat_message.dart';
 import '../models/agent.dart';
 import '../models/stream_event.dart';
 import '../models/context_file.dart';
+import '../models/session_resume_info.dart';
 import '../services/chat_service.dart';
 import '../services/local_session_reader.dart';
 import '../services/chat_import_service.dart';
@@ -201,6 +202,10 @@ class ChatMessagesState {
   /// The session being viewed (for imported sessions that can be continued)
   final ChatSession? viewingSession;
 
+  /// Information about how the session was resumed
+  /// Set when receiving a session or done event from the backend
+  final SessionResumeInfo? sessionResumeInfo;
+
   const ChatMessagesState({
     this.messages = const [],
     this.isStreaming = false,
@@ -210,6 +215,7 @@ class ChatMessagesState {
     this.continuedFromSession,
     this.priorMessages = const [],
     this.viewingSession,
+    this.sessionResumeInfo,
   });
 
   /// Whether this session is continuing from another
@@ -227,6 +233,7 @@ class ChatMessagesState {
     ChatSession? continuedFromSession,
     List<ChatMessage>? priorMessages,
     ChatSession? viewingSession,
+    SessionResumeInfo? sessionResumeInfo,
   }) {
     return ChatMessagesState(
       messages: messages ?? this.messages,
@@ -237,6 +244,7 @@ class ChatMessagesState {
       continuedFromSession: continuedFromSession ?? this.continuedFromSession,
       priorMessages: priorMessages ?? this.priorMessages,
       viewingSession: viewingSession ?? this.viewingSession,
+      sessionResumeInfo: sessionResumeInfo ?? this.sessionResumeInfo,
     );
   }
 }
@@ -309,6 +317,10 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
           debugPrint('[ChatMessagesNotifier] Could not find original session to load prior messages');
         }
       }
+
+      // SIMPLIFIED: The session id IS the SDK session ID now
+      // Just use it directly for all API calls
+      debugPrint('[ChatMessagesNotifier] Loading session with ID: $sessionId');
 
       state = ChatMessagesState(
         messages: loadedMessages,
@@ -396,12 +408,16 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   ///
   /// [priorConversation] - For continued conversations, prior messages
   /// formatted as text. Goes into system prompt, not shown in chat.
+  ///
+  /// [workingDirectory] - Directory for Claude to operate in (for external codebases)
+  /// Sessions are still stored in the vault, but file operations target this directory.
   Future<void> sendMessage({
     required String message,
     String? agentPath,
     String? initialContext,
     List<String>? contexts,
     String? priorConversation,
+    String? workingDirectory,
   }) async {
     if (state.isStreaming) return;
 
@@ -471,6 +487,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
         contexts: contexts,
         priorConversation: effectivePriorConversation,
         continuedFrom: continuedFromId,
+        workingDirectory: workingDirectory,
       )) {
         // Check if session has changed (user switched chats during stream)
         if (_activeStreamSessionId != sessionId) {
@@ -491,13 +508,22 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             if (sessionTitle != null && sessionTitle.isNotEmpty) {
               state = state.copyWith(sessionTitle: sessionTitle);
             }
+            // Capture session resume info
+            final resumeInfo = event.sessionResumeInfo;
+            if (resumeInfo != null) {
+              debugPrint('[ChatMessagesNotifier] Session resume info: ${resumeInfo.method} '
+                  '(sdkResumeFailed: ${resumeInfo.sdkResumeFailed}, '
+                  'contextInjected: ${resumeInfo.contextInjected}, '
+                  'messagesInjected: ${resumeInfo.messagesInjected})');
+              state = state.copyWith(sessionResumeInfo: resumeInfo);
+            }
             break;
 
           case StreamEventType.text:
             // Accumulating text content from server
             final content = event.textContent;
             if (content != null) {
-              // Replace or add text content
+              // Track the current text for potential conversion to "thinking"
               // The server sends accumulated text, so we replace the last text block
               final hasTextContent = accumulatedContent.any((c) => c.type == ContentType.text);
               if (hasTextContent) {
@@ -513,9 +539,19 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             break;
 
           case StreamEventType.toolUse:
-            // Tool call event
+            // Tool call event - convert any pending text to "thinking"
             final toolCall = event.toolCall;
             if (toolCall != null) {
+              // Check if there's text content before this tool call
+              final lastTextIndex = accumulatedContent.lastIndexWhere(
+                  (c) => c.type == ContentType.text);
+              if (lastTextIndex >= 0) {
+                // Convert the last text block to thinking
+                final thinkingText = accumulatedContent[lastTextIndex].text ?? '';
+                if (thinkingText.isNotEmpty) {
+                  accumulatedContent[lastTextIndex] = MessageContent.thinking(thinkingText);
+                }
+              }
               accumulatedContent.add(MessageContent.toolUse(toolCall));
               _updateAssistantMessage(accumulatedContent, isStreaming: true);
             }
@@ -526,7 +562,16 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             _updateAssistantMessage(accumulatedContent, isStreaming: false);
             // Capture session title if present in done event
             final doneTitle = event.sessionTitle;
-            if (doneTitle != null && doneTitle.isNotEmpty) {
+            // Also capture resume info from done event (may have more complete info)
+            final doneResumeInfo = event.sessionResumeInfo;
+            if (doneResumeInfo != null) {
+              debugPrint('[ChatMessagesNotifier] Done event resume info: ${doneResumeInfo.method}');
+              state = state.copyWith(
+                isStreaming: false,
+                sessionTitle: (doneTitle != null && doneTitle.isNotEmpty) ? doneTitle : null,
+                sessionResumeInfo: doneResumeInfo,
+              );
+            } else if (doneTitle != null && doneTitle.isNotEmpty) {
               state = state.copyWith(isStreaming: false, sessionTitle: doneTitle);
             } else {
               state = state.copyWith(isStreaming: false);

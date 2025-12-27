@@ -301,10 +301,10 @@ class ConversationImportService {
 
     final buffer = StringBuffer();
 
-    // YAML frontmatter - use session_id for compatibility with LocalSessionReader
+    // YAML frontmatter
     buffer.writeln('---');
     buffer.writeln('title: ${_escapeYaml(title)}');
-    buffer.writeln('session_id: $uuid');
+    buffer.writeln('sdk_session_id: $uuid');
     buffer.writeln('source: claude');
     buffer.writeln('original_id: $uuid');
     if (createdAt != null) buffer.writeln('created_at: $createdAt');
@@ -584,10 +584,10 @@ class ConversationImportService {
 
     final buffer = StringBuffer();
 
-    // YAML frontmatter - use session_id for compatibility with LocalSessionReader
+    // YAML frontmatter
     buffer.writeln('---');
     buffer.writeln('title: ${_escapeYaml(title)}');
-    buffer.writeln('session_id: $id');
+    buffer.writeln('sdk_session_id: $id');
     buffer.writeln('source: chatgpt');
     buffer.writeln('original_id: $id');
     if (createTime != null) {

@@ -21,6 +21,7 @@ import { queryLogs, getLogStats, serverLogger as log } from './lib/logger.js';
 import { initializeUsageTracker, getUsageTracker } from './lib/usage-tracker.js';
 import { getVaultSearchService, ContentType } from './lib/vault-search.js';
 import { getOllamaStatus } from './lib/ollama-service.js';
+import * as generateConfig from './lib/generate-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -386,17 +387,12 @@ app.get('/api/chat/sessions', async (req, res) => {
 
 /**
  * GET /api/chat/history
- * Get chat history for an agent
+ * Legacy endpoint - use GET /api/chat/session/:id instead
  */
 app.get('/api/chat/history', async (req, res) => {
-  try {
-    const { agentPath, documentPath } = req.query;
-    const context = documentPath ? { documentPath } : {};
-    const history = orchestrator.getChatHistory(agentPath || null, context);
-    res.json(history);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  res.status(400).json({
+    error: 'This endpoint is deprecated. Use GET /api/chat/session/:id with the SDK session ID instead.'
+  });
 });
 
 /**
@@ -405,14 +401,15 @@ app.get('/api/chat/history', async (req, res) => {
  */
 app.get('/api/chat/session/:id', async (req, res) => {
   try {
-    const session = await orchestrator.getSessionByIdAsync(req.params.id);
+    // ID is now the SDK session ID
+    const session = await orchestrator.getSessionById(req.params.id);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
     res.json({
-      id: session.id,
+      id: session.sdkSessionId, // SDK session ID is THE session ID
       agentPath: session.agentPath,
-      agentName: session.agentPath.replace('agents/', '').replace('.md', ''),
+      agentName: (session.agentPath || 'vault-agent').replace('agents/', '').replace('.md', ''),
       messages: session.messages,
       createdAt: session.createdAt,
       lastAccessed: session.lastAccessed,
@@ -425,17 +422,12 @@ app.get('/api/chat/session/:id', async (req, res) => {
 
 /**
  * DELETE /api/chat/session
- * Clear a chat session (start fresh)
+ * Legacy endpoint - use DELETE /api/chat/session/:id instead
  */
 app.delete('/api/chat/session', async (req, res) => {
-  try {
-    const { agentPath, documentPath } = req.query;
-    const context = documentPath ? { documentPath } : {};
-    await orchestrator.clearChatSession(agentPath || null, context);
-    res.json({ cleared: true, agentPath: agentPath || 'vault-agent' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  res.status(400).json({
+    error: 'This endpoint is deprecated. Use DELETE /api/chat/session/:id with the SDK session ID instead.'
+  });
 });
 
 /**
@@ -485,6 +477,23 @@ app.delete('/api/chat/session/:id', async (req, res) => {
       res.status(404).json({ error: 'Session not found' });
     }
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/chat/sessions/reload
+ * Reload the session index from disk
+ * Useful when session files have been modified externally
+ */
+app.post('/api/chat/sessions/reload', async (req, res) => {
+  try {
+    await orchestrator.reloadSessionIndex();
+    const sessions = orchestrator.listChatSessions();
+    log.info('Session index reloaded', { count: sessions.length });
+    res.json({ reloaded: true, sessionCount: sessions.length });
+  } catch (error) {
+    log.error('Failed to reload session index', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1296,6 +1305,145 @@ app.delete('/api/skills/:name', async (req, res) => {
       return res.status(404).json({ error: `Skill '${name}' not found` });
     }
     res.json({ deleted: true, name });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================================
+// GENERATION SETTINGS (para-generate)
+// ============================================================================
+
+/**
+ * GET /api/generate/config
+ * Get full generation configuration
+ */
+app.get('/api/generate/config', async (req, res) => {
+  try {
+    const config = await generateConfig.loadConfig(CONFIG.vaultPath, true);
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/generate/backends/:type
+ * List backends for a content type (image, audio, music, speech)
+ */
+app.get('/api/generate/backends/:type', async (req, res) => {
+  try {
+    const { type } = req.params;
+    const backends = await generateConfig.listBackends(CONFIG.vaultPath, type);
+    const defaultBackend = await generateConfig.getDefaultBackend(CONFIG.vaultPath, type);
+
+    // Check availability for each backend
+    const backendStatuses = await Promise.all(
+      backends.map(async (b) => {
+        try {
+          const backendModule = await generateConfig.loadBackend(type, b.name);
+          const availability = await backendModule.checkAvailability(b);
+          return {
+            ...b,
+            available: availability.available,
+            availabilityError: availability.error || null,
+            info: backendModule.info,
+          };
+        } catch (e) {
+          return {
+            ...b,
+            available: false,
+            availabilityError: e.message,
+            info: null,
+          };
+        }
+      })
+    );
+
+    res.json({
+      type,
+      defaultBackend,
+      backends: backendStatuses,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /api/generate/backends/:type/:name
+ * Update a specific backend's configuration
+ * Body: { enabled?, model?, api_key?, steps?, quantize?, ... }
+ */
+app.put('/api/generate/backends/:type/:name', async (req, res) => {
+  try {
+    const { type, name } = req.params;
+    const updates = req.body;
+
+    if (!updates || typeof updates !== 'object') {
+      return res.status(400).json({ error: 'Backend configuration is required' });
+    }
+
+    await generateConfig.updateBackendConfig(CONFIG.vaultPath, type, name, updates);
+    const updated = await generateConfig.getBackendConfig(CONFIG.vaultPath, type, name);
+
+    res.json({
+      updated: true,
+      type,
+      name,
+      config: updated,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /api/generate/default/:type
+ * Set the default backend for a content type
+ * Body: { backend: "mflux" | "nano-banana" }
+ */
+app.put('/api/generate/default/:type', async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { backend } = req.body;
+
+    if (!backend) {
+      return res.status(400).json({ error: 'Backend name is required' });
+    }
+
+    await generateConfig.setDefaultBackend(CONFIG.vaultPath, type, backend);
+
+    res.json({
+      updated: true,
+      type,
+      defaultBackend: backend,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/generate/backends/:type/:name/status
+ * Check availability of a specific backend
+ */
+app.get('/api/generate/backends/:type/:name/status', async (req, res) => {
+  try {
+    const { type, name } = req.params;
+
+    const backendModule = await generateConfig.loadBackend(type, name);
+    const backendConfig = await generateConfig.getBackendConfig(CONFIG.vaultPath, type, name) || {};
+    const availability = await backendModule.checkAvailability(backendConfig);
+
+    res.json({
+      name,
+      type,
+      available: availability.available,
+      error: availability.error || null,
+      info: backendModule.info,
+      setupInstructions: !availability.available ? backendModule.getSetupInstructions() : null,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -382,7 +382,7 @@ class ChatImportService {
 
     // YAML frontmatter
     buffer.writeln('---');
-    buffer.writeln('session_id: $sessionId');
+    buffer.writeln('sdk_session_id: $sessionId');
     buffer.writeln('title: "${_escapeYaml(conv.title)}"');
     buffer.writeln('created_at: ${conv.createdAt.toIso8601String()}');
     if (conv.updatedAt != null) {

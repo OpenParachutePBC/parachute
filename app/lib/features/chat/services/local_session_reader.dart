@@ -97,8 +97,9 @@ class LocalSessionReader {
     final frontmatter = content.substring(3, endOfFrontmatter).trim();
     final metadata = _parseYamlFrontmatter(frontmatter);
 
-    final sessionId = metadata['session_id'] as String?;
-    if (sessionId == null) {
+    // SIMPLIFIED: sdk_session_id is THE only session ID
+    final sessionId = metadata['sdk_session_id'] as String?;
+    if (sessionId == null || sessionId.isEmpty) {
       return null;
     }
 
@@ -109,7 +110,7 @@ class LocalSessionReader {
       createdAt: _parseDateTime(metadata['created_at']) ?? file.statSync().changed,
       updatedAt: _parseDateTime(metadata['last_accessed']),
       archived: metadata['archived'] == true,
-      isLocal: true, // Mark as local session
+      isLocal: true,
       source: ChatSourceExtension.fromString(metadata['source'] as String?),
       continuedFrom: metadata['continued_from'] as String?,
       originalId: metadata['original_id'] as String?,
@@ -196,10 +197,11 @@ class LocalSessionReader {
         if (entity is File && entity.path.endsWith('.md')) {
           filesChecked++;
           final content = await entity.readAsString();
+          // SIMPLIFIED: Only search for sdk_session_id (the only session ID we use)
           final patterns = [
-            'session_id: $sessionId',
-            "session_id: '$sessionId'",
-            'session_id: "$sessionId"',
+            'sdk_session_id: $sessionId',
+            "sdk_session_id: '$sessionId'",
+            'sdk_session_id: "$sessionId"',
           ];
 
           for (final pattern in patterns) {

@@ -81,6 +81,10 @@ class ChatSession {
   /// e.g., ChatGPT conversation ID or Claude conversation ID
   final String? originalId;
 
+  /// Working directory for this session (if different from vault)
+  /// Allows operating on external codebases while storing sessions in vault
+  final String? workingDirectory;
+
   const ChatSession({
     required this.id,
     this.agentPath,
@@ -94,6 +98,7 @@ class ChatSession {
     this.source = ChatSource.parachute,
     this.continuedFrom,
     this.originalId,
+    this.workingDirectory,
   });
 
   /// Alias for archived (for consistency with local session reader)
@@ -109,8 +114,10 @@ class ChatSession {
     // Handle both 'updatedAt' and 'lastAccessed' field names from backend
     final updatedAtStr = json['updatedAt'] as String? ?? json['lastAccessed'] as String?;
 
+    // SIMPLIFIED: The server now returns 'id' as the SDK session ID
+    // This is the only session ID we need for all operations
     return ChatSession(
-      id: json['id'] as String? ?? json['context']?['sessionId'] as String? ?? '',
+      id: json['id'] as String? ?? '',
       agentPath: json['agentPath'] as String?,
       agentName: json['agentName'] as String?,
       title: json['title'] as String?,
@@ -123,6 +130,7 @@ class ChatSession {
       source: ChatSourceExtension.fromString(json['source'] as String?),
       continuedFrom: json['continuedFrom'] as String?,
       originalId: json['originalId'] as String?,
+      workingDirectory: json['workingDirectory'] as String?,
     );
   }
 
@@ -139,7 +147,18 @@ class ChatSession {
       'source': source.name,
       if (continuedFrom != null) 'continuedFrom': continuedFrom,
       if (originalId != null) 'originalId': originalId,
+      if (workingDirectory != null) 'workingDirectory': workingDirectory,
     };
+  }
+
+  /// Whether this session operates on an external codebase
+  bool get hasExternalWorkingDirectory => workingDirectory != null;
+
+  /// Get just the directory name from the working directory path
+  String? get workingDirectoryName {
+    if (workingDirectory == null) return null;
+    final parts = workingDirectory!.split('/');
+    return parts.isNotEmpty ? parts.last : null;
   }
 
   String get displayTitle {
@@ -161,6 +180,7 @@ class ChatSession {
     ChatSource? source,
     String? continuedFrom,
     String? originalId,
+    String? workingDirectory,
   }) {
     return ChatSession(
       id: id ?? this.id,
@@ -175,6 +195,7 @@ class ChatSession {
       source: source ?? this.source,
       continuedFrom: continuedFrom ?? this.continuedFrom,
       originalId: originalId ?? this.originalId,
+      workingDirectory: workingDirectory ?? this.workingDirectory,
     );
   }
 }

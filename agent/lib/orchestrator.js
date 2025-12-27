@@ -15,7 +15,7 @@ import fs from 'fs/promises';
 import { loadAgent, buildSystemPrompt, hasPermission, matchesPatterns, loadAllAgents, AgentType } from './agent-loader.js';
 import { AgentQueue, Status, Priority } from './queue.js';
 import { DocumentScanner, AgentStatus, parseTrigger, shouldTriggerFire } from './document-scanner.js';
-import { SessionManager } from './session-manager.js';
+import { SessionManager } from './session-manager-v2.js';
 import { loadAgentContext, formatContextForPrompt } from './context-loader.js';
 import { loadMcpServers, resolveMcpServers, listMcpServers, addMcpServer, removeMcpServer } from './mcp-loader.js';
 import { discoverSkills, loadSkill, createSkill, deleteSkill, ensureSkillsDir } from './skills-loader.js';
@@ -135,6 +135,13 @@ export class Orchestrator extends EventEmitter {
         const mcpParts = toolName.split('__');
         const mcpServerName = mcpParts[1];
         const mcpToolName = mcpParts[2] || 'unknown';
+
+        // Built-in MCPs are always auto-approved (safe, local operations)
+        const builtInMcps = ['vault-search', 'para-generate'];
+        if (builtInMcps.includes(mcpServerName)) {
+          console.log(`[Orchestrator] MCP auto-allow (built-in): ${toolName}`);
+          return { behavior: 'allow', updatedInput: input };
+        }
 
         // Check if this MCP server is pre-approved for this session
         if (approvedMcpsThisSession.has(mcpServerName)) {
@@ -544,8 +551,11 @@ export class Orchestrator extends EventEmitter {
     let agent;
     let systemPrompt;
 
-    if (agentPath) {
-      // Load specific agent
+    // Use built-in vault agent if path is null/undefined or explicitly "vault-agent"
+    const useBuiltinVaultAgent = !agentPath || agentPath === 'vault-agent';
+
+    if (!useBuiltinVaultAgent) {
+      // Load specific agent from file
       agent = await loadAgent(agentPath, this.vaultPath);
       log.info('Loaded agent', {
         name: agent.name,
@@ -604,57 +614,57 @@ export class Orchestrator extends EventEmitter {
   /**
    * Execute a chatbot agent with streaming (yields events for SSE)
    * This is a generator function that yields events as they happen.
+   *
+   * SIMPLIFIED: Uses SDK session ID as the only session identifier.
+   * - If context.sessionId is provided, it's the SDK session ID to resume
+   * - If not provided, this is a new session and we get SDK ID from response
    */
   async *executeChatbotAgentStreaming(agent, agentPath, message, systemPrompt, context) {
     const effectivePath = agentPath || 'vault-agent';
 
-    const chatbotContext = {};
-    if (context.sessionId) {
-      chatbotContext.sessionId = context.sessionId;
-    }
-    if (context.workingDirectory) {
-      chatbotContext.workingDirectory = context.workingDirectory;
-    }
-    if (context.continuedFrom) {
-      chatbotContext.continuedFrom = context.continuedFrom;
-    }
-
-    const { session, resumeInfo } = await this.sessionManager.getSession(effectivePath, chatbotContext);
-    const sessionKey = this.sessionManager.getSessionKey(effectivePath, chatbotContext);
+    // Get or create session using SDK session ID as primary key
+    const { session, resumeInfo, isNew } = await this.sessionManager.getSession(
+      context.sessionId, // SDK session ID if resuming, null if new
+      effectivePath,
+      {
+        workingDirectory: context.workingDirectory,
+        continuedFrom: context.continuedFrom
+      }
+    );
 
     // Determine the working directory for this session
     const effectiveCwd = session.workingDirectory || this.vaultPath;
 
-    log.info('Streaming chat session', { sessionId: session.id, agentPath: effectivePath, cwd: effectiveCwd });
+    log.info('Streaming chat session', {
+      sdkSessionId: session.sdkSessionId ? session.sdkSessionId.slice(0, 8) + '...' : 'pending',
+      agentPath: effectivePath,
+      cwd: effectiveCwd,
+      isNew
+    });
 
-    // Yield session info first
+    // Yield session info (SDK session ID may be null for new sessions - will be updated after response)
     yield {
       type: 'session',
-      sessionId: session.id,
+      sessionId: session.sdkSessionId, // Will be null for new sessions
       workingDirectory: session.workingDirectory || null,
       resumeInfo: resumeInfo.toJSON()
     };
 
-    // Handle initial context for new sessions (e.g., voice transcript, document)
-    // If initialContext is provided without a message, the context IS the message
-    // If both are provided, context is prepended to the message
+    // Handle initial context for new sessions
     let actualMessage = message;
     if (context.initialContext && session.messages.length === 0) {
       if (!message || message.trim() === '') {
-        // Context is the entire message
         actualMessage = context.initialContext;
         console.log(`[Orchestrator] Using initial context as message (${context.initialContext.length} chars)`);
       } else {
-        // Both provided - prepend context
         actualMessage = `## Context\n\n${context.initialContext}\n\n---\n\n## Request\n\n${message}`;
         console.log(`[Orchestrator] Prepending initial context (${context.initialContext.length} chars)`);
       }
     }
 
-    await this.sessionManager.addMessage(sessionKey, 'user', actualMessage);
-
     const startTime = Date.now();
     let result = '';
+    const textBlocks = [];
     let toolCalls = [];
     const requestPermissionDenials = [];
 
@@ -669,25 +679,30 @@ export class Orchestrator extends EventEmitter {
         systemPrompt,
         cwd: effectiveCwd,
         permissionMode: 'default',
-        canUseTool: this.createPermissionHandler(agent, session.id, (denial) => {
+        canUseTool: this.createPermissionHandler(agent, session.sdkSessionId || 'new', (denial) => {
           requestPermissionDenials.push(denial);
         }),
         tools: agentTools.length > 0 ? agentTools : undefined,
-        // Enable skills from the vault's .claude/skills directory
         settingSources: ['project'],
-        // MCP servers (resolved from .mcp.json or inline)
         mcpServers: resolvedMcpServers
       };
 
-      const { prompt: preparedPrompt, queryOptions: contextQueryOptions } =
-        this.sessionManager.preparePromptWithContext(session, actualMessage, resumeInfo);
-
-      Object.assign(queryOptions, contextQueryOptions);
+      // SIMPLIFIED: If we have an SDK session ID, just pass resume option
+      // The SDK handles all context rebuilding from its own storage
+      if (session.sdkSessionId) {
+        queryOptions.resume = session.sdkSessionId;
+        console.log(`[Orchestrator] Resuming SDK session: ${session.sdkSessionId.slice(0, 8)}...`);
+      } else {
+        console.log(`[Orchestrator] Starting new SDK session`);
+      }
 
       console.log(`[Orchestrator] Streaming query for ${agent.name}`);
+      if (resolvedMcpServers && Object.keys(resolvedMcpServers).length > 0) {
+        console.log(`[Orchestrator] MCP servers for ${agent.name}:`, Object.keys(resolvedMcpServers));
+      }
 
       const response = query({
-        prompt: preparedPrompt,
+        prompt: actualMessage,
         options: queryOptions
       });
 
@@ -710,7 +725,6 @@ export class Orchestrator extends EventEmitter {
         if (msg.type === 'assistant' && msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === 'text') {
-              // Yield text delta (difference from previous)
               const newText = block.text;
               if (newText !== currentText) {
                 yield {
@@ -719,7 +733,8 @@ export class Orchestrator extends EventEmitter {
                   delta: newText.slice(currentText.length)
                 };
                 currentText = newText;
-                result = newText;
+                textBlocks.push(newText);
+                result = textBlocks.join('\n\n');
               }
             }
             if (block.type === 'tool_use') {
@@ -750,15 +765,19 @@ export class Orchestrator extends EventEmitter {
         }
       }
 
-      if (capturedSessionId && capturedSessionId !== session.sdkSessionId) {
-        await this.sessionManager.updateSdkSessionId(sessionKey, capturedSessionId);
+      // For new sessions, finalize with the SDK session ID we captured
+      if (isNew && capturedSessionId) {
+        await this.sessionManager.finalizeSession(session, capturedSessionId);
+        console.log(`[Orchestrator] Finalized new session: ${capturedSessionId.slice(0, 8)}...`);
       }
 
-      await this.sessionManager.addMessage(sessionKey, 'assistant', result);
+      // Add messages to our markdown mirror (for human readability)
+      await this.sessionManager.addMessage(session, 'user', actualMessage);
+      await this.sessionManager.addMessage(session, 'assistant', result);
 
-      // Generate title asynchronously if session doesn't have one yet
+      // Generate title asynchronously
       const agentName = agent.name || effectivePath.replace('agents/', '').replace('.md', '');
-      this.sessionManager.maybeGenerateTitle(sessionKey, agentName).catch(err => {
+      this.sessionManager.maybeGenerateTitle(session, agentName).catch(err => {
         console.error(`[Orchestrator] Title generation error:`, err.message);
       });
 
@@ -779,19 +798,21 @@ export class Orchestrator extends EventEmitter {
       const duration = Date.now() - startTime;
 
       // Clean up pending permissions
-      for (const [key, _] of this.pendingPermissions) {
-        if (key.startsWith(session.id)) {
-          this.pendingPermissions.delete(key);
+      if (session.sdkSessionId) {
+        for (const [key, _] of this.pendingPermissions) {
+          if (key.startsWith(session.sdkSessionId)) {
+            this.pendingPermissions.delete(key);
+          }
         }
       }
 
-      // Yield final completion event
+      // Yield final completion event - now includes the SDK session ID for the app to store
       yield {
         type: 'done',
         response: result,
         spawned: spawnRequests.map(s => s.agent),
         durationMs: duration,
-        sessionId: session.id,
+        sessionId: session.sdkSessionId, // THE session ID for future requests
         workingDirectory: session.workingDirectory || null,
         messageCount: session.messages.length,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -801,85 +822,62 @@ export class Orchestrator extends EventEmitter {
 
     } catch (error) {
       log.error('Streaming error', { agentPath: effectivePath, error: error.message });
-      await this.sessionManager.addMessage(sessionKey, 'system', `Error: ${error.message}`);
 
       yield {
         type: 'error',
         error: error.message,
-        sessionId: session.id
+        sessionId: session.sdkSessionId
       };
     }
   }
 
   /**
    * Execute a chatbot agent with session continuity
+   *
+   * SIMPLIFIED: Uses SDK session ID as the only session identifier.
    */
   async executeChatbotAgent(agent, agentPath, message, systemPrompt, context) {
     const effectivePath = agentPath || 'vault-agent';
 
-    // For chatbot agents, use sessionId for unique conversations (from plugin)
-    // Each chat gets its own session, identified by sessionId
-    const chatbotContext = {};
-    if (context.sessionId) {
-      chatbotContext.sessionId = context.sessionId;
-    }
-    if (context.workingDirectory) {
-      chatbotContext.workingDirectory = context.workingDirectory;
-    }
-    if (context.continuedFrom) {
-      chatbotContext.continuedFrom = context.continuedFrom;
-    }
+    // Get or create session using SDK session ID as primary key
+    const { session, resumeInfo, isNew } = await this.sessionManager.getSession(
+      context.sessionId, // SDK session ID if resuming, null if new
+      effectivePath,
+      {
+        workingDirectory: context.workingDirectory,
+        continuedFrom: context.continuedFrom
+      }
+    );
 
-    // Get or create session (now returns { session, resumeInfo })
-    const { session, resumeInfo } = await this.sessionManager.getSession(effectivePath, chatbotContext);
-    const sessionKey = this.sessionManager.getSessionKey(effectivePath, chatbotContext);
-
-    // Determine the working directory for this session
     const effectiveCwd = session.workingDirectory || this.vaultPath;
 
     log.info('Chat session', {
-      sessionId: session.id,
+      sdkSessionId: session.sdkSessionId ? session.sdkSessionId.slice(0, 8) + '...' : 'pending',
       agentPath: effectivePath,
       cwd: effectiveCwd,
-      loadMethod: resumeInfo.cacheHit ? 'cache hit' : resumeInfo.loadedFromDisk ? 'loaded from disk' : 'new session'
+      isNew
     });
 
-    // Handle initial context for new sessions (e.g., voice transcript, document)
-    // If initialContext is provided without a message, the context IS the message
-    // If both are provided, context is prepended to the message
+    // Handle initial context for new sessions
     let actualMessage = message;
     if (context.initialContext && session.messages.length === 0) {
       if (!message || message.trim() === '') {
-        // Context is the entire message
         actualMessage = context.initialContext;
         console.log(`[Orchestrator] Using initial context as message (${context.initialContext.length} chars)`);
       } else {
-        // Both provided - prepend context
         actualMessage = `## Context\n\n${context.initialContext}\n\n---\n\n## Request\n\n${message}`;
         console.log(`[Orchestrator] Prepending initial context (${context.initialContext.length} chars)`);
       }
     }
 
-    // Add user message to local history
-    await this.sessionManager.addMessage(sessionKey, 'user', actualMessage);
-
     const startTime = Date.now();
     let result = '';
+    const textBlocks = [];
     let spawnRequests = [];
     let toolCalls = [];
-
-    // Track permission denials for THIS request only
     const requestPermissionDenials = [];
 
     try {
-      // Build query options
-      //
-      // IMPORTANT: The SDK has two related options:
-      // - `tools`: Sets the BASE set of available tools (defaults to claude_code preset if not set)
-      // - `allowedTools`: RESTRICTS which tools from the base set are available
-      //
-      // We use `tools` to explicitly set only the tools we want available,
-      // rather than relying on allowedTools to restrict from the full preset.
       const agentTools = agent.permissions?.tools || agent.tools || [];
 
       // Load global MCP servers and resolve agent references
@@ -889,119 +887,83 @@ export class Orchestrator extends EventEmitter {
       const queryOptions = {
         systemPrompt,
         cwd: effectiveCwd,
-        // Use 'default' permission mode so canUseTool callback is invoked
-        // 'acceptEdits' auto-accepts and bypasses canUseTool!
         permissionMode: 'default',
-        // Add permission handler for fine-grained path-based write permissions
-        // Pass callback to track denials for this request
-        canUseTool: this.createPermissionHandler(agent, session.id, (denial) => {
+        canUseTool: this.createPermissionHandler(agent, session.sdkSessionId || 'new', (denial) => {
           requestPermissionDenials.push(denial);
         }),
-        // Explicitly set available tools - this is the primary restriction mechanism
         tools: agentTools.length > 0 ? agentTools : undefined,
-        // Enable skills from the vault's .claude/skills directory
         settingSources: ['project'],
-        // MCP servers (resolved from .mcp.json or inline)
         mcpServers: resolvedMcpServers
       };
 
+      // SIMPLIFIED: If we have an SDK session ID, just pass resume option
+      // The SDK handles all context rebuilding from its own storage
+      if (session.sdkSessionId) {
+        queryOptions.resume = session.sdkSessionId;
+        console.log(`[Orchestrator] Resuming SDK session: ${session.sdkSessionId.slice(0, 8)}...`);
+      } else {
+        console.log(`[Orchestrator] Starting new SDK session`);
+      }
+
       if (agentTools.length > 0) {
         console.log(`[Orchestrator] Tools for ${agent.name}: ${agentTools.join(', ')}`);
-      } else {
-        console.log(`[Orchestrator] Using default claude_code tools for ${agent.name}`);
       }
 
-      // Log MCP servers if configured
       if (resolvedMcpServers) {
-        const serverNames = Object.keys(resolvedMcpServers);
-        console.log(`[Orchestrator] MCP servers for ${agent.name}: ${serverNames.join(', ')}`);
+        console.log(`[Orchestrator] MCP servers for ${agent.name}: ${Object.keys(resolvedMcpServers).join(', ')}`);
       }
-
-      // Log write permissions for debugging
-      const writePatterns = agent.permissions?.write || ['*'];
-      console.log(`[Orchestrator] Write permissions for ${agent.name}: ${writePatterns.join(', ')}`);
-
-      // Prepare prompt with context injection if SDK session is unavailable
-      const { prompt: preparedPrompt, queryOptions: contextQueryOptions } =
-        this.sessionManager.preparePromptWithContext(session, actualMessage, resumeInfo);
-
-      // Merge context query options (may include resume)
-      Object.assign(queryOptions, contextQueryOptions);
-
-      // Log session resumption method
-      console.log(`[Orchestrator] Session method: ${resumeInfo.toString()}`);
-
-      console.log(`[Orchestrator] Query options:`, JSON.stringify({
-        ...queryOptions,
-        systemPrompt: systemPrompt ? `[${systemPrompt.length} chars]` : null,
-        canUseTool: queryOptions.canUseTool ? '[function]' : undefined,
-        resume: queryOptions.resume ? `${queryOptions.resume.slice(0, 20)}...` : undefined
-      }, null, 2));
 
       // Execute via Claude Agent SDK
       const response = query({
-        prompt: preparedPrompt,
+        prompt: actualMessage,
         options: queryOptions
       });
 
-      // Collect response and capture session ID
       let capturedSessionId = null;
 
       for await (const msg of response) {
-        // Try to capture session ID from messages
         if (msg.session_id) {
           capturedSessionId = msg.session_id;
         }
 
-        // Log system init message to see what tools the SDK actually loaded
         if (msg.type === 'system' && msg.subtype === 'init') {
           console.log(`[Orchestrator] SDK initialized with tools: ${msg.tools?.join(', ') || 'none'}`);
-          console.log(`[Orchestrator] SDK permission mode: ${msg.permissionMode}`);
         }
 
         if (msg.type === 'assistant' && msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === 'text') {
-              result = block.text;
+              textBlocks.push(block.text);
+              result = textBlocks.join('\n\n');
             }
-            // Capture tool calls
             if (block.type === 'tool_use') {
-              toolCalls.push({
-                name: block.name,
-                input: block.input
-              });
+              toolCalls.push({ name: block.name, input: block.input });
             }
           }
         } else if (msg.type === 'result') {
-          if (msg.result) {
-            result = msg.result;
-          }
-          // Session ID might be in the result
-          if (msg.session_id) {
-            capturedSessionId = msg.session_id;
-          }
+          if (msg.result) result = msg.result;
+          if (msg.session_id) capturedSessionId = msg.session_id;
         }
       }
 
-      // Update session with SDK session ID if we captured one
-      if (capturedSessionId && capturedSessionId !== session.sdkSessionId) {
-        await this.sessionManager.updateSdkSessionId(sessionKey, capturedSessionId);
-        console.log(`[Orchestrator] Stored SDK session ID: ${capturedSessionId}`);
+      // For new sessions, finalize with the SDK session ID we captured
+      if (isNew && capturedSessionId) {
+        await this.sessionManager.finalizeSession(session, capturedSessionId);
+        console.log(`[Orchestrator] Finalized new session: ${capturedSessionId.slice(0, 8)}...`);
       }
 
-      // Add assistant response to local history
-      await this.sessionManager.addMessage(sessionKey, 'assistant', result);
+      // Add messages to our markdown mirror
+      await this.sessionManager.addMessage(session, 'user', actualMessage);
+      await this.sessionManager.addMessage(session, 'assistant', result);
 
-      // Generate title asynchronously if session doesn't have one yet
+      // Generate title asynchronously
       const agentName = agent.name || effectivePath.replace('agents/', '').replace('.md', '');
-      this.sessionManager.maybeGenerateTitle(sessionKey, agentName).catch(err => {
+      this.sessionManager.maybeGenerateTitle(session, agentName).catch(err => {
         console.error(`[Orchestrator] Title generation error:`, err.message);
       });
 
-      // Parse spawn requests from response
       spawnRequests = this.parseSpawnRequests(result, agent, 0);
 
-      // Process spawn requests
       for (const spawn of spawnRequests) {
         if (this.config.maxDepth > 1) {
           await this.enqueue(spawn.agent, {
@@ -1021,10 +983,12 @@ export class Orchestrator extends EventEmitter {
         toolCalls: toolCalls.length
       });
 
-      // Clean up any pending permissions for this session from the global map
-      for (const [key, _] of this.pendingPermissions) {
-        if (key.startsWith(session.id)) {
-          this.pendingPermissions.delete(key);
+      // Clean up pending permissions
+      if (session.sdkSessionId) {
+        for (const [key, _] of this.pendingPermissions) {
+          if (key.startsWith(session.sdkSessionId)) {
+            this.pendingPermissions.delete(key);
+          }
         }
       }
 
@@ -1033,41 +997,20 @@ export class Orchestrator extends EventEmitter {
         response: result,
         spawned: spawnRequests.map(s => s.agent),
         durationMs: duration,
-        sessionId: session.id,
+        sessionId: session.sdkSessionId, // THE session ID for future requests
         workingDirectory: session.workingDirectory || null,
         messageCount: session.messages.length,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-        // Use the per-request denials instead of querying global map
         permissionDenials: requestPermissionDenials.length > 0 ? requestPermissionDenials : undefined,
-        // Session resumption debug info
-        sessionResume: resumeInfo.toJSON(),
-        debug: {
-          systemPromptLength: systemPrompt.length,
-          messageLength: message.length,
-          agentPath: effectivePath,
-          model: agent.model || 'default',
-          toolsAvailable: agentTools.length > 0 ? agentTools : ['(default)'],
-          writePermissions: agent.permissions?.write || ['*'],
-          // Enhanced session debug
-          sessionMethod: resumeInfo.method,
-          sessionCacheHit: resumeInfo.cacheHit,
-          sessionLoadedFromDisk: resumeInfo.loadedFromDisk,
-          contextInjected: resumeInfo.contextInjected,
-          messagesInjected: resumeInfo.messagesInjected,
-          tokensEstimate: resumeInfo.tokensEstimate
-        }
+        sessionResume: resumeInfo.toJSON()
       };
 
     } catch (error) {
       log.error('Chat error', {
         agentPath: effectivePath,
         error: error.message,
-        stack: error.stack,
-        cause: error.cause
+        stack: error.stack
       });
-
-      // Add error to history
-      await this.sessionManager.addMessage(sessionKey, 'system', `Error: ${error.message}`);
 
       return {
         success: false,
@@ -1075,24 +1018,16 @@ export class Orchestrator extends EventEmitter {
         response: '',
         spawned: [],
         durationMs: Date.now() - startTime,
-        sessionId: session.id
+        sessionId: session.sdkSessionId
       };
     }
   }
 
   /**
-   * Clear a chat session (start fresh)
+   * Delete a chat session by SDK session ID
    */
-  async clearChatSession(agentPath, context = {}) {
-    await this.sessionManager.clearSession(agentPath || 'vault-agent', context);
-  }
-
-  /**
-   * Get chat history for an agent
-   */
-  getChatHistory(agentPath, context = {}) {
-    const sessionKey = this.sessionManager.getSessionKey(agentPath || 'vault-agent', context);
-    return this.sessionManager.getMessages(sessionKey);
+  async deleteChatSession(sdkSessionId) {
+    return this.sessionManager.deleteSession(sdkSessionId);
   }
 
   /**
@@ -1103,38 +1038,31 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Get a specific session by ID
+   * Get a specific session by SDK session ID
    */
-  getSessionById(sessionId) {
-    return this.sessionManager.getSessionById(sessionId);
+  async getSessionById(sdkSessionId) {
+    return this.sessionManager.getSessionById(sdkSessionId);
   }
 
   /**
-   * Get a specific session by ID (async - loads from disk if needed)
+   * Archive a session by SDK session ID
    */
-  async getSessionByIdAsync(sessionId) {
-    return this.sessionManager.getSessionByIdAsync(sessionId);
+  async archiveSession(sdkSessionId) {
+    return this.sessionManager.archiveSession(sdkSessionId);
   }
 
   /**
-   * Archive a session by ID
+   * Unarchive a session by SDK session ID
    */
-  async archiveSession(sessionId) {
-    return this.sessionManager.archiveSession(sessionId);
+  async unarchiveSession(sdkSessionId) {
+    return this.sessionManager.unarchiveSession(sdkSessionId);
   }
 
   /**
-   * Unarchive a session by ID
+   * Delete a session by SDK session ID
    */
-  async unarchiveSession(sessionId) {
-    return this.sessionManager.unarchiveSession(sessionId);
-  }
-
-  /**
-   * Delete a session by ID
-   */
-  async deleteSessionById(sessionId) {
-    return this.sessionManager.deleteSessionById(sessionId);
+  async deleteSessionById(sdkSessionId) {
+    return this.sessionManager.deleteSession(sdkSessionId);
   }
 
   /**
@@ -1142,6 +1070,14 @@ export class Orchestrator extends EventEmitter {
    */
   getSessionStats() {
     return this.sessionManager.getStats();
+  }
+
+  /**
+   * Reload the session index from disk
+   * Call this when session files have been modified externally
+   */
+  async reloadSessionIndex() {
+    return this.sessionManager.reloadSessionIndex();
   }
 
   // ============================================================================
@@ -1221,7 +1157,11 @@ export class Orchestrator extends EventEmitter {
     let agent;
     let systemPrompt;
 
-    if (agentPath) {
+    // Use built-in vault agent if path is null/undefined or explicitly "vault-agent"
+    const useBuiltinVaultAgent = !agentPath || agentPath === 'vault-agent';
+
+    if (!useBuiltinVaultAgent) {
+      // Load specific agent from file
       agent = await loadAgent(agentPath, this.vaultPath);
       console.log(`[Orchestrator] Streaming agent: ${agent.name} from ${agentPath}`);
       systemPrompt = buildSystemPrompt(agent, additionalContext);
@@ -1434,6 +1374,7 @@ The user is now continuing this conversation with you. Respond naturally as if y
 
     const startTime = Date.now();
     let result = '';
+    const textBlocks = [];  // Accumulate text across multiple assistant messages
     let spawnRequests = [];
 
     try {
@@ -1461,7 +1402,9 @@ The user is now continuing this conversation with you. Respond naturally as if y
         if (msg.type === 'assistant' && msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === 'text') {
-              result = block.text;
+              // Accumulate text blocks (each assistant text message is a separate block)
+              textBlocks.push(block.text);
+              result = textBlocks.join('\n\n');
             }
           }
         } else if (msg.type === 'result') {
@@ -1709,6 +1652,7 @@ The user is now continuing this conversation with you. Respond naturally as if y
 
     const startTime = Date.now();
     let result = '';
+    const textBlocks = [];  // Accumulate text across multiple assistant messages
     let spawnRequests = [];
     let currentText = '';
     let toolCalls = [];
@@ -1757,7 +1701,9 @@ The user is now continuing this conversation with you. Respond naturally as if y
                   delta: newText.slice(currentText.length)
                 });
                 currentText = newText;
-                result = newText;
+                // Accumulate text blocks (each assistant text message is a separate block)
+                textBlocks.push(newText);
+                result = textBlocks.join('\n\n');
               }
             }
             if (block.type === 'tool_use') {
