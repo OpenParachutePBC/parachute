@@ -30,14 +30,29 @@ let mcpServersPath = null;
 
 /**
  * Get built-in MCP servers that are always available
+ * @param {string} vaultPath - Path to the vault (for env vars)
  * @returns {object} Map of built-in server name -> config
  */
-function getBuiltInServers() {
+function getBuiltInServers(vaultPath) {
+  // Pass VAULT_PATH to built-in MCPs so they know where to find config
+  // Note: SDK doesn't support 'cwd' - use absolute paths in args instead
+  const env = {
+    ...process.env,
+    VAULT_PATH: vaultPath || process.env.VAULT_PATH || './sample-vault'
+  };
+
   return {
     'vault-search': {
+      type: 'stdio',
       command: 'node',
-      args: ['mcp-vault-search.js'],
-      cwd: AGENT_DIR
+      args: [path.join(AGENT_DIR, 'mcp-vault-search.js')],
+      env
+    },
+    'para-generate': {
+      type: 'stdio',
+      command: 'node',
+      args: [path.join(AGENT_DIR, 'mcp-para-generate.js')],
+      env
     }
   };
 }
@@ -57,8 +72,8 @@ export async function loadMcpServers(vaultPath, forceReload = false) {
     return mcpServersCache;
   }
 
-  // Start with built-in servers
-  const builtIn = getBuiltInServers();
+  // Start with built-in servers (pass vault path for env vars)
+  const builtIn = getBuiltInServers(vaultPath);
   let userServers = {};
 
   try {
@@ -109,12 +124,20 @@ export async function loadMcpServers(vaultPath, forceReload = false) {
  * Built-in servers (like vault-search) are ALWAYS included regardless of config.
  *
  * @param {object|array|string|null} agentMcpServers - Agent's mcpServers config
- * @param {object} globalServers - Global server definitions from .mcp.json (includes built-ins)
+ * @param {object} globalServers - Global server definitions from .mcp.json (includes built-ins with env vars)
  * @returns {object|null} Resolved server configs ready for SDK
  */
 export function resolveMcpServers(agentMcpServers, globalServers) {
-  // Get built-in servers that should always be available
-  const builtIn = getBuiltInServers();
+  // Built-in server names (globalServers already includes these with correct env vars)
+  const builtInNames = ['vault-search', 'para-generate'];
+
+  // Extract built-in servers from globalServers (they have the correct env vars set)
+  const builtIn = {};
+  for (const name of builtInNames) {
+    if (globalServers && globalServers[name]) {
+      builtIn[name] = globalServers[name];
+    }
+  }
 
   // If no mcpServers specified, still return built-in servers
   if (!agentMcpServers) {
@@ -143,7 +166,7 @@ export function resolveMcpServers(agentMcpServers, globalServers) {
         // Reference to global server
         if (globalServers[item]) {
           resolved[item] = globalServers[item];
-        } else if (!builtIn[item]) {
+        } else if (!builtInNames.includes(item)) {
           // Only warn if not a built-in server
           console.warn(`[MCP] Unknown server reference: "${item}" - not found in .mcp.json`);
         }
@@ -162,7 +185,7 @@ export function resolveMcpServers(agentMcpServers, globalServers) {
         // Reference by value: { browser: "browser" } (unusual but support it)
         if (globalServers[config]) {
           resolved[name] = globalServers[config];
-        } else if (!builtIn[config]) {
+        } else if (!builtInNames.includes(config)) {
           console.warn(`[MCP] Unknown server reference: "${config}"`);
         }
       } else if (config && typeof config === 'object') {

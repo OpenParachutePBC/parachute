@@ -258,7 +258,7 @@ app.post('/api/chat', async (req, res) => {
 /**
  * POST /api/chat/stream
  * Streaming chat with agent via SSE
- * Events: session, init, text, tool_use, done, error
+ * Events: session, init, text, tool_use, tool_result, done, error
  */
 app.post('/api/chat/stream', async (req, res) => {
   // Set SSE headers

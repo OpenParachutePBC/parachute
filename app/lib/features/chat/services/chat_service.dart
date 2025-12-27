@@ -8,6 +8,7 @@ import '../models/agent.dart';
 import '../models/stream_event.dart';
 import '../models/context_file.dart';
 import '../models/system_prompt_info.dart';
+import '../models/working_directory.dart';
 
 /// Service for communicating with the parachute-agent backend
 class ChatService {
@@ -48,6 +49,27 @@ class ChatService {
     } catch (e) {
       debugPrint('[ChatService] Error getting sessions: $e');
       rethrow;
+    }
+  }
+
+  /// Reload the session index from disk
+  /// Call this to ensure the server's index reflects the current file state
+  Future<void> reloadSessionIndex() async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/api/chat/sessions/reload'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint('[ChatService] Failed to reload session index: ${response.statusCode}');
+      } else {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint('[ChatService] Session index reloaded: ${data['sessionCount']} sessions');
+      }
+    } catch (e) {
+      // Don't throw - this is a best-effort operation
+      debugPrint('[ChatService] Error reloading session index: $e');
     }
   }
 
@@ -204,6 +226,33 @@ class ChatService {
   }
 
   // ============================================================
+  // Working Directories
+  // ============================================================
+
+  /// Get available working directories for chat sessions
+  ///
+  /// Returns the home vault plus any recently used directories from existing sessions.
+  /// Use these when starting a new chat to work with external codebases.
+  Future<DirectoriesInfo> getDirectories() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$baseUrl/api/directories'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to get directories: ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return DirectoriesInfo.fromJson(data);
+    } catch (e) {
+      debugPrint('[ChatService] Error getting directories: $e');
+      rethrow;
+    }
+  }
+
+  // ============================================================
   // System Prompt
   // ============================================================
 
@@ -287,6 +336,9 @@ class ChatService {
   /// that go into the system prompt (not shown in user message)
   ///
   /// [continuedFrom] - ID of the session this continues from (for persistence)
+  ///
+  /// [workingDirectory] - Directory for Claude to operate in (for external codebases)
+  /// Sessions are still stored in the vault, but file operations target this directory
   Stream<StreamEvent> streamChat({
     required String sessionId,
     required String message,
@@ -295,10 +347,12 @@ class ChatService {
     List<String>? contexts,
     String? priorConversation,
     String? continuedFrom,
+    String? workingDirectory,
   }) async* {
     debugPrint('[ChatService] Starting stream chat');
     debugPrint('[ChatService] Session: $sessionId');
     debugPrint('[ChatService] Agent: $agentPath');
+    debugPrint('[ChatService] Working directory: $workingDirectory');
     debugPrint('[ChatService] Message: ${message.substring(0, message.length.clamp(0, 50))}...');
     debugPrint('[ChatService] priorConversation provided: ${priorConversation != null}');
     if (priorConversation != null) {
@@ -320,6 +374,7 @@ class ChatService {
       if (contexts != null && contexts.isNotEmpty) 'contexts': contexts,
       if (priorConversation != null) 'priorConversation': priorConversation,
       if (continuedFrom != null) 'continuedFrom': continuedFrom,
+      if (workingDirectory != null) 'workingDirectory': workingDirectory,
     };
     debugPrint('[ChatService] Request body keys: ${requestBody.keys.toList()}');
     request.body = jsonEncode(requestBody);

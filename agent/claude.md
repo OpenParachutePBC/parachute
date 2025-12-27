@@ -41,6 +41,10 @@ Parachute Agent is the backend for Parachute - an AI agent system that uses mark
 | `lib/logger.js` | Structured logging with in-memory buffer |
 | `lib/errors.js` | Custom error classes with HTTP status codes |
 | `lib/vault-search.js` | Search over Flutter app's SQLite index |
+| `lib/generate-config.js` | Generation backend configuration manager |
+| `lib/generate-backends/*.js` | Backend adapters (mflux, nano-banana) |
+| `mcp-vault-search.js` | MCP server for vault search |
+| `mcp-para-generate.js` | MCP server for content generation |
 | `obsidian-plugin/main.ts` | Optional Obsidian plugin |
 
 ## Commands
@@ -94,6 +98,11 @@ VAULT_PATH=/path/to/vault npm start  # Custom vault
 | `/api/vault-search/content` | GET | List indexed content (params: `contentType?`, `limit?`) |
 | `/api/vault-search/content/:id` | GET | Get specific indexed content by ID |
 | `/api/setup` | GET | Get Ollama and search index status with setup instructions |
+| `/api/generate/config` | GET | Get full generation configuration |
+| `/api/generate/backends/:type` | GET | List backends for a content type (image, audio, etc.) |
+| `/api/generate/backends/:type/:name` | PUT | Update backend configuration |
+| `/api/generate/default/:type` | PUT | Set default backend for a content type |
+| `/api/generate/backends/:type/:name/status` | GET | Check backend availability and setup instructions |
 
 ## Agent Definition Format
 
@@ -370,6 +379,59 @@ The `vault-search` MCP server is **built-in and always available** to all agents
 - **API**: `GET /api/setup` - Returns Ollama and search index status
 - **CLI**: Server startup shows semantic search status
 - **MCP**: `vault_semantic_status` tool provides setup instructions
+
+### Para-Generate MCP Server (Content Generation) - Built-in
+
+The `para-generate` MCP server is **built-in and always available** to all agents. It provides tools for generating images, audio, and other content using pluggable backends.
+
+**Image Backends:**
+- **mflux**: Local FLUX image generation on Apple Silicon Macs (default)
+- **nano-banana**: Google Gemini API (fast cloud generation)
+
+**Setup:**
+1. **mflux** (local): Install via `uv tool install mflux` or `pip install mflux`
+2. **nano-banana** (cloud): Get a Gemini API key from https://aistudio.google.com/apikey
+
+**Para-Generate Tools:**
+- `create_image` - Generate an image from a text prompt
+- `list_image_backends` - List available image backends and their status
+- `check_image_backend` - Check if a specific backend is available with setup instructions
+
+**Configuration:**
+Settings stored in `{vault}/.parachute/generate.json`:
+```json
+{
+  "image": {
+    "default": "mflux",
+    "backends": {
+      "mflux": {
+        "enabled": true,
+        "model": "schnell",
+        "steps": 4
+      },
+      "nano-banana": {
+        "enabled": true,
+        "api_key": "your-gemini-key"
+      }
+    }
+  }
+}
+```
+
+**API Endpoints:**
+- `GET /api/generate/config` - Get full configuration
+- `GET /api/generate/backends/image` - List image backends with status
+- `PUT /api/generate/backends/image/mflux` - Update mflux settings
+- `PUT /api/generate/default/image` - Set default image backend
+
+**Usage in Chat:**
+```
+User: Generate an image of a sunset over mountains
+Agent: [uses create_image tool with default backend]
+
+User: Generate an image of a cat using nano-banana
+Agent: [uses create_image tool with backend="nano-banana"]
+```
 
 ## Authentication
 

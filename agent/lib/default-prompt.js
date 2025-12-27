@@ -43,6 +43,20 @@ You have access to vault-search tools that search past conversations and journal
 - You need context from their journal or previous chats
 - The user asks you to find or remember something
 
+### Image Generation (para-generate)
+
+You can generate images using the para-generate MCP tools:
+- \`mcp__para-generate__create_image\` - Generate an image from a text prompt
+- \`mcp__para-generate__list_image_backends\` - See available backends and their status
+- \`mcp__para-generate__check_image_backend\` - Check if a specific backend is available
+
+**Backends:**
+- **mflux**: Local generation on Mac using FLUX models (fast, no API key needed)
+- **nano-banana**: Google Gemini API (requires API key, configured in settings)
+
+**Usage:**
+When the user asks you to generate, create, or make an image, use the create_image tool. The result will be saved to assets/ and you MUST include the exact markdown image syntax from the tool output in your response (e.g., \`![description](assets/2025-12/gen_xxx.png)\`) so the image displays inline.
+
 ### File Tools
 
 - **Glob**: Find files by pattern

@@ -99,8 +99,13 @@ class SearchIndexService {
   // Status tracking
   IndexingStatus _status = IndexingStatus.idle;
   String? _errorMessage;
+  String _statusMessage = '';
   int _totalToIndex = 0;
   int _indexedCount = 0;
+
+  // Scanning progress (during syncing phase)
+  int _scanTotal = 0;
+  int _scanProgress = 0;
 
   // Prevent concurrent sync operations
   bool _isSyncing = false;
@@ -149,6 +154,15 @@ class SearchIndexService {
 
   /// Error message if status is error
   String? get errorMessage => _errorMessage;
+
+  /// Human-readable status message describing current activity
+  String get statusMessage => _statusMessage;
+
+  /// Total items being scanned (during syncing phase)
+  int get scanTotal => _scanTotal;
+
+  /// Items scanned so far (during syncing phase)
+  int get scanProgress => _scanProgress;
 
   /// Total number of recordings to process in current operation
   int get totalToIndex => _totalToIndex;
@@ -440,16 +454,26 @@ class SearchIndexService {
     try {
       debugPrint('[SearchIndex] Starting journal sync...');
       _status = IndexingStatus.syncing;
+      _statusMessage = 'Scanning journals...';
       _notifyListeners();
 
       // Get all journal dates
       final dates = await _journalService!.listJournalDates();
       debugPrint('[SearchIndex] Found ${dates.length} journal days');
 
+      // Set up scanning progress
+      _scanTotal = dates.length;
+      _scanProgress = 0;
+      _notifyListeners();
+
       // Check each journal for changes
       final toIndex = <JournalDay>[];
 
       for (final date in dates) {
+        _scanProgress++;
+        _statusMessage = 'Scanning journals... ($_scanProgress/$_scanTotal)';
+        _notifyListeners();
+
         final journal = await _journalService!.loadDay(date);
         if (journal.entries.isEmpty) continue;
 
@@ -482,10 +506,14 @@ class SearchIndexService {
       _status = IndexingStatus.indexing;
       _totalToIndex = toIndex.length;
       _indexedCount = 0;
+      _statusMessage = 'Indexing journals...';
       _notifyListeners();
 
       for (var i = 0; i < toIndex.length; i++) {
         final journal = toIndex[i];
+        _statusMessage = 'Indexing journal ${i + 1}/${toIndex.length}';
+        _notifyListeners();
+
         try {
           debugPrint(
             '[SearchIndex] Indexing journal ${i + 1}/${toIndex.length}: ${journal.dateString}',
@@ -500,6 +528,7 @@ class SearchIndexService {
       }
 
       _status = IndexingStatus.idle;
+      _statusMessage = '';
       _notifyListeners();
 
       debugPrint('[SearchIndex] ✅ Journal sync complete: ${toIndex.length} days indexed');
@@ -713,16 +742,26 @@ class SearchIndexService {
     try {
       debugPrint('[SearchIndex] Starting chat sync...');
       _status = IndexingStatus.syncing;
+      _statusMessage = 'Scanning chats...';
       _notifyListeners();
 
       // Get all local sessions
       final sessions = await _sessionReader!.getLocalSessions();
       debugPrint('[SearchIndex] Found ${sessions.length} chat sessions');
 
+      // Set up scanning progress
+      _scanTotal = sessions.length;
+      _scanProgress = 0;
+      _notifyListeners();
+
       // Check each session for changes
       final toIndex = <ChatSessionWithLocalMessages>[];
 
       for (final session in sessions) {
+        _scanProgress++;
+        _statusMessage = 'Scanning chats... ($_scanProgress/$_scanTotal)';
+        _notifyListeners();
+
         final contentId = 'chat:${session.id}';
 
         // Load full session with messages
@@ -745,10 +784,14 @@ class SearchIndexService {
       _status = IndexingStatus.indexing;
       _totalToIndex = toIndex.length;
       _indexedCount = 0;
+      _statusMessage = 'Indexing chats...';
       _notifyListeners();
 
       for (var i = 0; i < toIndex.length; i++) {
         final sessionData = toIndex[i];
+        _statusMessage = 'Indexing chat ${i + 1}/${toIndex.length}';
+        _notifyListeners();
+
         try {
           debugPrint(
             '[SearchIndex] Indexing chat ${i + 1}/${toIndex.length}: ${sessionData.session.title ?? sessionData.session.id}',
@@ -765,6 +808,7 @@ class SearchIndexService {
       }
 
       _status = IndexingStatus.idle;
+      _statusMessage = '';
       _notifyListeners();
 
       debugPrint(
