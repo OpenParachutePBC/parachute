@@ -124,7 +124,6 @@ final searchIndexServiceProvider = Provider<SearchIndexService>((ref) {
   );
 
   // Configure journal indexing
-  final journalChunker = ref.watch(journalChunkerProvider);
   final sessionReader = ref.watch(localSessionReaderProvider);
   final chatChunker = ref.watch(chatChunkerProvider);
 

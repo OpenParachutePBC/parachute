@@ -1,4 +1,3 @@
-import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -53,7 +52,7 @@ void main() async {
       // Load the native opus library via opus_flutter
       final opusLib = await opus_flutter.load();
       // Initialize opus_dart with the loaded library
-      opus_dart.initOpus(opusLib as DynamicLibrary);
+      opus_dart.initOpus(opusLib);
       debugPrint('[Main] ✅ Opus codec initialized successfully');
     } catch (e, stackTrace) {
       debugPrint('[Main] ⚠️  Failed to initialize Opus codec: $e');

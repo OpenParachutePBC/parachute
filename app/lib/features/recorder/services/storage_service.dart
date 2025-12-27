@@ -18,7 +18,8 @@ import 'package:just_audio/just_audio.dart';
 /// - Old captures in ~/Parachute/captures/ are still readable
 /// - New recordings should use the journal system via JournalService
 class StorageService {
-  final Ref? _ref; // Optional ref for accessing providers (like Git sync)
+  // ignore: unused_field
+  final Ref? _ref;
 
   static const String _hasInitializedKey = 'has_initialized';
   static const String _openaiApiKeyKey = 'openai_api_key';
@@ -159,15 +160,6 @@ class StorageService {
       debugPrint('[StorageService] Error setting root path: $e');
       return false;
     }
-  }
-
-  /// Get the path for a recording's audio file (in month/_audio folder)
-  Future<String> _getAudioPath(String recordingId, DateTime timestamp) async {
-    final audioPath = await _fileSystem.getAudioFolderPath(timestamp);
-    final timestampStr = FileSystemService.formatTimestampForFilename(
-      timestamp,
-    );
-    return '$audioPath/$timestampStr.wav';
   }
 
   /// Load all recordings from local filesystem (LOCAL-FIRST)
@@ -539,7 +531,7 @@ class StorageService {
                 // Filter out the default tag to avoid duplication
                 if (tag.isNotEmpty && tag != 'parachute/capture') {
                   parsedTags ??= [];
-                  parsedTags!.add(tag);
+                  parsedTags.add(tag);
                 }
               } else if (!line.startsWith('  ')) {
                 // End of tags section
@@ -1180,65 +1172,6 @@ class StorageService {
         '[StorageService] Available IDs: ${recordings.map((r) => r.id).take(5).join(", ")}...',
       );
       return null;
-    }
-  }
-
-  /// Create sample recordings for demo purposes
-  Future<void> _createSampleRecordings() async {
-    final now = DateTime.now();
-
-    final timestamp1 = now.subtract(const Duration(hours: 2));
-    final timestamp2 = now.subtract(const Duration(days: 1));
-    final timestamp3 = now.subtract(const Duration(hours: 5));
-
-    final sampleRecordings = [
-      Recording(
-        id: 'sample_1',
-        title: 'Welcome to Parachute',
-        filePath: await _getAudioPath('sample_1', timestamp1),
-        timestamp: timestamp1,
-        duration: const Duration(minutes: 1, seconds: 30),
-        tags: ['welcome', 'tutorial'],
-        transcript:
-            'Welcome to Parachute, your personal voice recording assistant. '
-            'This app helps you capture thoughts, ideas, and important moments with ease.',
-        fileSizeKB: 450,
-      ),
-      Recording(
-        id: 'sample_2',
-        title: 'Meeting Notes',
-        filePath: await _getAudioPath('sample_2', timestamp2),
-        timestamp: timestamp2,
-        duration: const Duration(minutes: 15, seconds: 45),
-        tags: ['work', 'meeting', 'project-alpha'],
-        transcript:
-            'Today we discussed the new features for Project Alpha. '
-            'Key decisions: 1) Move deadline to next quarter, 2) Add two more developers to the team, '
-            '3) Focus on mobile-first approach.',
-        fileSizeKB: 2340,
-      ),
-      Recording(
-        id: 'sample_3',
-        title: 'Quick Reminder',
-        filePath: await _getAudioPath('sample_3', timestamp3),
-        timestamp: timestamp3,
-        duration: const Duration(seconds: 45),
-        tags: ['personal', 'reminder'],
-        transcript:
-            'Remember to call the dentist tomorrow morning to schedule the appointment. '
-            'Also, pick up groceries on the way home.',
-        fileSizeKB: 180,
-      ),
-    ];
-
-    for (final recording in sampleRecordings) {
-      await saveRecording(recording);
-
-      // Create empty placeholder audio files
-      final audioFile = File(recording.filePath);
-      if (!await audioFile.exists()) {
-        await audioFile.create(recursive: true);
-      }
     }
   }
 

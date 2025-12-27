@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:collection';
-import 'package:flutter/foundation.dart';
 import 'logger_service.dart';
 
 /// Priority levels for queued tasks

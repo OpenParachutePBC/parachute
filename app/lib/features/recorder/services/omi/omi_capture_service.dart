@@ -42,6 +42,7 @@ class OmiCaptureService {
   // Real-time streaming state
   WavBytesUtil? _wavBytesUtil;
   DateTime? _recordingStartTime;
+  // ignore: unused_field
   int? _currentButtonTapCount;
   Timer? _legacyButtonTimer;
 

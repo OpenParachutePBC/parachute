@@ -372,12 +372,6 @@ class ConversationImportService {
     return 'Untitled conversation';
   }
 
-  /// Format a timestamp for display
-  String _formatTimestamp(DateTime timestamp) {
-    return '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}-${timestamp.day.toString().padLeft(2, '0')} '
-        '${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}';
-  }
-
   /// Escape a string for YAML
   String _escapeYaml(String value) {
     // If contains special characters, quote it

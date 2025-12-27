@@ -653,10 +653,10 @@ class FileSystemService {
           if (bookmarkData != null) {
             try {
               debugPrint('[FileSystemService] Restoring secure bookmark...');
-              final resolvedEntity = await _secureBookmarks!.resolveBookmark(bookmarkData);
+              final resolvedEntity = await _secureBookmarks.resolveBookmark(bookmarkData);
 
               // Start accessing the security-scoped resource
-              await _secureBookmarks!.startAccessingSecurityScopedResource(resolvedEntity);
+              await _secureBookmarks.startAccessingSecurityScopedResource(resolvedEntity);
               _isAccessingSecurityScopedResource = true;
               debugPrint('[FileSystemService] Secure bookmark restored: ${resolvedEntity.path}');
 
@@ -903,7 +903,7 @@ class FileSystemService {
           if (_isAccessingSecurityScopedResource && _rootFolderPath != null) {
             try {
               final oldDir = Directory(_rootFolderPath!);
-              await _secureBookmarks!.stopAccessingSecurityScopedResource(oldDir);
+              await _secureBookmarks.stopAccessingSecurityScopedResource(oldDir);
             } catch (e) {
               debugPrint('[FileSystemService] Error stopping old resource access: $e');
             }
@@ -912,7 +912,7 @@ class FileSystemService {
 
           // Create a new secure bookmark for the directory
           final newDir = Directory(path);
-          final bookmarkData = await _secureBookmarks!.bookmark(newDir);
+          final bookmarkData = await _secureBookmarks.bookmark(newDir);
           debugPrint('[FileSystemService] Created secure bookmark for: $path');
 
           // Save the bookmark for later restoration
@@ -920,7 +920,7 @@ class FileSystemService {
           await prefs.setString(_secureBookmarkKey, bookmarkData);
 
           // Start accessing the new resource
-          await _secureBookmarks!.startAccessingSecurityScopedResource(newDir);
+          await _secureBookmarks.startAccessingSecurityScopedResource(newDir);
           _isAccessingSecurityScopedResource = true;
         } catch (e) {
           debugPrint('[FileSystemService] Failed to create secure bookmark: $e');

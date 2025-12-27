@@ -11,6 +11,7 @@ import 'package:app/core/services/file_system_service.dart';
 enum RecordingState { stopped, recording, paused }
 
 class AudioService {
+  // ignore: unused_field
   final StorageService _storageService;
   final AudioRecorder _recorder = AudioRecorder();
   final AudioPlayer _player = AudioPlayer();
