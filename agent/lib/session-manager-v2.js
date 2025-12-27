@@ -31,12 +31,22 @@ export class SessionResumeInfo {
   }
 
   toJSON() {
+    // method: 'new' | 'sdk_resume' (no more context_injection in v2)
+    const method = this.isNewSession ? 'new' : 'sdk_resume';
+
     return {
+      method,
       isNewSession: this.isNewSession,
       sdkSessionId: this.sdkSessionId ? `${this.sdkSessionId.slice(0, 8)}...` : null,
+      sdkSessionValid: !this.isNewSession && this.sdkSessionId != null,
+      sdkResumeAttempted: !this.isNewSession,
       previousMessageCount: this.previousMessageCount,
       loadedFromDisk: this.loadedFromDisk,
-      cacheHit: this.cacheHit
+      cacheHit: this.cacheHit,
+      // These are always false in v2 (no context injection)
+      contextInjected: false,
+      messagesInjected: 0,
+      tokensEstimate: 0
     };
   }
 
