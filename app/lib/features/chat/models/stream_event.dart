@@ -10,6 +10,7 @@ enum StreamEventType {
   thinking,
   toolUse,
   toolResult,
+  sessionUnavailable, // SDK session couldn't be resumed
   done,
   error,
   unknown,
@@ -61,6 +62,9 @@ class StreamEvent {
           break;
         case 'tool_result':
           type = StreamEventType.toolResult;
+          break;
+        case 'session_unavailable':
+          type = StreamEventType.sessionUnavailable;
           break;
         case 'done':
           type = StreamEventType.done;
@@ -121,4 +125,18 @@ class StreamEvent {
     if (resumeData == null) return null;
     return SessionResumeInfo.fromJson(resumeData);
   }
+
+  // Session unavailable event accessors
+
+  /// Get reason for session unavailable (e.g., 'sdk_session_not_found')
+  String? get unavailableReason => data['reason'] as String?;
+
+  /// Whether markdown history is available for recovery
+  bool get hasMarkdownHistory => data['hasMarkdownHistory'] as bool? ?? false;
+
+  /// Number of messages in markdown history
+  int get markdownMessageCount => data['messageCount'] as int? ?? 0;
+
+  /// User-friendly message explaining the situation
+  String? get unavailableMessage => data['message'] as String?;
 }

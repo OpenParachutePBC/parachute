@@ -133,6 +133,57 @@ If you have suggestions, show me the specific edits you'd recommend.''';
     _handleSend(reflectPrompt);
   }
 
+  void _showSessionRecoveryDialog(SessionUnavailableInfo info) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: const Text('Session Recovery'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(info.message),
+              if (info.hasMarkdownHistory) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '${info.messageCount} messages available from history.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                ref.read(chatMessagesProvider.notifier).dismissSessionUnavailable();
+              },
+              child: const Text('Cancel'),
+            ),
+            if (info.hasMarkdownHistory)
+              TextButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  ref.read(chatMessagesProvider.notifier).recoverSession('inject_context');
+                },
+                child: const Text('Continue with History'),
+              ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                ref.read(chatMessagesProvider.notifier).recoverSession('fresh_start');
+              },
+              child: const Text('Start Fresh'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -162,6 +213,11 @@ If you have suggestions, show me the specific edits you'd recommend.''';
             _lastMessageCount = next.messages.length;
           });
         }
+      }
+
+      // Show session recovery dialog when session is unavailable
+      if (next.sessionUnavailable != null && previous?.sessionUnavailable == null) {
+        _showSessionRecoveryDialog(next.sessionUnavailable!);
       }
     });
 

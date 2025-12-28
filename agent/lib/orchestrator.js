@@ -662,6 +662,27 @@ export class Orchestrator extends EventEmitter {
       }
     }
 
+    // Handle recovery mode (user chose how to proceed after session_unavailable)
+    let forceNewSession = false;
+    if (context.recoveryMode === 'inject_context' && session.messages.length > 0) {
+      // User chose to continue with context injection from markdown history
+      // Format prior messages like we do for imported conversations
+      const priorContext = this.formatMessagesForContextInjection(session.messages);
+      if (priorContext) {
+        actualMessage = `## Prior Conversation\n\n${priorContext}\n\n---\n\n## Current Message\n\n${message}`;
+        console.log(`[Orchestrator] Injecting ${session.messages.length} messages from markdown history`);
+      }
+      forceNewSession = true; // Don't try to resume, start fresh with injected context
+      // Clear the old SDK session ID since we're starting fresh
+      session.sdkSessionId = null;
+    } else if (context.recoveryMode === 'fresh_start') {
+      // User chose to start completely fresh
+      console.log(`[Orchestrator] Fresh start - no context injection`);
+      forceNewSession = true;
+      session.sdkSessionId = null;
+      session.messages = []; // Clear message history for fresh start
+    }
+
     const startTime = Date.now();
     let result = '';
     const textBlocks = [];
@@ -689,11 +710,11 @@ export class Orchestrator extends EventEmitter {
 
       // SIMPLIFIED: If we have an SDK session ID, just pass resume option
       // The SDK handles all context rebuilding from its own storage
-      if (session.sdkSessionId) {
+      if (session.sdkSessionId && !forceNewSession) {
         queryOptions.resume = session.sdkSessionId;
         console.log(`[Orchestrator] Resuming SDK session: ${session.sdkSessionId.slice(0, 8)}...`);
       } else {
-        console.log(`[Orchestrator] Starting new SDK session`);
+        console.log(`[Orchestrator] Starting new SDK session${forceNewSession ? ' (recovery mode)' : ''}`);
       }
 
       console.log(`[Orchestrator] Streaming query for ${agent.name}`);
@@ -892,6 +913,34 @@ export class Orchestrator extends EventEmitter {
       };
 
     } catch (error) {
+      // Check if this is a session-not-found error (SDK can't find the JSONL file)
+      const isSessionNotFound = error.message?.includes('ENOENT') ||
+                                 error.message?.includes('no such file') ||
+                                 error.message?.includes('session') && error.message?.includes('not found');
+
+      if (isSessionNotFound && session.sdkSessionId) {
+        log.warn('SDK session not found', {
+          sdkSessionId: session.sdkSessionId.slice(0, 8) + '...',
+          error: error.message
+        });
+
+        // Check if we have markdown history we could use for recovery
+        const hasMarkdownHistory = session.messages && session.messages.length > 0;
+
+        yield {
+          type: 'session_unavailable',
+          reason: 'sdk_session_not_found',
+          sessionId: session.sdkSessionId,
+          hasMarkdownHistory,
+          messageCount: session.messages?.length || 0,
+          message: 'The conversation history could not be loaded from the SDK. ' +
+                   (hasMarkdownHistory
+                     ? 'You can continue with context from saved history, or start fresh.'
+                     : 'You can start a new conversation.')
+        };
+        return; // Don't yield error, let client handle recovery choice
+      }
+
       log.error('Streaming error', { agentPath: effectivePath, error: error.message });
 
       yield {
@@ -1965,6 +2014,46 @@ ${result.response || 'No response'}
    */
   async getAgents() {
     return loadAllAgents(this.vaultPath);
+  }
+
+  /**
+   * Format messages for context injection (when SDK session is unavailable)
+   * Similar to how we format imported conversations
+   *
+   * @param {Array} messages - Array of {role, content, timestamp} objects
+   * @returns {string} Formatted conversation context
+   */
+  formatMessagesForContextInjection(messages) {
+    if (!messages || messages.length === 0) {
+      return null;
+    }
+
+    // Limit to last N messages to avoid token overflow (~50k tokens max)
+    const MAX_MESSAGES = 50;
+    const MAX_CHARS = 100000; // ~25k tokens
+
+    let relevantMessages = messages.slice(-MAX_MESSAGES);
+    let formatted = '';
+
+    for (const msg of relevantMessages) {
+      const role = msg.role === 'assistant' ? 'Assistant' : 'Human';
+      const content = msg.content || '';
+
+      // Truncate very long messages
+      const truncated = content.length > 2000
+        ? content.slice(0, 2000) + '... [truncated]'
+        : content;
+
+      formatted += `**${role}**: ${truncated}\n\n`;
+
+      // Stop if we exceed max chars
+      if (formatted.length > MAX_CHARS) {
+        formatted = formatted.slice(0, MAX_CHARS) + '\n\n[Earlier messages truncated for context limit]';
+        break;
+      }
+    }
+
+    return formatted.trim();
   }
 
   // ============================================================================

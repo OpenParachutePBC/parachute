@@ -339,6 +339,9 @@ class ChatService {
   ///
   /// [workingDirectory] - Directory for Claude to operate in (for external codebases)
   /// Sessions are still stored in the vault, but file operations target this directory
+  /// [recoveryMode] - How to recover when SDK session is unavailable:
+  ///   - 'inject_context': Continue with context injection from markdown history
+  ///   - 'fresh_start': Start a completely new conversation
   Stream<StreamEvent> streamChat({
     required String sessionId,
     required String message,
@@ -348,6 +351,7 @@ class ChatService {
     String? priorConversation,
     String? continuedFrom,
     String? workingDirectory,
+    String? recoveryMode,
   }) async* {
     debugPrint('[ChatService] Starting stream chat');
     debugPrint('[ChatService] Session: $sessionId');
@@ -375,6 +379,7 @@ class ChatService {
       if (priorConversation != null) 'priorConversation': priorConversation,
       if (continuedFrom != null) 'continuedFrom': continuedFrom,
       if (workingDirectory != null) 'workingDirectory': workingDirectory,
+      if (recoveryMode != null) 'recoveryMode': recoveryMode,
     };
     debugPrint('[ChatService] Request body keys: ${requestBody.keys.toList()}');
     request.body = jsonEncode(requestBody);

@@ -206,6 +206,10 @@ class ChatMessagesState {
   /// Set when receiving a session or done event from the backend
   final SessionResumeInfo? sessionResumeInfo;
 
+  /// Session unavailability info - set when SDK session cannot be resumed
+  /// Contains info for showing recovery dialog to user
+  final SessionUnavailableInfo? sessionUnavailable;
+
   const ChatMessagesState({
     this.messages = const [],
     this.isStreaming = false,
@@ -216,6 +220,7 @@ class ChatMessagesState {
     this.priorMessages = const [],
     this.viewingSession,
     this.sessionResumeInfo,
+    this.sessionUnavailable,
   });
 
   /// Whether this session is continuing from another
@@ -234,6 +239,8 @@ class ChatMessagesState {
     List<ChatMessage>? priorMessages,
     ChatSession? viewingSession,
     SessionResumeInfo? sessionResumeInfo,
+    SessionUnavailableInfo? sessionUnavailable,
+    bool clearSessionUnavailable = false,
   }) {
     return ChatMessagesState(
       messages: messages ?? this.messages,
@@ -245,8 +252,30 @@ class ChatMessagesState {
       priorMessages: priorMessages ?? this.priorMessages,
       viewingSession: viewingSession ?? this.viewingSession,
       sessionResumeInfo: sessionResumeInfo ?? this.sessionResumeInfo,
+      sessionUnavailable: clearSessionUnavailable ? null : (sessionUnavailable ?? this.sessionUnavailable),
     );
   }
+}
+
+/// Information about a session that couldn't be resumed
+class SessionUnavailableInfo {
+  final String sessionId;
+  final String reason;
+  final bool hasMarkdownHistory;
+  final int messageCount;
+  final String message;
+
+  /// The original message that was being sent when the error occurred
+  final String pendingMessage;
+
+  const SessionUnavailableInfo({
+    required this.sessionId,
+    required this.reason,
+    required this.hasMarkdownHistory,
+    required this.messageCount,
+    required this.message,
+    required this.pendingMessage,
+  });
 }
 
 /// Notifier for managing chat messages and streaming
@@ -641,6 +670,23 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             }
             break;
 
+          case StreamEventType.sessionUnavailable:
+            // SDK session couldn't be resumed - ask user how to proceed
+            final unavailableInfo = SessionUnavailableInfo(
+              sessionId: event.sessionId ?? actualSessionId ?? '',
+              reason: event.unavailableReason ?? 'unknown',
+              hasMarkdownHistory: event.hasMarkdownHistory,
+              messageCount: event.markdownMessageCount,
+              message: event.unavailableMessage ?? 'Session could not be resumed.',
+              pendingMessage: message,
+            );
+            state = state.copyWith(
+              isStreaming: false,
+              sessionUnavailable: unavailableInfo,
+            );
+            debugPrint('[ChatMessagesNotifier] Session unavailable: ${unavailableInfo.reason}');
+            return; // Stop processing, wait for user decision
+
           case StreamEventType.init:
           case StreamEventType.unknown:
             // Ignore init and unknown events
@@ -675,6 +721,140 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     );
 
     state = state.copyWith(messages: messages);
+  }
+
+  /// Handle user's choice for session recovery
+  /// Called when user selects how to proceed after session_unavailable
+  ///
+  /// [recoveryMode] - Either 'inject_context' or 'fresh_start'
+  Future<void> recoverSession(String recoveryMode) async {
+    final unavailableInfo = state.sessionUnavailable;
+    if (unavailableInfo == null) {
+      debugPrint('[ChatMessagesNotifier] recoverSession called but no unavailable info');
+      return;
+    }
+
+    debugPrint('[ChatMessagesNotifier] Recovering session with mode: $recoveryMode');
+
+    // Clear the unavailable state
+    state = state.copyWith(clearSessionUnavailable: true);
+
+    // If fresh start, also clear the session ID to get a new one
+    if (recoveryMode == 'fresh_start') {
+      state = state.copyWith(
+        sessionId: null,
+        messages: [],
+        clearSessionUnavailable: true,
+      );
+    }
+
+    // Retry the original message with recovery mode
+    // We pass the recoveryMode through to the service
+    await _sendMessageWithRecovery(
+      message: unavailableInfo.pendingMessage,
+      sessionId: unavailableInfo.sessionId,
+      recoveryMode: recoveryMode,
+    );
+  }
+
+  /// Dismiss the session unavailable dialog without retrying
+  void dismissSessionUnavailable() {
+    state = state.copyWith(clearSessionUnavailable: true);
+  }
+
+  /// Internal method to send message with recovery mode
+  Future<void> _sendMessageWithRecovery({
+    required String message,
+    required String sessionId,
+    required String recoveryMode,
+  }) async {
+    if (state.isStreaming) return;
+
+    // Add user message immediately
+    final userMessage = ChatMessage.user(
+      sessionId: sessionId,
+      text: message,
+    );
+
+    // Create placeholder for assistant response
+    final assistantMessage = ChatMessage.assistantPlaceholder(
+      sessionId: sessionId,
+    );
+
+    // Mark this session as the active stream
+    _activeStreamSessionId = sessionId;
+
+    state = state.copyWith(
+      messages: [...state.messages, userMessage, assistantMessage],
+      isStreaming: true,
+      sessionId: sessionId,
+      error: null,
+    );
+
+    // Track accumulated content for streaming
+    List<MessageContent> accumulatedContent = [];
+    String? actualSessionId;
+
+    try {
+      await for (final event in _service.streamChat(
+        sessionId: sessionId,
+        message: message,
+        recoveryMode: recoveryMode,
+      )) {
+        // Ignore events from old streams
+        if (_activeStreamSessionId != sessionId) {
+          debugPrint('[ChatMessagesNotifier] Ignoring event from old stream');
+          break;
+        }
+
+        switch (event.type) {
+          case StreamEventType.session:
+            actualSessionId = event.sessionId ?? actualSessionId;
+            if (actualSessionId != null) {
+              _ref.read(currentSessionIdProvider.notifier).state = actualSessionId;
+            }
+            break;
+
+          case StreamEventType.text:
+            final text = event.textContent ?? '';
+            accumulatedContent = [MessageContent.text(text)];
+            _updateAssistantMessage(accumulatedContent, isStreaming: true);
+            break;
+
+          case StreamEventType.done:
+            final doneSessionId = event.sessionId;
+            if (doneSessionId != null && doneSessionId.isNotEmpty) {
+              actualSessionId = doneSessionId;
+              _ref.read(currentSessionIdProvider.notifier).state = doneSessionId;
+            }
+            state = state.copyWith(
+              isStreaming: false,
+              sessionId: actualSessionId,
+              sessionTitle: event.sessionTitle,
+              sessionResumeInfo: event.sessionResumeInfo,
+            );
+            _updateAssistantMessage(accumulatedContent, isStreaming: false);
+            break;
+
+          case StreamEventType.error:
+            state = state.copyWith(
+              isStreaming: false,
+              error: event.errorMessage,
+            );
+            break;
+
+          default:
+            // Handle other events normally
+            break;
+        }
+      }
+    } catch (e) {
+      debugPrint('[ChatMessagesNotifier] Recovery stream error: $e');
+      state = state.copyWith(
+        isStreaming: false,
+        error: e.toString(),
+      );
+    }
   }
 }
 
