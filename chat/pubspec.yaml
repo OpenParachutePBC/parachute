@@ -1,0 +1,138 @@
+name: parachute_chat
+description: "AI assistant powered by Claude - chat with your knowledge vault"
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.1.0
+  flutter_staggered_grid_view: ^0.7.0
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # HTTP & WebSocket
+  dio: ^5.4.0
+  web_socket_channel: ^3.0.0
+
+  # Navigation
+  go_router: ^14.0.0
+
+  # Markdown
+  flutter_markdown: ^0.7.0
+
+  # Storage
+  flutter_secure_storage: ^9.0.0
+  path_provider: ^2.0.0
+  path: ^1.9.0
+  shared_preferences: ^2.0.0
+  sqlite3: ^2.4.0
+  sqlite3_flutter_libs: ^0.5.0
+
+  # GitHub OAuth & API
+  oauth2: ^2.0.2
+  app_links: ^6.3.2
+  crypto: ^3.0.3
+  flutter_dotenv: ^5.1.0
+
+  # Utilities
+  uuid: ^4.4.0
+  collection: ^1.18.0
+  yaml: ^3.1.2
+  http: ^1.2.0
+  url_launcher: ^6.3.0
+  file_picker: ^8.0.0+1
+  archive: ^3.6.1
+
+  # Android Storage Access Framework
+  docman: ^1.2.0
+
+  # macOS Security-Scoped Bookmarks (persistent folder access)
+  macos_secure_bookmarks: ^0.2.1
+
+  # Audio & Recording
+  record: ^6.1.2
+  just_audio: ^0.10.0
+  audio_session: ^0.2.0
+  wakelock_plus: ^1.2.0
+
+  # Permissions
+  permission_handler: ^12.0.1
+
+  # Omi Device Integration
+  flutter_blue_plus: ^1.33.6
+  flutter_local_notifications: ^17.0.0
+
+  # Audio Codecs (for Omi BLE audio decoding)
+  opus_dart: ^3.0.1
+  opus_flutter: ^3.0.3
+
+  # Sherpa-ONNX for cross-platform ASR (Parakeet on Android)
+  sherpa_onnx: ^1.12.12
+
+  # Local LLM for Title Generation & Embeddings
+  flutter_gemma: ^0.11.8
+
+  # Ollama integration for desktop LLM
+  ollama_dart: ^0.3.0
+
+  # BM25 keyword search for RAG
+  bm25: ^1.0.0
+
+  # OTA Firmware Updates
+  nordic_dfu: ^6.1.4
+
+  # Crash Reporting & Logging
+  sentry_flutter: ^9.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Linting
+  flutter_lints: ^6.0.0
+
+  # Code Generation
+  build_runner: ^2.4.13
+  riverpod_generator: ^2.6.2
+  riverpod_lint: ^2.3.7
+
+  # Testing
+  http_mock_adapter: ^0.6.0
+  mockito: ^5.4.0
+  mocktail: ^1.0.4
+
+  # Icon generation
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/firmware/
+    - assets/models/
+    - assets/icon/
+    - .env
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/parachute_icon.png"
+
+  # Android adaptive icon
+  adaptive_icon_background: "#F4E96D"
+  adaptive_icon_foreground: "assets/icon/parachute_icon.png"
+
+  # macOS
+  macos:
+    generate: true
+    image_path: "assets/icon/parachute_icon.png"

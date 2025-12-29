@@ -24,20 +24,23 @@ We build local-first, voice-first AI tooling that gives people agency over their
 ```
 parachute/                     # This monorepo (you are here)
 ├── CLAUDE.md                 # This file - overall guidance
-├── app/                      # Flutter mobile/desktop app
-│   ├── CLAUDE.md            # App-specific development guide
+├── daily/                    # Parachute Daily - local voice journaling
 │   ├── lib/                 # Dart source code
 │   └── pubspec.yaml         # Flutter dependencies
-└── agent/                    # Node.js agent backend
-    ├── claude.md            # Agent-specific development guide
+├── chat/                     # Parachute Chat - AI assistant app
+│   ├── lib/                 # Dart source code
+│   └── pubspec.yaml         # Flutter dependencies
+└── base/                     # Parachute Base - backend server
+    ├── claude.md            # Server-specific development guide
     ├── lib/                 # JavaScript source
     ├── server.js            # Express API server
     └── package.json         # Node dependencies
 ```
 
 **Key Files (start here when exploring):**
-- `app/CLAUDE.md` - Flutter app development patterns, providers, UI
-- `agent/claude.md` - Backend API, session management, Claude SDK integration
+- `daily/` - Local-first voice journaling app (Alpha priority, runs standalone)
+- `chat/` - AI chat assistant (requires base server)
+- `base/claude.md` - Backend API, session management, Claude SDK integration
 
 ---
 
@@ -81,10 +84,15 @@ parachute/                     # This monorepo (you are here)
                     │   Knowledge Vault (local) │
                     │                           │
                     │  ~/Parachute/             │
-                    │  ├── agent-sessions/     │  ← Chat history (markdown)
-                    │  ├── captures/            │  ← Voice recordings
+                    │  ├── Daily/               │  ← Parachute Daily module
+                    │  │   ├── journals/        │  ← Daily entries (markdown)
+                    │  │   ├── assets/          │  ← Audio, photos
+                    │  │   └── index.db         │  ← SQLite RAG index
+                    │  ├── Chat/                │  ← Parachute Chat module
+                    │  │   ├── sessions/        │  ← Chat history (markdown)
+                    │  │   └── contexts/        │  ← Personal context files
                     │  ├── .agents/             │  ← Agent definitions
-                    │  └── AGENTS.md            │  ← Your personal context
+                    │  └── AGENTS.md            │  ← System prompt override
                     │                           │
                     │  (synced via Syncthing)   │
                     └───────────────────────────┘
@@ -94,12 +102,13 @@ parachute/                     # This monorepo (you are here)
 
 ## Component Relationship
 
-### Current Architecture: Client-Server
+### Current Architecture: Modular Ecosystem
 
 | Component | Role | Location |
 |-----------|------|----------|
-| **App (Flutter)** | UI client, voice recording, local storage | Runs on each device |
-| **Agent (Node.js)** | AI orchestration, session management | Single server instance |
+| **Daily (Flutter)** | Voice journaling, local-first, standalone | Runs on each device |
+| **Chat (Flutter)** | AI chat assistant, requires backend | Runs on each device |
+| **Base (Node.js)** | AI orchestration, session management, MCP | Single server instance |
 | **Vault** | Data storage (markdown files) | Local + Syncthing sync |
 
 ### Communication Flow
@@ -121,19 +130,27 @@ parachute/                     # This monorepo (you are here)
 
 ## Quick Commands
 
-### App (Flutter)
+### Daily (Flutter - Local-first journaling)
 ```bash
-cd app
+cd daily
 flutter pub get                    # Install dependencies
 flutter run -d macos               # Run on macOS
 flutter run -d android             # Run on Android
 flutter analyze                    # Check for issues
-flutter test                       # Run tests
 ```
 
-### Agent (Node.js)
+### Chat (Flutter - AI assistant)
 ```bash
-cd agent
+cd chat
+flutter pub get                    # Install dependencies
+flutter run -d macos               # Run on macOS
+flutter run -d android             # Run on Android
+flutter analyze                    # Check for issues
+```
+
+### Base (Node.js - Backend server)
+```bash
+cd base
 npm install                        # Install dependencies
 npm start                          # Start server (port 3333)
 npm run dev                        # Start with auto-reload
@@ -141,13 +158,13 @@ npm test                           # Run tests
 VAULT_PATH=~/Parachute npm start   # Point to your vault
 ```
 
-### Full Stack Development
+### Full Stack Development (Chat + Base)
 ```bash
-# Terminal 1: Start agent
-cd agent && VAULT_PATH=~/Parachute npm run dev
+# Terminal 1: Start base server
+cd base && VAULT_PATH=~/Parachute npm run dev
 
-# Terminal 2: Run app
-cd app && flutter run -d macos
+# Terminal 2: Run Chat app
+cd chat && flutter run -d macos
 ```
 
 ---
@@ -177,7 +194,7 @@ The app connects to the agent at `http://localhost:3333` by default. To change:
 
 ### Sessions (Chat History)
 
-Stored in `{vault}/agent-sessions/*.md`:
+Stored in `{vault}/Chat/sessions/*.md`:
 
 ```markdown
 ---
@@ -299,7 +316,7 @@ Always use `git --no-pager` to prevent pager blocking output.
 
 ### Chat History Not Loading
 
-1. Check `agent-sessions/` directory has markdown files
+1. Check `Chat/sessions/` directory has markdown files
 2. Verify session IDs match between app and server
 3. Server restart clears in-memory session cache (but markdown persists)
 
