@@ -14,6 +14,7 @@ import 'package:app/core/providers/feature_flags_provider.dart';
 import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/core/providers/search_providers.dart';
+import 'package:app/core/services/logger_service.dart';
 
 // ============================================================
 // Service Provider
@@ -283,10 +284,17 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   final ChatService _service;
   final Ref _ref;
   static const _uuid = Uuid();
+  final _log = logger.createLogger('ChatMessagesNotifier');
 
   /// Track the session ID of the currently active stream
   /// Used to prevent old streams from updating state after session switch
   String? _activeStreamSessionId;
+
+  /// Throttle for UI updates during streaming (50ms = ~20 updates/sec max)
+  final _streamingThrottle = Throttle(const Duration(milliseconds: 50));
+
+  /// Track pending content updates for batching
+  List<MessageContent>? _pendingContent;
 
   ChatMessagesNotifier(this._service, this._ref) : super(const ChatMessagesState());
 
@@ -296,6 +304,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   /// Also cancels any active stream by invalidating the stream session ID.
   /// If the session was continued from another session, loads prior messages too.
   Future<void> loadSession(String sessionId, {bool isLocal = false}) async {
+    final trace = PerformanceTrace.start('LoadSession', metadata: {'sessionId': sessionId, 'isLocal': isLocal});
     _activeStreamSessionId = null; // Cancel any active stream
 
     try {
@@ -359,8 +368,10 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
         priorMessages: priorMessages,
         continuedFromSession: continuedFromSession,
       );
+      trace.end(additionalData: {'messageCount': loadedMessages.length});
     } catch (e) {
-      debugPrint('[ChatMessagesNotifier] Error loading session: $e');
+      trace.end(additionalData: {'error': e.toString()});
+      _log.error('Error loading session', error: e);
       state = state.copyWith(error: e.toString());
     }
   }
@@ -571,6 +582,9 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
             break;
 
           case StreamEventType.toolUse:
+            // Flush any pending UI updates before showing tool call
+            _flushPendingUpdates();
+
             // Tool call event - convert any pending text to "thinking"
             final toolCall = event.toolCall;
             if (toolCall != null) {
@@ -585,7 +599,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
                 }
               }
               accumulatedContent.add(MessageContent.toolUse(toolCall));
-              _updateAssistantMessage(accumulatedContent, isStreaming: true);
+              // Force immediate update for tool events (not throttled)
+              _performMessageUpdate(accumulatedContent, isStreaming: true);
             }
             break;
 
@@ -712,13 +727,44 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   }
 
   /// Update the assistant message being streamed
+  /// Uses throttling during streaming to reduce UI updates
   void _updateAssistantMessage(List<MessageContent> content, {required bool isStreaming}) {
+    // Always update immediately when streaming ends
+    if (!isStreaming) {
+      _pendingContent = null;
+      _performMessageUpdate(content, isStreaming: false);
+      _streamingThrottle.reset();
+      return;
+    }
+
+    // Store pending content
+    _pendingContent = content;
+
+    // Throttle UI updates during streaming
+    if (_streamingThrottle.shouldProceed()) {
+      _performMessageUpdate(content, isStreaming: true);
+    }
+  }
+
+  /// Actually perform the message update (called from throttled path)
+  void _performMessageUpdate(List<MessageContent> content, {required bool isStreaming}) {
+    final trace = PerformanceTrace.start('MessageUpdate', metadata: {
+      'messageCount': state.messages.length,
+      'contentBlocks': content.length,
+    });
+
     final messages = List<ChatMessage>.from(state.messages);
-    if (messages.isEmpty) return;
+    if (messages.isEmpty) {
+      trace.end();
+      return;
+    }
 
     // Find the last assistant message (should be the streaming one)
     final lastIndex = messages.length - 1;
-    if (messages[lastIndex].role != MessageRole.assistant) return;
+    if (messages[lastIndex].role != MessageRole.assistant) {
+      trace.end();
+      return;
+    }
 
     messages[lastIndex] = messages[lastIndex].copyWith(
       content: List.from(content),
@@ -726,6 +772,14 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
     );
 
     state = state.copyWith(messages: messages);
+    trace.end();
+  }
+
+  /// Flush any pending content updates (call when important events happen)
+  void _flushPendingUpdates() {
+    if (_pendingContent != null) {
+      _performMessageUpdate(_pendingContent!, isStreaming: true);
+    }
   }
 
   /// Handle user's choice for session recovery

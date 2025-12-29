@@ -236,3 +236,72 @@ class ComponentLogger {
 
 /// Global logger instance for convenience
 final logger = LoggerService.instance;
+
+/// Performance tracer for measuring execution time
+///
+/// Usage:
+/// ```dart
+/// final trace = PerformanceTrace.start('MyOperation');
+/// // ... do work ...
+/// trace.end(); // logs duration
+/// ```
+class PerformanceTrace {
+  final String name;
+  final Stopwatch _stopwatch;
+  final Map<String, dynamic>? metadata;
+  bool _ended = false;
+
+  PerformanceTrace._(this.name, this.metadata) : _stopwatch = Stopwatch()..start();
+
+  /// Start a new performance trace
+  static PerformanceTrace start(String name, {Map<String, dynamic>? metadata}) {
+    return PerformanceTrace._(name, metadata);
+  }
+
+  /// End the trace and log the duration
+  /// Returns the elapsed milliseconds
+  int end({Map<String, dynamic>? additionalData}) {
+    if (_ended) return _stopwatch.elapsedMilliseconds;
+    _ended = true;
+    _stopwatch.stop();
+
+    final ms = _stopwatch.elapsedMilliseconds;
+    final data = {
+      'durationMs': ms,
+      if (metadata != null) ...metadata!,
+      if (additionalData != null) ...additionalData,
+    };
+
+    // Log as warning if > 16ms (will cause frame drops), debug otherwise
+    final level = ms > 16 ? LogLevel.warn : LogLevel.debug;
+    logger.log(level, 'Perf', name, data: data);
+
+    return ms;
+  }
+
+  /// Get elapsed time without ending the trace
+  int get elapsedMs => _stopwatch.elapsedMilliseconds;
+}
+
+/// Throttle class to limit how often a function can be called
+class Throttle {
+  final Duration interval;
+  DateTime? _lastCall;
+
+  Throttle(this.interval);
+
+  /// Returns true if enough time has passed since last call
+  bool shouldProceed() {
+    final now = DateTime.now();
+    if (_lastCall == null || now.difference(_lastCall!) >= interval) {
+      _lastCall = now;
+      return true;
+    }
+    return false;
+  }
+
+  /// Reset the throttle
+  void reset() {
+    _lastCall = null;
+  }
+}
