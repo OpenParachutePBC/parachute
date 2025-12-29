@@ -45,6 +45,7 @@ Parachute Agent is the backend for Parachute - an AI agent system that uses mark
 | `lib/generate-backends/*.js` | Backend adapters (mflux, nano-banana) |
 | `mcp-vault-search.js` | MCP server for vault search |
 | `mcp-para-generate.js` | MCP server for content generation |
+| `test/e2e-session-tests.js` | Comprehensive E2E test suite (21 tests) |
 | `obsidian-plugin/main.ts` | Optional Obsidian plugin |
 
 ## Commands
@@ -52,7 +53,9 @@ Parachute Agent is the backend for Parachute - an AI agent system that uses mark
 ```bash
 npm start                        # Start server
 npm run dev                      # Start with auto-reload
-npm test                         # Run tests
+npm test                         # Run unit tests
+npm run test:e2e                 # Run E2E tests (uses current vault)
+npm run test:e2e:isolated        # Run E2E tests (temp vault, recommended)
 VAULT_PATH=/path/to/vault npm start  # Custom vault
 ```
 
@@ -93,6 +96,9 @@ VAULT_PATH=/path/to/vault npm start  # Custom vault
 | `/api/analytics` | GET | Get session and agent analytics |
 | `/api/logs` | GET | Query recent logs (params: `level`, `component`, `since`, `limit`) |
 | `/api/logs/stats` | GET | Get log statistics |
+| `/api/perf` | GET | Get app performance summary (from Flutter app) |
+| `/api/perf/events` | GET | Get recent perf events (params: `limit`, `slow`, `name`) |
+| `/api/perf/report` | GET | Get text-formatted performance report |
 | `/api/vault-search` | GET | Search indexed content (params: `q`, `limit?`, `contentType?`) |
 | `/api/vault-search/stats` | GET | Get search index statistics |
 | `/api/vault-search/content` | GET | List indexed content (params: `contentType?`, `limit?`) |
@@ -212,6 +218,11 @@ The `/api/chat/stream` endpoint returns SSE events for real-time UI updates:
 - `tool_use`: Tool being executed with name and input
 - `done`: Final result with toolCalls, durationMs, spawned, sessionResume
 - `error`: Error message if something went wrong
+
+**SSE Stability Features:**
+- **Heartbeat**: Server sends `: heartbeat\n\n` every 15 seconds to prevent proxy/network timeouts
+- **Client disconnect detection**: Uses `res.on('close')` (not `req.on('close')`) to detect when clients disconnect
+- **Graceful cleanup**: Stops AI processing when client disconnects to save resources
 
 ### Initial Context
 Pass `initialContext` in the chat request body to provide context for new sessions:

@@ -226,9 +226,14 @@ You are a helpful assistant with access to the user's vault...
 
 ### Recently Completed
 
+- **Stability Fixes (Phase 4)** - SSE heartbeat, session cleanup, request timeouts, recursion protection
+- **Session Context Bug Fix** - Fixed `state.sessionId` not updating, causing context loss
+- **SSE Disconnect Fix** - Changed `req.on('close')` to `res.on('close')` for proper client detection
+- **E2E Test Suite** - 21 comprehensive tests for sessions, streaming, and error handling
+- **Performance Tracking** - File-based tracing with API endpoints for Claude Code access
+- **Streaming Throttle** - Reduced UI updates during streaming (50ms throttle)
 - **Import Old Chats** - Claude/ChatGPT history import with onboarding flow
 - **Session Continuation** - Continued sessions load prior messages correctly
-- **Date Sorting** - Fixed timezone bug for Today/This Week grouping
 - **AGENTS.md** - Personal context template system
 
 ### Priority Issues
@@ -304,6 +309,31 @@ Always use `git --no-pager` to prevent pager blocking output.
 2. Verify transcription model is downloaded
 3. Check `captures/` directory for saved files
 
+### Performance Issues
+
+1. **Check performance data**: `curl http://localhost:3333/api/perf/report`
+2. **Get slow events only**: `curl "http://localhost:3333/api/perf/events?slow=true"`
+3. **Filter by operation**: `curl "http://localhost:3333/api/perf/events?name=MessageBubble.build"`
+4. Performance data written to `{vault}/.parachute/perf/`
+
+---
+
+## Testing
+
+### Agent E2E Tests
+```bash
+cd agent
+npm run test:e2e              # Run against current vault
+npm run test:e2e:isolated     # Run with temp test vault (recommended)
+```
+
+### Flutter Tests
+```bash
+cd app
+flutter test                  # Run all tests
+flutter analyze               # Check for issues
+```
+
 ---
 
 ## Related Documentation
@@ -317,4 +347,4 @@ Always use `git --no-pager` to prevent pager blocking output.
 
 ---
 
-**Last Updated**: December 22, 2025
+**Last Updated**: December 29, 2025

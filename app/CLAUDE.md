@@ -65,13 +65,14 @@ We build local-first, voice-first AI tooling that gives people agency over their
 | `lib/main.dart` | App entry point, navigation setup |
 | `lib/core/config/app_config.dart` | Centralized configuration constants |
 | `lib/core/services/logger_service.dart` | Structured logging with levels |
+| `lib/core/services/performance_service.dart` | File-based performance tracking |
 | `lib/core/errors/app_error.dart` | Custom error classes |
 | `lib/core/services/file_system_service.dart` | Platform-aware file operations |
 | `lib/features/recorder/services/storage_service.dart` | Recording persistence |
 | `lib/features/recorder/services/audio_service.dart` | Microphone recording |
 | `lib/features/recorder/services/live_transcription_service_v3.dart` | VAD + transcription |
 | `lib/features/chat/services/chat_service.dart` | Agent backend API client |
-| `lib/features/chat/providers/chat_providers.dart` | Chat state management |
+| `lib/features/chat/providers/chat_providers.dart` | Chat state management (with throttling) |
 
 ---
 
@@ -161,6 +162,34 @@ log.info('Operation complete');
 log.warn('Resource low', error: e);
 log.error('Failed', error: e, stackTrace: st);
 ```
+
+### Performance Tracing
+
+Use the performance service to track operation timing:
+
+```dart
+import 'package:app/core/services/performance_service.dart';
+
+// Manual trace
+final trace = perf.trace('MyOperation', metadata: {'count': 42});
+// ... do work ...
+trace.end();
+
+// Sync block with Timeline integration
+perf.timelineSync('BuildWidget', () {
+  // ... synchronous work ...
+});
+
+// Async block
+await perf.timelineAsync('FetchData', () async {
+  // ... async work ...
+});
+```
+
+**Performance data is written to `{vault}/.parachute/perf/` and accessible via:**
+- `GET /api/perf` - JSON summary
+- `GET /api/perf/report` - Human-readable report
+- `GET /api/perf/events?slow=true` - Slow events only
 
 ### Custom Errors
 
@@ -329,15 +358,21 @@ User sends message
 ChatService.streamChat() → POST /api/chat/stream
     ↓
 SSE events received:
-  session → Store session ID
-  text    → Update UI with content
-  tool_use → Show tool execution
+  session → Store session ID, update state.sessionId
+  text    → Update UI (throttled to 20/sec max)
+  tool_use → Show tool execution (immediate, not throttled)
   done    → Mark complete, capture title
     ↓
 ChatMessagesNotifier updates state
     ↓
 UI rebuilds via Riverpod
 ```
+
+**Streaming Performance:**
+- Text updates throttled to 50ms intervals (max 20 updates/sec)
+- Tool events update immediately for responsiveness
+- Final content always updates when streaming completes
+- `state.sessionId` must be updated to maintain context across messages
 
 ---
 
@@ -450,4 +485,4 @@ final stats = logger.getStats();
 
 ---
 
-**Last Updated**: December 12, 2025
+**Last Updated**: December 29, 2025
