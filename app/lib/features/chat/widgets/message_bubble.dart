@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:app/core/theme/design_tokens.dart';
 import 'package:app/core/providers/file_system_provider.dart';
-import 'package:app/core/services/logger_service.dart';
+import 'package:app/core/services/performance_service.dart';
 import '../models/chat_message.dart';
 import 'inline_audio_player.dart';
 import 'collapsible_thinking_section.dart';
@@ -27,7 +27,7 @@ class MessageBubble extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final trace = PerformanceTrace.start('MessageBubble.build', metadata: {
+    final trace = perf.trace('MessageBubble.build', metadata: {
       'role': message.role.name,
       'contentLength': message.textContent.length,
       'isStreaming': message.isStreaming,

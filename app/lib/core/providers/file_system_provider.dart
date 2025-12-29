@@ -4,6 +4,7 @@ import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/services/export_detection_service.dart';
 import 'package:app/core/services/vault_state_service.dart';
 import 'package:app/core/services/conversation_import_service.dart';
+import 'package:app/core/services/performance_service.dart';
 
 /// Provider for the FileSystemService singleton
 final fileSystemServiceProvider = Provider<FileSystemService>((ref) {
@@ -70,4 +71,20 @@ final conversationImportServiceProvider = Provider<ConversationImportService>((r
 final hasCompletedOnboardingProvider = FutureProvider<bool>((ref) async {
   final prefs = await SharedPreferences.getInstance();
   return prefs.getBool('has_seen_onboarding_v1') ?? false;
+});
+
+/// Provider that initializes the performance service with vault path
+///
+/// Watch this provider early in the app to enable file-based performance logging.
+/// Performance data is written to {vault}/.parachute/perf/
+final performanceServiceProvider = FutureProvider<PerformanceService>((ref) async {
+  final vaultPath = await ref.watch(vaultPathProvider.future);
+  perf.init(vaultPath);
+
+  // Ensure perf data is flushed when provider is disposed
+  ref.onDispose(() {
+    perf.flush();
+  });
+
+  return perf;
 });

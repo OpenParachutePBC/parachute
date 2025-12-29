@@ -15,6 +15,7 @@ import 'package:app/core/services/file_system_service.dart';
 import 'package:app/core/providers/file_system_provider.dart';
 import 'package:app/core/providers/search_providers.dart';
 import 'package:app/core/services/logger_service.dart';
+import 'package:app/core/services/performance_service.dart';
 
 // ============================================================
 // Service Provider
@@ -304,7 +305,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
   /// Also cancels any active stream by invalidating the stream session ID.
   /// If the session was continued from another session, loads prior messages too.
   Future<void> loadSession(String sessionId, {bool isLocal = false}) async {
-    final trace = PerformanceTrace.start('LoadSession', metadata: {'sessionId': sessionId, 'isLocal': isLocal});
+    final trace = perf.trace('LoadSession', metadata: {'sessionId': sessionId, 'isLocal': isLocal});
     _activeStreamSessionId = null; // Cancel any active stream
 
     try {
@@ -748,7 +749,7 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
 
   /// Actually perform the message update (called from throttled path)
   void _performMessageUpdate(List<MessageContent> content, {required bool isStreaming}) {
-    final trace = PerformanceTrace.start('MessageUpdate', metadata: {
+    final trace = perf.trace('MessageUpdate', metadata: {
       'messageCount': state.messages.length,
       'contentBlocks': content.length,
     });

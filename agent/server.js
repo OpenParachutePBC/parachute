@@ -906,6 +906,166 @@ app.get('/api/logs/stats', async (req, res) => {
 });
 
 // ============================================================================
+// APP PERFORMANCE DATA
+// ============================================================================
+
+/**
+ * GET /api/perf
+ * Get app performance summary (written by Flutter app)
+ *
+ * The Flutter app writes performance data to {vault}/.parachute/perf/
+ * This endpoint reads that data for easy access from Claude Code.
+ */
+app.get('/api/perf', async (req, res) => {
+  try {
+    const perfDir = path.join(CONFIG.vaultPath, '.parachute', 'perf');
+    const summaryPath = path.join(perfDir, 'summary.json');
+
+    try {
+      const content = await fs.readFile(summaryPath, 'utf-8');
+      const summary = JSON.parse(content);
+      res.json(summary);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return res.json({
+          error: 'No performance data available',
+          hint: 'Run the Flutter app to generate performance data',
+          path: summaryPath,
+        });
+      }
+      throw error;
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/perf/events
+ * Get recent performance events (JSONL format)
+ *
+ * Query params:
+ * - limit: Max events to return (default 100)
+ * - slow: If 'true', only return slow events (>16ms)
+ * - name: Filter by operation name
+ */
+app.get('/api/perf/events', async (req, res) => {
+  try {
+    const perfDir = path.join(CONFIG.vaultPath, '.parachute', 'perf');
+    const eventsPath = path.join(perfDir, 'current.jsonl');
+    const limit = parseInt(req.query.limit || '100', 10);
+    const onlySlow = req.query.slow === 'true';
+    const nameFilter = req.query.name;
+
+    try {
+      const content = await fs.readFile(eventsPath, 'utf-8');
+      let events = content
+        .split('\n')
+        .filter(line => line.trim())
+        .map(line => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter(e => e !== null);
+
+      // Apply filters
+      if (onlySlow) {
+        events = events.filter(e => e.isSlow);
+      }
+      if (nameFilter) {
+        events = events.filter(e => e.name === nameFilter);
+      }
+
+      // Return most recent first, limited
+      events = events.slice(-limit).reverse();
+
+      res.json({
+        count: events.length,
+        events,
+      });
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return res.json({
+          count: 0,
+          events: [],
+          hint: 'No events recorded yet',
+        });
+      }
+      throw error;
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/perf/report
+ * Get a text-formatted performance report for easy reading
+ */
+app.get('/api/perf/report', async (req, res) => {
+  try {
+    const perfDir = path.join(CONFIG.vaultPath, '.parachute', 'perf');
+    const summaryPath = path.join(perfDir, 'summary.json');
+
+    try {
+      const content = await fs.readFile(summaryPath, 'utf-8');
+      const summary = JSON.parse(content);
+
+      // Generate text report
+      let report = '=== App Performance Report ===\n';
+      report += `Generated: ${summary.generatedAt}\n`;
+      report += `Tracking Duration: ${summary.trackingDurationSec}s\n\n`;
+
+      report += '--- Frame Performance ---\n';
+      report += `Total Frames: ${summary.frames?.total || 0}\n`;
+      report += `Slow Frames (>16ms): ${summary.frames?.slow || 0}\n`;
+      report += `Slow Frame Rate: ${summary.frames?.slowPercent || 0}%\n\n`;
+
+      report += '--- Operations (by total time) ---\n';
+      if (summary.operations) {
+        const ops = Object.values(summary.operations)
+          .sort((a, b) => (b.totalMs || 0) - (a.totalMs || 0))
+          .slice(0, 15);
+
+        for (const op of ops) {
+          report += `\n${op.name}:\n`;
+          report += `  Count: ${op.count}, Total: ${op.totalMs}ms, Avg: ${op.avgMs}ms, Max: ${op.maxMs}ms\n`;
+          if (op.slowCount > 0) {
+            report += `  Slow (>16ms): ${op.slowCount} (${((op.slowCount / op.count) * 100).toFixed(1)}%)\n`;
+          }
+        }
+      }
+
+      if (summary.recentSlowEvents?.length > 0) {
+        report += '\n--- Recent Slow Events ---\n';
+        for (const event of summary.recentSlowEvents.slice(0, 10)) {
+          report += `${event.timestamp}: ${event.name} took ${event.durationMs}ms\n`;
+          if (event.metadata) {
+            report += `  ${JSON.stringify(event.metadata)}\n`;
+          }
+        }
+      }
+
+      res.type('text/plain').send(report);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return res.type('text/plain').send(
+          'No performance data available.\n\n' +
+          'Run the Flutter app to generate performance data.\n' +
+          'Data will be written to: ' + summaryPath
+        );
+      }
+      throw error;
+    }
+  } catch (error) {
+    res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
+// ============================================================================
 // AGENTS.MD MANAGEMENT
 // ============================================================================
 
