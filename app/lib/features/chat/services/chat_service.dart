@@ -15,6 +15,9 @@ class ChatService {
   final String baseUrl;
   final http.Client _client;
 
+  /// Timeout for non-streaming HTTP requests
+  static const requestTimeout = Duration(seconds: 30);
+
   ChatService({required this.baseUrl}) : _client = http.Client();
 
   // ============================================================
@@ -27,7 +30,7 @@ class ChatService {
       final response = await _client.get(
         Uri.parse('$baseUrl/api/chat/sessions'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('Failed to get sessions: ${response.statusCode}');
@@ -59,7 +62,7 @@ class ChatService {
       final response = await _client.post(
         Uri.parse('$baseUrl/api/chat/sessions/reload'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         debugPrint('[ChatService] Failed to reload session index: ${response.statusCode}');
@@ -79,7 +82,7 @@ class ChatService {
       final response = await _client.get(
         Uri.parse('$baseUrl/api/chat/session/${Uri.encodeComponent(sessionId)}'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode == 404) {
         return null;
@@ -103,7 +106,7 @@ class ChatService {
       final response = await _client.delete(
         Uri.parse('$baseUrl/api/chat/session/${Uri.encodeComponent(sessionId)}'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('Failed to delete session: ${response.statusCode}');
@@ -124,7 +127,7 @@ class ChatService {
       final response = await _client.get(
         Uri.parse('$baseUrl/api/agents'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('Failed to get agents: ${response.statusCode}');
@@ -168,7 +171,7 @@ class ChatService {
           if (context != null) 'context': context,
           if (timestamp != null) 'timestamp': timestamp.toIso8601String(),
         }),
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200 && response.statusCode != 201) {
         throw Exception('Failed to upload document: ${response.statusCode}');
@@ -190,7 +193,7 @@ class ChatService {
     try {
       final response = await _client.head(
         Uri.parse('$baseUrl/api/captures/${Uri.encodeComponent(filename)}'),
-      );
+      ).timeout(requestTimeout);
       return response.statusCode == 200;
     } catch (e) {
       debugPrint('[ChatService] Error checking document: $e');
@@ -208,7 +211,7 @@ class ChatService {
       final response = await _client.get(
         Uri.parse('$baseUrl/api/contexts'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('Failed to get contexts: ${response.statusCode}');
@@ -238,7 +241,7 @@ class ChatService {
       final response = await _client.get(
         Uri.parse('$baseUrl/api/directories'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('Failed to get directories: ${response.statusCode}');
@@ -267,7 +270,7 @@ class ChatService {
       final response = await _client.get(
         Uri.parse('$baseUrl/api/default-prompt'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('Failed to get default prompt: ${response.statusCode}');
@@ -287,7 +290,7 @@ class ChatService {
       final response = await _client.get(
         Uri.parse('$baseUrl/api/agents-md'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('Failed to get AGENTS.md: ${response.statusCode}');
@@ -311,7 +314,7 @@ class ChatService {
         Uri.parse('$baseUrl/api/agents-md'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'content': content}),
-      );
+      ).timeout(requestTimeout);
 
       if (response.statusCode != 200) {
         throw Exception('Failed to save AGENTS.md: ${response.statusCode}');
@@ -384,8 +387,19 @@ class ChatService {
     debugPrint('[ChatService] Request body keys: ${requestBody.keys.toList()}');
     request.body = jsonEncode(requestBody);
 
+    // Timeouts for streaming requests
+    const connectionTimeout = Duration(seconds: 30);
+    const chunkTimeout = Duration(seconds: 60); // Allow time for AI thinking
+
     try {
-      final streamedResponse = await _client.send(request);
+      final streamedResponse = await _client.send(request).timeout(
+        connectionTimeout,
+        onTimeout: () {
+          throw TimeoutException(
+            'Connection to server timed out after ${connectionTimeout.inSeconds}s',
+          );
+        },
+      );
 
       if (streamedResponse.statusCode != 200) {
         yield StreamEvent(
@@ -397,7 +411,15 @@ class ChatService {
 
       String buffer = '';
 
-      await for (final chunk in streamedResponse.stream.transform(utf8.decoder)) {
+      // Add per-chunk timeout to detect stalled connections
+      await for (final chunk in streamedResponse.stream
+          .timeout(chunkTimeout, onTimeout: (sink) {
+            sink.addError(TimeoutException(
+              'No data received for ${chunkTimeout.inSeconds}s - connection may be stalled',
+            ));
+            sink.close();
+          })
+          .transform(utf8.decoder)) {
         buffer += chunk;
 
         // Process complete lines (SSE format: data: {...}\n\n)
@@ -417,6 +439,9 @@ class ChatService {
                 event.type == StreamEventType.error) {
               return;
             }
+          } else if (line.isNotEmpty && !line.startsWith(':')) {
+            // Log unexpected parse failures (ignore SSE comments which start with :)
+            debugPrint('[ChatService] Failed to parse SSE line: ${line.substring(0, line.length.clamp(0, 100))}');
           }
         }
       }

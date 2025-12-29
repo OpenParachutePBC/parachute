@@ -526,11 +526,14 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
 
         switch (event.type) {
           case StreamEventType.session:
-            // Server may return a different session ID
+            // Server may return a different session ID (for resumed sessions)
             actualSessionId = event.sessionId;
-            if (actualSessionId != null && actualSessionId != sessionId) {
+            if (actualSessionId != null && actualSessionId.isNotEmpty && actualSessionId != sessionId) {
               // Update session ID if server assigned a different one
+              debugPrint('[ChatMessagesNotifier] Session event has server ID: $actualSessionId (was: $sessionId)');
               _ref.read(currentSessionIdProvider.notifier).state = actualSessionId;
+              // ALSO update state.sessionId so future sendMessage calls use the correct ID
+              state = state.copyWith(sessionId: actualSessionId);
             }
             // Capture session title if present
             final sessionTitle = event.sessionTitle;
@@ -619,6 +622,8 @@ class ChatMessagesNotifier extends StateNotifier<ChatMessagesState> {
               debugPrint('[ChatMessagesNotifier] Done event has new session ID: $doneSessionId (was: $actualSessionId)');
               actualSessionId = doneSessionId;
               _ref.read(currentSessionIdProvider.notifier).state = doneSessionId;
+              // ALSO update state.sessionId so future sendMessage calls use the correct ID
+              state = state.copyWith(sessionId: doneSessionId);
             }
 
             // Capture session title if present in done event

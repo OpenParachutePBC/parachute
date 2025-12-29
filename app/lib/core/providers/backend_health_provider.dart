@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/backend_health_service.dart';
 import 'feature_flags_provider.dart';
@@ -19,26 +20,61 @@ final serverHealthProvider = FutureProvider.family<ServerHealthStatus, String>((
 
 /// Provider for periodic server health checks (when AI Chat is enabled)
 /// Returns null if AI Chat is disabled
+/// Uses proper disposal to prevent resource leaks
 final periodicServerHealthProvider = StreamProvider<ServerHealthStatus?>((
   ref,
-) async* {
-  // Check if AI Chat is enabled
-  final aiChatEnabled = await ref.watch(aiChatEnabledProvider.future);
+) {
+  // Create a StreamController to manage the stream lifecycle
+  final controller = StreamController<ServerHealthStatus?>();
+  Timer? periodicTimer;
+  bool isDisposed = false;
 
-  if (!aiChatEnabled) {
-    yield null;
-    return;
-  }
+  // Set up disposal to cancel the timer
+  ref.onDispose(() {
+    isDisposed = true;
+    periodicTimer?.cancel();
+    controller.close();
+  });
 
-  // Get server URL
-  final serverUrl = await ref.watch(aiServerUrlProvider.future);
-  final healthService = ref.watch(backendHealthServiceProvider);
+  // Start the health check logic
+  () async {
+    try {
+      // Check if AI Chat is enabled
+      final aiChatEnabled = await ref.read(aiChatEnabledProvider.future);
 
-  // Initial check
-  yield await healthService.checkHealth(serverUrl);
+      if (!aiChatEnabled || isDisposed) {
+        if (!isDisposed) controller.add(null);
+        return;
+      }
 
-  // Periodic checks every 30 seconds
-  await for (final _ in Stream.periodic(const Duration(seconds: 30))) {
-    yield await healthService.checkHealth(serverUrl);
-  }
+      // Get server URL
+      final serverUrl = await ref.read(aiServerUrlProvider.future);
+      final healthService = ref.read(backendHealthServiceProvider);
+
+      // Initial check
+      if (!isDisposed) {
+        final status = await healthService.checkHealth(serverUrl);
+        controller.add(status);
+      }
+
+      // Periodic checks every 30 seconds
+      periodicTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+        if (isDisposed) return;
+        try {
+          final status = await healthService.checkHealth(serverUrl);
+          if (!isDisposed) controller.add(status);
+        } catch (e) {
+          if (!isDisposed) {
+            controller.add(ServerHealthStatus.networkError());
+          }
+        }
+      });
+    } catch (e) {
+      if (!isDisposed) {
+        controller.add(ServerHealthStatus.networkError());
+      }
+    }
+  }();
+
+  return controller.stream;
 });

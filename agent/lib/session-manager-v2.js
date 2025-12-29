@@ -76,6 +76,33 @@ export class SessionManager {
 
     // Cache settings
     this.cacheMaxAge = 30 * 60 * 1000; // 30 minutes
+
+    // Write locks to prevent concurrent writes to same session
+    // sdkSessionId -> Promise (resolves when write completes)
+    this.writeLocks = new Map();
+  }
+
+  /**
+   * Acquire a write lock for a session
+   * Returns a release function to call when done
+   */
+  async acquireWriteLock(sdkSessionId) {
+    // Wait for any pending write to complete
+    while (this.writeLocks.has(sdkSessionId)) {
+      await this.writeLocks.get(sdkSessionId);
+    }
+
+    // Create our lock
+    let releaseLock;
+    const lockPromise = new Promise(resolve => {
+      releaseLock = resolve;
+    });
+    this.writeLocks.set(sdkSessionId, lockPromise);
+
+    return () => {
+      this.writeLocks.delete(sdkSessionId);
+      releaseLock();
+    };
   }
 
   /**
@@ -85,7 +112,26 @@ export class SessionManager {
     await fs.mkdir(this.sessionsPath, { recursive: true });
     await this.paraIdService.initialize();
     await this.buildSessionIndex();
+
+    // Cleanup if index is too large after initial load
+    this.cleanupSessionIndex();
+
     console.log(`[SessionManager] Indexed ${this.sessionIndex.size} sessions`);
+
+    // Periodic cleanup every hour
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupSessionIndex();
+    }, 60 * 60 * 1000); // 1 hour
+  }
+
+  /**
+   * Shutdown session manager (cleanup resources)
+   */
+  shutdown() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
   }
 
   /**
@@ -238,6 +284,7 @@ export class SessionManager {
   /**
    * Finalize a new session after receiving SDK session ID
    * Called after first SDK response with the session_id
+   * Uses write lock to prevent race conditions from concurrent requests
    */
   async finalizeSession(session, sdkSessionId) {
     console.log(`[SessionManager] finalizeSession called with SDK ID: ${sdkSessionId?.slice(0, 12) || 'null'}`);
@@ -246,36 +293,55 @@ export class SessionManager {
       return;
     }
 
-    session.sdkSessionId = sdkSessionId;
+    // Check if already finalized (race condition guard)
+    if (session.sdkSessionId === sdkSessionId) {
+      console.log(`[SessionManager] Session already finalized with this SDK ID`);
+      return;
+    }
 
-    // Generate file path using SDK ID
-    const agentName = (session.agentPath || 'vault-agent').replace('agents/', '').replace('.md', '');
-    const today = new Date().toISOString().split('T')[0];
-    const shortId = sdkSessionId.slice(0, 8);
-    session.filePath = path.join(this.sessionsPath, agentName, `${today}-${shortId}.md`);
+    // Acquire write lock to prevent concurrent finalization
+    const releaseLock = await this.acquireWriteLock(sdkSessionId);
 
-    // Ensure directory exists
-    await fs.mkdir(path.dirname(session.filePath), { recursive: true });
+    try {
+      // Double-check after acquiring lock
+      if (session.sdkSessionId === sdkSessionId) {
+        console.log(`[SessionManager] Session finalized by another request`);
+        return;
+      }
 
-    // Add to cache and index
-    this.loadedSessions.set(sdkSessionId, session);
-    this.sessionIndex.set(sdkSessionId, {
-      sdkSessionId,
-      filePath: session.filePath,
-      agentPath: session.agentPath,
-      agentName,
-      title: session.title,
-      createdAt: session.createdAt,
-      lastAccessed: session.lastAccessed,
-      archived: false,
-      workingDirectory: session.workingDirectory,
-      continuedFrom: session.continuedFrom,
-      messageCount: session.messages.length
-    });
+      session.sdkSessionId = sdkSessionId;
 
-    // Save to disk
-    await this.saveSession(session);
-    console.log(`[SessionManager] Finalized session: ${sdkSessionId.slice(0, 8)}... at ${session.filePath}`);
+      // Generate file path using SDK ID
+      const agentName = (session.agentPath || 'vault-agent').replace('agents/', '').replace('.md', '');
+      const today = new Date().toISOString().split('T')[0];
+      const shortId = sdkSessionId.slice(0, 8);
+      session.filePath = path.join(this.sessionsPath, agentName, `${today}-${shortId}.md`);
+
+      // Ensure directory exists
+      await fs.mkdir(path.dirname(session.filePath), { recursive: true });
+
+      // Add to cache and index
+      this.loadedSessions.set(sdkSessionId, session);
+      this.sessionIndex.set(sdkSessionId, {
+        sdkSessionId,
+        filePath: session.filePath,
+        agentPath: session.agentPath,
+        agentName,
+        title: session.title,
+        createdAt: session.createdAt,
+        lastAccessed: session.lastAccessed,
+        archived: false,
+        workingDirectory: session.workingDirectory,
+        continuedFrom: session.continuedFrom,
+        messageCount: session.messages.length
+      });
+
+      // Save to disk
+      await this.saveSession(session);
+      console.log(`[SessionManager] Finalized session: ${sdkSessionId.slice(0, 8)}... at ${session.filePath}`);
+    } finally {
+      releaseLock();
+    }
   }
 
   /**
@@ -378,6 +444,7 @@ export class SessionManager {
 
   /**
    * Add a message to session (updates markdown mirror)
+   * Uses write lock to prevent concurrent writes losing data
    */
   async addMessage(session, role, content) {
     if (!session.sdkSessionId) {
@@ -385,18 +452,25 @@ export class SessionManager {
       return;
     }
 
-    const paraId = await this.paraIdService.generate(ParaIdType.MESSAGE, session.filePath);
+    // Acquire write lock to prevent race conditions
+    const releaseLock = await this.acquireWriteLock(session.sdkSessionId);
 
-    session.messages.push({
-      role,
-      content,
-      timestamp: new Date().toISOString(),
-      paraId
-    });
-    session.lastAccessed = new Date().toISOString();
+    try {
+      const paraId = await this.paraIdService.generate(ParaIdType.MESSAGE, session.filePath);
 
-    await this.saveSession(session);
-    console.log(`[SessionManager] Added ${role} message (para:${paraId})`);
+      session.messages.push({
+        role,
+        content,
+        timestamp: new Date().toISOString(),
+        paraId
+      });
+      session.lastAccessed = new Date().toISOString();
+
+      await this.saveSession(session);
+      console.log(`[SessionManager] Added ${role} message (para:${paraId})`);
+    } finally {
+      releaseLock();
+    }
   }
 
   /**
@@ -536,6 +610,39 @@ export class SessionManager {
         workingDirectory: s.workingDirectory || null,
         continuedFrom: s.continuedFrom || null
       }));
+  }
+
+  /**
+   * Cleanup session index to prevent unbounded memory growth
+   * Keeps most recently accessed sessions up to maxIndexSize
+   */
+  cleanupSessionIndex(maxIndexSize = 1000) {
+    if (this.sessionIndex.size <= maxIndexSize) {
+      return; // No cleanup needed
+    }
+
+    // Sort by lastAccessed descending (most recent first)
+    const sorted = Array.from(this.sessionIndex.entries())
+      .sort((a, b) => {
+        const dateA = a[1]?.lastAccessed ? new Date(a[1].lastAccessed) : new Date(0);
+        const dateB = b[1]?.lastAccessed ? new Date(b[1].lastAccessed) : new Date(0);
+        return dateB - dateA;
+      });
+
+    // Keep only the most recent entries
+    const toKeep = sorted.slice(0, maxIndexSize);
+    const removedCount = this.sessionIndex.size - toKeep.length;
+
+    this.sessionIndex = new Map(toKeep);
+
+    // Also clean up loaded sessions that are no longer indexed
+    for (const sdkSessionId of this.loadedSessions.keys()) {
+      if (!this.sessionIndex.has(sdkSessionId)) {
+        this.loadedSessions.delete(sdkSessionId);
+      }
+    }
+
+    console.log(`[SessionManager] Trimmed session index: removed ${removedCount} old entries, kept ${toKeep.length}`);
   }
 
   /**

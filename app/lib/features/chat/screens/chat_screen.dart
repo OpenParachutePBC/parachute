@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app/core/theme/design_tokens.dart';
+import 'package:app/core/widgets/error_boundary.dart';
+import 'package:app/core/services/logger_service.dart';
 import 'package:app/features/context/providers/context_providers.dart';
 import 'package:app/features/context/widgets/prompt_chip.dart';
 import 'package:app/features/context/widgets/reflection_banner.dart';
@@ -221,17 +223,26 @@ If you have suggestions, show me the specific edits you'd recommend.''';
       }
     });
 
-    return Scaffold(
-      backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
-      appBar: AppBar(
-        backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.softWhite,
-        surfaceTintColor: Colors.transparent,
-        title: _buildTitle(context, isDark, currentSessionId),
-        actions: [
-          // New chat button
-          IconButton(
-            onPressed: () => ref.read(newChatProvider)(),
-            icon: const Icon(Icons.add_comment_outlined),
+    // Wrap in error boundary to catch rendering errors
+    return ScreenErrorBoundary(
+      onError: (error, stack) {
+        logger.createLogger('ChatScreen').error(
+          'Chat screen error',
+          error: error,
+          stackTrace: stack,
+        );
+      },
+      child: Scaffold(
+        backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
+        appBar: AppBar(
+          backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.softWhite,
+          surfaceTintColor: Colors.transparent,
+          title: _buildTitle(context, isDark, currentSessionId),
+          actions: [
+            // New chat button
+            IconButton(
+              onPressed: () => ref.read(newChatProvider)(),
+              icon: const Icon(Icons.add_comment_outlined),
             tooltip: 'New Chat',
           ),
           const SizedBox(width: Spacing.xs),
@@ -320,6 +331,7 @@ If you have suggestions, show me the specific edits you'd recommend.''';
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -523,7 +535,7 @@ If you have suggestions, show me the specific edits you'd recommend.''';
       ),
     ),
   );
-  }
+}
 
   Widget _buildContextBanner(BuildContext context, bool isDark) {
     return Container(

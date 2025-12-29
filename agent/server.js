@@ -268,9 +268,28 @@ app.post('/api/chat/stream', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders();
 
+  // Track client disconnect to stop wasting resources
+  // NOTE: Must use res.on('close'), not req.on('close')
+  // req closes when body is received, res closes when client disconnects
+  let clientDisconnected = false;
+  res.on('close', () => {
+    if (!clientDisconnected) {
+      clientDisconnected = true;
+      log.info('Client disconnected from stream');
+    }
+  });
+
+  // SSE heartbeat to prevent proxy/network timeouts on idle connections
+  const heartbeatInterval = setInterval(() => {
+    if (!clientDisconnected) {
+      res.write(': heartbeat\n\n');
+    }
+  }, 15000); // Every 15 seconds
+
   const { message, agentPath, sessionId, initialContext, workingDirectory, contexts, priorConversation, continuedFrom } = req.body;
 
   if (!message) {
+    clearInterval(heartbeatInterval);
     res.write(`data: ${JSON.stringify({ type: 'error', error: 'message is required' })}\n\n`);
     res.end();
     return;
@@ -278,6 +297,7 @@ app.post('/api/chat/stream', async (req, res) => {
 
   // Validate message length
   if (message.length > CONFIG.maxMessageLength) {
+    clearInterval(heartbeatInterval);
     res.write(`data: ${JSON.stringify({ type: 'error', error: `Message too long: ${message.length} chars exceeds limit of ${CONFIG.maxMessageLength}` })}\n\n`);
     res.end();
     return;
@@ -331,14 +351,27 @@ app.post('/api/chat/stream', async (req, res) => {
     );
 
     for await (const event of stream) {
+      // Stop processing if client disconnected
+      if (clientDisconnected) {
+        log.info('Stopping stream - client disconnected');
+        break;
+      }
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
   } catch (error) {
     log.error('Stream error', error);
-    res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+    // Only write error if client still connected
+    if (!clientDisconnected) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+    }
+  } finally {
+    // Always clean up heartbeat interval
+    clearInterval(heartbeatInterval);
   }
 
-  res.end();
+  if (!clientDisconnected) {
+    res.end();
+  }
 });
 
 /**

@@ -72,6 +72,32 @@ export class Orchestrator extends EventEmitter {
 
     // Permission cleanup interval (to prevent memory leaks)
     this.permissionCleanupInterval = null;
+
+    // Bounds limits to prevent memory exhaustion
+    this.MAX_PENDING_PERMISSIONS = 100;
+    this.MAX_QUEUE_STREAMS = 50;
+  }
+
+  /**
+   * Check if we can add a pending permission (memory bounds)
+   */
+  canAddPendingPermission() {
+    if (this.pendingPermissions.size >= this.MAX_PENDING_PERMISSIONS) {
+      console.warn(`[Orchestrator] Too many pending permissions (${this.pendingPermissions.size}), denying new request`);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Check if we can add a queue stream (memory bounds)
+   */
+  canAddQueueStream() {
+    if (this.queueStreams.size >= this.MAX_QUEUE_STREAMS) {
+      console.warn(`[Orchestrator] Too many queue streams (${this.queueStreams.size}), rejecting`);
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -162,6 +188,16 @@ export class Orchestrator extends EventEmitter {
         const requestId = `${sessionId}-${options?.toolUseID || Date.now()}`;
         const { promise, resolve } = this.createPermissionPromise(requestId);
 
+        // Check bounds before adding permission request
+        if (!this.canAddPendingPermission()) {
+          if (onDenial) onDenial({ toolName, mcpServer: mcpServerName, reason: 'server_overloaded' });
+          return {
+            behavior: 'deny',
+            message: 'Server overloaded with pending permission requests. Please try again.',
+            interrupt: false
+          };
+        }
+
         const permissionRequest = {
           id: requestId,
           type: 'mcp',
@@ -247,6 +283,17 @@ export class Orchestrator extends EventEmitter {
         console.log(`[Orchestrator] Bash command requires approval: ${cmd}`);
 
         const requestId = `${sessionId}-${options.toolUseID}`;
+
+        // Check bounds before adding permission request
+        if (!this.canAddPendingPermission()) {
+          if (onDenial) onDenial({ toolName: 'Bash', filePath: cmd, reason: 'server_overloaded' });
+          return {
+            behavior: 'deny',
+            message: 'Server overloaded with pending permission requests. Please try again.',
+            interrupt: false
+          };
+        }
+
         const { promise, resolve } = this.createPermissionPromise(requestId);
 
         const permissionRequest = {
@@ -307,6 +354,16 @@ export class Orchestrator extends EventEmitter {
 
           // Create a permission request
           const requestId = `${sessionId}-${options.toolUseID}`;
+
+          // Check bounds before adding permission request
+          if (!this.canAddPendingPermission()) {
+            if (onDenial) onDenial({ toolName, filePath, reason: 'server_overloaded' });
+            return {
+              behavior: 'deny',
+              message: 'Server overloaded with pending permission requests. Please try again.',
+              interrupt: false
+            };
+          }
 
           // Create a promise that will resolve when user responds
           const { promise, resolve } = this.createPermissionPromise(requestId);
@@ -1654,6 +1711,10 @@ The user is now continuing this conversation with you. Respond naturally as if y
    */
   getQueueStream(itemId) {
     if (!this.queueStreams.has(itemId)) {
+      // Check bounds before adding new stream
+      if (!this.canAddQueueStream()) {
+        return null; // Caller should handle null gracefully
+      }
       this.queueStreams.set(itemId, new EventEmitter());
     }
     return this.queueStreams.get(itemId);
@@ -1969,16 +2030,27 @@ ${result.response || 'No response'}
   }
 
   /**
-   * List vault files
+   * List vault files with depth protection
+   * @param {string} dir - Directory to list
+   * @param {string[]} files - Accumulator array
+   * @param {number} depth - Current recursion depth
+   * @returns {Promise<string[]>} List of relative file paths
    */
-  async listVaultFiles(dir = this.vaultPath, files = []) {
+  async listVaultFiles(dir = this.vaultPath, files = [], depth = 0) {
+    // Prevent infinite recursion from symlink loops or deeply nested directories
+    const MAX_DEPTH = 20;
+    if (depth > MAX_DEPTH) {
+      console.warn(`[Orchestrator] Max directory depth (${MAX_DEPTH}) exceeded at: ${dir}`);
+      return files;
+    }
+
     const entries = await fs.readdir(dir, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
 
       if (entry.isDirectory() && !entry.name.startsWith('.')) {
-        await this.listVaultFiles(fullPath, files);
+        await this.listVaultFiles(fullPath, files, depth + 1);
       } else if (entry.name.endsWith('.md')) {
         files.push(path.relative(this.vaultPath, fullPath));
       }
