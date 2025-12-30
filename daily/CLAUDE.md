@@ -10,8 +10,10 @@ Parachute Daily is a Flutter app for voice-first journaling. Unlike Parachute Ch
 
 **Key Characteristics:**
 - **No server required** - Works offline, local-first
-- **On-device transcription** - Whisper models, no cloud
+- **On-device transcription** - Parakeet v3 models, no cloud
+- **Semantic search** - EmbeddingGemma for local vector search
 - **Voice Activity Detection** - Auto-pause during silence
+- **Omi device support** - Bluetooth wearable for hands-free capture
 - **Journals as markdown** - Stored in `Daily/journals/`
 
 ---
@@ -39,7 +41,7 @@ Parachute Daily is a Flutter app for voice-first journaling. Unlike Parachute Ch
 │                           │                                      │
 │  ┌────────────────────────▼─────────────────────────────────┐   │
 │  │                  Local ML Models                          │   │
-│  │  Whisper (transcription), Gemma (titles)                 │   │
+│  │  Parakeet (transcription), EmbeddingGemma (search)       │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                           │                                      │
 └───────────────────────────┼──────────────────────────────────────┘
@@ -63,9 +65,10 @@ daily/lib/
 ├── core/                        # Shared infrastructure
 │   ├── config/                  # App configuration
 │   ├── errors/                  # Error types
-│   ├── models/                  # Shared models
-│   ├── providers/               # Core Riverpod providers
+│   ├── models/                  # Shared models (embedding_models.dart)
+│   ├── providers/               # Core Riverpod providers (embedding_provider.dart)
 │   ├── services/                # Core services
+│   │   ├── embedding/           # Embedding services (mobile + desktop)
 │   │   └── search/              # Local search implementation
 │   └── theme/                   # Design tokens, themes
 │
@@ -81,11 +84,13 @@ daily/lib/
     │   └── widgets/             # Entry cards, input bar
     │
     ├── recorder/                # Voice recording
-    │   ├── models/              # Recording model
-    │   ├── providers/           # Recording state
+    │   ├── models/              # Recording, OmiDevice
+    │   ├── providers/           # Recording state, Omi providers
+    │   ├── screens/             # DevicePairingScreen
     │   ├── services/            # Audio, transcription
     │   │   ├── audio_service.dart
     │   │   ├── live_transcription_service_v3.dart
+    │   │   ├── omi/             # Omi Bluetooth services
     │   │   ├── storage_service.dart
     │   │   └── vad/             # Voice activity detection
     │   └── widgets/             # Recording visualizer
@@ -109,6 +114,10 @@ daily/lib/
 | `lib/features/recorder/services/audio_service.dart` | Audio recording |
 | `lib/features/recorder/services/live_transcription_service_v3.dart` | Real-time transcription |
 | `lib/features/recorder/services/vad/` | Voice activity detection |
+| `lib/features/recorder/services/omi/` | Omi Bluetooth device services |
+| `lib/features/recorder/providers/omi_providers.dart` | Omi device state management |
+| `lib/core/services/embedding/` | Embedding services (mobile + desktop) |
+| `lib/core/providers/embedding_provider.dart` | Embedding state management |
 | `lib/core/services/file_system_service.dart` | Vault paths |
 
 ---
@@ -147,15 +156,25 @@ StorageService saves audio + transcript
 
 ### Transcription Models
 
-Daily uses on-device Whisper models for transcription:
+Daily uses Parakeet v3 for on-device transcription:
 
-| Model | Size | Speed | Quality |
-|-------|------|-------|---------|
-| `tiny` | 75MB | Fastest | Good for short clips |
-| `base` | 142MB | Fast | Better accuracy |
-| `small` | 466MB | Medium | High accuracy |
+| Platform | Model | Size | Backend |
+|----------|-------|------|---------|
+| iOS/macOS | Parakeet v3 | ~500MB | FluidAudio (native) |
+| Android | Parakeet v3 | ~500MB | Sherpa-ONNX |
 
-Models are downloaded on first use and cached locally.
+Models are downloaded on first use via Settings → Local AI Models.
+
+### Embedding Models
+
+For semantic search, Daily uses EmbeddingGemma:
+
+| Platform | Model | Size | Backend |
+|----------|-------|------|---------|
+| Mobile | EmbeddingGemma | ~300MB | flutter_gemma |
+| Desktop | EmbeddingGemma | ~200MB | Ollama |
+
+Embeddings use 256 dimensions (Matryoshka truncation from 768) for efficient storage and search.
 
 ---
 
@@ -263,15 +282,42 @@ class VadConfig {
 Daily is designed for offline-first operation:
 
 1. **No network required** for core features
-2. **Local transcription** via Whisper models
-3. **Local storage** in vault directory
-4. **Optional sync** via Git or Syncthing
+2. **Local transcription** via Parakeet v3 models
+3. **Local semantic search** via EmbeddingGemma
+4. **Local storage** in vault directory
+5. **Optional sync** via Git or Syncthing
 
 ### First Run
 1. App prompts for vault location
-2. Downloads transcription model (~75-466MB)
-3. Creates `Daily/journals/` structure
-4. Ready to record
+2. Downloads transcription model (~500MB) via Settings
+3. Optionally downloads embedding model (~300MB) for search
+4. Creates `Daily/journals/` structure
+5. Ready to record
+
+---
+
+## Omi Device Integration
+
+Daily supports the Omi wearable pendant for hands-free voice capture:
+
+### Features
+- **Bluetooth pairing** via Settings → Omi Device
+- **Button-triggered recording** - tap to start/stop
+- **Battery monitoring** - see charge level in settings
+- **Firmware OTA updates** - update device from app
+- **Store-and-forward** - recover audio if connection drops
+
+### Key Providers
+```dart
+// Connected device state
+final connectedOmiDeviceProvider = StreamProvider<OmiDevice?>((ref) { ... });
+
+// Battery level
+final omiBatteryLevelProvider = StreamProvider<int>((ref) { ... });
+
+// Firmware service
+final omiFirmwareServiceProvider = ChangeNotifierProvider<OmiFirmwareService>((ref) { ... });
+```
 
 ---
 
@@ -338,9 +384,11 @@ debugPrint('[VAD] Speech detected: $isSpeech');
 | Feature | macOS | Android | iOS |
 |---------|-------|---------|-----|
 | Recording | ✅ | ✅ | ✅ |
-| Transcription | ✅ | ✅ | ✅ |
+| Transcription (Parakeet) | ✅ FluidAudio | ✅ Sherpa-ONNX | ✅ FluidAudio |
+| Embeddings | ✅ Ollama | ✅ flutter_gemma | ✅ flutter_gemma |
 | Background recording | ✅ | ✅ | Limited |
 | Omi pendant | ✅ | ✅ | ✅ |
+| Semantic search | ✅ | ✅ | ✅ |
 
 ---
 

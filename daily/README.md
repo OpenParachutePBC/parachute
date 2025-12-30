@@ -10,7 +10,9 @@ Daily is a voice-first journaling app that runs entirely on your device. No serv
 
 - **Voice-first**: Tap to record, speak your thoughts
 - **Local-first**: Everything stays on your device
-- **On-device transcription**: Whisper models, no internet needed
+- **On-device transcription**: Parakeet v3 models, no internet needed
+- **Semantic search**: EmbeddingGemma for finding entries by meaning
+- **Omi support**: Hands-free recording with Bluetooth wearable
 - **Auto-pause**: Hands-free recording with silence detection
 
 ---
@@ -33,18 +35,31 @@ flutter run -d android
 ## Features
 
 ### Voice Capture
-- Real-time transcription as you speak
+- Real-time transcription as you speak (Parakeet v3)
 - Voice activity detection for hands-free recording
-- Support for Omi pendant (Bluetooth capture device)
+- Support for Omi pendant (Bluetooth wearable)
+- Button-triggered recording from device
 
 ### Journal Organization
 - Daily entries organized by date
 - Audio files preserved alongside transcripts
 - Full-text search across all entries
+- Semantic search via EmbeddingGemma
+
+### Local AI Models
+- **Parakeet v3** (~500MB) - On-device voice transcription
+- **EmbeddingGemma** (~300MB) - Semantic search embeddings
+- Download once, works offline forever
+
+### Omi Device
+- Bluetooth pairing and battery monitoring
+- Over-the-air firmware updates
+- Store-and-forward audio recovery
 
 ### Offline Operation
 - Works without internet connection
-- Local Whisper models for transcription
+- Local Parakeet models for transcription
+- Local embeddings for semantic search
 - Data syncs via Git or Syncthing
 
 ---
@@ -71,7 +86,7 @@ Daily stores everything in your local vault:
 |----------|--------|
 | macOS | ✅ Full support |
 | Android | ✅ Full support |
-| iOS | 🚧 Coming soon |
+| iOS | ✅ Full support |
 | Windows | 🚧 Planned |
 | Linux | 🚧 Planned |
 
