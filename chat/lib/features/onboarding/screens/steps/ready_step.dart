@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parachute_chat/core/theme/design_tokens.dart';
-import 'package:parachute_chat/core/providers/embedding_provider.dart';
-import 'package:parachute_chat/features/recorder/providers/transcription_init_provider.dart';
 
 /// Final onboarding step - shows what's ready and lets user get started
 class ReadyStep extends ConsumerWidget {
@@ -18,13 +16,6 @@ class ReadyStep extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Check status of AI models
-    final transcriptionState = ref.watch(transcriptionInitProvider);
-    final embeddingStatus = ref.watch(embeddingModelStatusProvider);
-
-    final parakeetReady = transcriptionState.isReady;
-    final embeddingReady = embeddingStatus.isReady;
 
     return Scaffold(
       backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
@@ -70,7 +61,7 @@ class ReadyStep extends ConsumerWidget {
                         SizedBox(height: Spacing.lg),
 
                         Text(
-                          'Parachute is ready to help you think.',
+                          'Parachute Chat is ready.',
                           style: TextStyle(
                             fontSize: TypographyTokens.bodyLarge,
                             color: isDark
@@ -82,11 +73,7 @@ class ReadyStep extends ConsumerWidget {
                         SizedBox(height: Spacing.xxl),
 
                         // Feature checklist
-                        _buildFeatureList(
-                          isDark: isDark,
-                          parakeetReady: parakeetReady,
-                          embeddingReady: embeddingReady,
-                        ),
+                        _buildFeatureList(isDark: isDark),
                       ],
                     ),
                   ),
@@ -119,11 +106,7 @@ class ReadyStep extends ConsumerWidget {
     );
   }
 
-  Widget _buildFeatureList({
-    required bool isDark,
-    required bool parakeetReady,
-    required bool embeddingReady,
-  }) {
+  Widget _buildFeatureList({required bool isDark}) {
     return Container(
       padding: EdgeInsets.all(Spacing.lg),
       decoration: BoxDecoration(
@@ -143,38 +126,24 @@ class ReadyStep extends ConsumerWidget {
             isDark: isDark,
             icon: Icons.folder_open,
             title: 'Your Vault',
-            subtitle: 'Notes and recordings stored locally',
+            subtitle: 'Sessions and contexts stored locally',
             isReady: true,
           ),
           Divider(height: Spacing.xl),
           _buildFeatureItem(
             isDark: isDark,
-            icon: Icons.edit_note,
-            title: 'Journal',
-            subtitle: 'Quick notes and voice recordings',
+            icon: Icons.chat_bubble_outline,
+            title: 'AI Chat',
+            subtitle: 'Chat with Claude via Parachute Base',
             isReady: true,
           ),
           Divider(height: Spacing.xl),
           _buildFeatureItem(
             isDark: isDark,
-            icon: Icons.record_voice_over,
-            title: 'Voice Transcription',
-            subtitle: parakeetReady
-                ? 'Ready to transcribe'
-                : 'Download in Settings when ready',
-            isReady: parakeetReady,
-            isOptional: true,
-          ),
-          Divider(height: Spacing.xl),
-          _buildFeatureItem(
-            isDark: isDark,
-            icon: Icons.search,
-            title: 'Semantic Search',
-            subtitle: embeddingReady
-                ? 'Search by meaning'
-                : 'Download in Settings when ready',
-            isReady: embeddingReady,
-            isOptional: true,
+            icon: Icons.auto_awesome,
+            title: 'Memory & Tools',
+            subtitle: 'AI remembers past conversations',
+            isReady: true,
           ),
         ],
       ),
@@ -187,7 +156,6 @@ class ReadyStep extends ConsumerWidget {
     required String title,
     required String subtitle,
     required bool isReady,
-    bool isOptional = false,
   }) {
     final color = isReady
         ? BrandColors.success
@@ -208,40 +176,12 @@ class ReadyStep extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? BrandColors.nightText : BrandColors.charcoal,
-                    ),
-                  ),
-                  if (isOptional && !isReady) ...[
-                    SizedBox(width: Spacing.xs),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: Spacing.xs,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? BrandColors.nightSurface
-                            : BrandColors.stone.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        'Optional',
-                        style: TextStyle(
-                          fontSize: TypographyTokens.labelSmall - 2,
-                          color: isDark
-                              ? BrandColors.nightTextSecondary
-                              : BrandColors.driftwood,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+              Text(
+                title,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? BrandColors.nightText : BrandColors.charcoal,
+                ),
               ),
               SizedBox(height: Spacing.xs),
               Text(

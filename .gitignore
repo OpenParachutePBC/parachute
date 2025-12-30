@@ -13,18 +13,30 @@
 .env.local
 .env.*.local
 
-# Node.js (agent)
-agent/node_modules/
-agent/.usage/
-agent/sample-vault/.usage/
+# Node.js (base)
+base/node_modules/
+base/.usage/
+base/sample-vault/.usage/
+base/sample-vault/.parachute/
+node_modules/
 
-# Flutter (app)
-app/.dart_tool/
-app/.packages
-app/build/
-app/.flutter-plugins
-app/.flutter-plugins-dependencies
-app/pubspec.lock
+# Wrangler (Cloudflare)
+.wrangler/
+
+# Flutter (chat)
+chat/.dart_tool/
+chat/.packages
+chat/build/
+chat/.flutter-plugins
+chat/.flutter-plugins-dependencies
+
+# Flutter (daily)
+daily/.dart_tool/
+daily/.packages
+daily/build/
+daily/.flutter-plugins
+daily/.flutter-plugins-dependencies
+daily/android/build/
 
 # Generated files
 *.log

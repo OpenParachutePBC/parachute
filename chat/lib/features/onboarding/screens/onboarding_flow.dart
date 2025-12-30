@@ -5,13 +5,11 @@ import 'package:parachute_chat/core/theme/design_tokens.dart';
 
 import 'steps/welcome_step.dart';
 import 'steps/vault_picker_step.dart';
-import 'steps/local_ai_step.dart';
 import 'steps/ready_step.dart';
 
 /// Multi-step onboarding flow for first-time users
 ///
-/// Simplified flow for journaling: Welcome → Vault → LocalAI → Ready
-/// (Import chats step removed - only relevant for AI Chat power users)
+/// Simplified flow for Chat: Welcome → Vault → Ready
 class OnboardingFlow extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
 
@@ -40,12 +38,10 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
   int _currentStep = 0;
   late AnimationController _progressController;
 
-  // Simplified step structure for journaling users
-  // (Import step removed - only relevant for AI Chat power users)
+  // Simplified step structure for Chat users
   final List<OnboardingStepData> _steps = [
     OnboardingStepData(title: 'Welcome', icon: Icons.waving_hand),
     OnboardingStepData(title: 'Vault', icon: Icons.folder_open),
-    OnboardingStepData(title: 'AI', icon: Icons.auto_awesome),
     OnboardingStepData(title: 'Ready', icon: Icons.rocket_launch),
   ];
 
@@ -118,11 +114,6 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow>
                       onNext: _nextStep,
                       onBack: _previousStep,
                       onSkip: _skipToEnd,
-                    ),
-                    LocalAiStep(
-                      onNext: _nextStep,
-                      onBack: _previousStep,
-                      onSkip: _nextStep, // Skip AI just goes to Ready
                     ),
                     ReadyStep(
                       onComplete: _completeOnboarding,
