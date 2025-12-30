@@ -13,31 +13,12 @@
 .env.local
 .env.*.local
 
-# Node.js (base)
-base/node_modules/
-base/.usage/
-base/sample-vault/.usage/
-base/sample-vault/.parachute/
-node_modules/
+# Claude Code context
+.claude/
 
-# Wrangler (Cloudflare)
-.wrangler/
-
-# Flutter (chat)
-chat/.dart_tool/
-chat/.packages
-chat/build/
-chat/.flutter-plugins
-chat/.flutter-plugins-dependencies
-
-# Flutter (daily)
-daily/.dart_tool/
-daily/.packages
-daily/build/
-daily/.flutter-plugins
-daily/.flutter-plugins-dependencies
-daily/android/build/
-
-# Generated files
+# Temporary files
 *.log
 *.tmp
+
+# Note: Each submodule (daily, chat, base) has its own .gitignore
+# This file only covers the parent coordinator repo
