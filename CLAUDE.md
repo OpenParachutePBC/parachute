@@ -1,6 +1,11 @@
-# Parachute - Monorepo Development Guide
+# Parachute - Multi-Repo Development Guide
 
-**Essential guidance for Claude Code when working with the Parachute monorepo.**
+**Essential guidance for Claude Code when working with the Parachute ecosystem.**
+
+This is the **coordinator repo** with git submodules. Each module has its own repository:
+- [parachute-daily](https://github.com/OpenParachutePBC/parachute-daily) - Local voice journaling
+- [parachute-chat](https://github.com/OpenParachutePBC/parachute-chat) - AI chat assistant
+- [parachute-base](https://github.com/OpenParachutePBC/parachute-base) - Backend server
 
 ---
 
@@ -19,28 +24,43 @@ We build local-first, voice-first AI tooling that gives people agency over their
 
 ---
 
-## Monorepo Structure
+## Repository Structure
 
 ```
-parachute/                     # This monorepo (you are here)
-├── CLAUDE.md                 # This file - overall guidance
-├── daily/                    # Parachute Daily - local voice journaling
-│   ├── lib/                 # Dart source code
-│   └── pubspec.yaml         # Flutter dependencies
-├── chat/                     # Parachute Chat - AI assistant app
-│   ├── lib/                 # Dart source code
-│   └── pubspec.yaml         # Flutter dependencies
-└── base/                     # Parachute Base - backend server
-    ├── claude.md            # Server-specific development guide
-    ├── lib/                 # JavaScript source
-    ├── server.js            # Express API server
-    └── package.json         # Node dependencies
+parachute/                     # Coordinator repo (you are here)
+├── CLAUDE.md                 # This file - cross-repo guidance
+├── .gitmodules               # Submodule configuration
+├── daily/                    # Submodule → parachute-daily
+├── chat/                     # Submodule → parachute-chat
+└── base/                     # Submodule → parachute-base
 ```
 
-**Key Files (start here when exploring):**
-- `daily/` - Local-first voice journaling app (Alpha priority, runs standalone)
-- `chat/` - AI chat assistant (requires base server)
-- `base/claude.md` - Backend API, session management, Claude SDK integration
+**Individual Repos (source of truth):**
+- `parachute-daily` - Standalone voice journaling (Flutter)
+- `parachute-chat` - AI chat assistant (Flutter, requires base)
+- `parachute-base` - Backend server (Node.js)
+
+**Cloning with submodules:**
+```bash
+git clone --recurse-submodules https://github.com/OpenParachutePBC/parachute.git
+
+# Or if already cloned:
+git submodule update --init --recursive
+```
+
+**Working with submodules:**
+```bash
+# Pull latest from all submodules
+git submodule update --remote
+
+# Push changes in a submodule (work in the submodule directory)
+cd daily
+git add . && git commit -m "..." && git push
+
+# Update parent to track new submodule commit
+cd ..
+git add daily && git commit -m "Update daily submodule"
+```
 
 ---
 
