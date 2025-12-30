@@ -46,7 +46,13 @@ class JournalService {
   }
 
   /// Path to journals directory
-  String get journalsPath => '$_vaultPath/$_journalFolderName';
+  /// If folder name is empty, returns the vault root path
+  String get journalsPath {
+    if (_journalFolderName.isEmpty) {
+      return _vaultPath;
+    }
+    return '$_vaultPath/$_journalFolderName';
+  }
 
   /// Ensure journals directory exists
   Future<void> ensureDirectoryExists() async {
@@ -71,14 +77,14 @@ class JournalService {
 
     if (!await _fileSystemService.fileExists(filePath)) {
       _log.debug('Journal file not found, returning empty', data: {'date': _formatDate(normalizedDate)});
-      return JournalDay.empty(normalizedDate);
+      return _createEmptyJournal(normalizedDate);
     }
 
     try {
       final content = await _fileSystemService.readFileAsString(filePath);
       if (content == null) {
         _log.warn('Could not read journal file', data: {'date': _formatDate(normalizedDate)});
-        return JournalDay.empty(normalizedDate);
+        return _createEmptyJournal(normalizedDate);
       }
 
       final journal = _parseJournalFile(content, normalizedDate);
@@ -805,6 +811,30 @@ class JournalService {
   }
 
   // ============================================================
+  // Helpers
+  // ============================================================
+
+  /// Create an empty JournalDay with the correct file path
+  JournalDay _createEmptyJournal(DateTime date) {
+    return JournalDay(
+      date: DateTime(date.year, date.month, date.day),
+      entries: const [],
+      entryMetadata: const {},
+      filePath: _getRelativeFilePath(date),
+    );
+  }
+
+  /// Get the relative file path for a date (relative to vault root)
+  /// Handles empty folder name case (journals stored in root)
+  String _getRelativeFilePath(DateTime date) {
+    final dateStr = _formatDate(date);
+    if (_journalFolderName.isEmpty) {
+      return '$dateStr.md';
+    }
+    return '$_journalFolderName/$dateStr.md';
+  }
+
+  // ============================================================
   // Parsing
   // ============================================================
 
@@ -852,7 +882,7 @@ class JournalService {
       date: date,
       entries: entries,
       entryMetadata: entryMetadata,
-      filePath: '$_journalFolderName/${_formatDate(date)}.md',
+      filePath: _getRelativeFilePath(date),
     );
   }
 

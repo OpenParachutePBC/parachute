@@ -1,12 +1,26 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:parachute_daily/features/recorder/repositories/recording_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:parachute_daily/features/recorder/services/audio_service.dart';
-import 'package:parachute_daily/features/recorder/services/storage_service.dart';
 import 'package:parachute_daily/features/recorder/services/transcription_service_adapter.dart';
 import 'package:parachute_daily/features/recorder/services/live_transcription_service_v3.dart';
-import 'package:parachute_daily/features/recorder/services/background_transcription_service.dart';
 import 'package:parachute_daily/features/recorder/services/recording_post_processing_service.dart';
+
+// Settings keys
+const String _autoEnhanceKey = 'auto_enhance';
+
+/// Provider for auto-enhance setting
+/// When enabled, automatically cleans up transcripts and generates titles
+final autoEnhanceProvider = FutureProvider<bool>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool(_autoEnhanceKey) ?? false; // Default: OFF
+});
+
+/// Set auto-enhance preference
+Future<void> setAutoEnhance(bool enabled) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setBool(_autoEnhanceKey, enabled);
+}
 
 /// Provider for AudioService
 ///
@@ -17,8 +31,7 @@ import 'package:parachute_daily/features/recorder/services/recording_post_proces
 /// `await audioService.ensureInitialized()` before using the service if they
 /// need to guarantee initialization is complete.
 final audioServiceProvider = Provider<AudioService>((ref) {
-  final storageService = ref.watch(storageServiceProvider);
-  final service = AudioService(storageService);
+  final service = AudioService();
   // Initialize the service when first accessed
   // Note: This is async but we don't await - callers should use ensureInitialized() if needed
   service.initialize().catchError((e) {
@@ -31,35 +44,6 @@ final audioServiceProvider = Provider<AudioService>((ref) {
   });
 
   return service;
-});
-
-/// Provider for StorageService
-///
-/// Local-first storage service for recording management.
-/// All recordings are stored in ~/Parachute/captures/ as .wav, .md, and .json files.
-/// Git sync handles multi-device synchronization.
-///
-/// IMPORTANT: The service initializes asynchronously. Callers should use
-/// `await storageService.ensureInitialized()` before using the service if they
-/// need to guarantee initialization is complete.
-final storageServiceProvider = Provider<StorageService>((ref) {
-  final service = StorageService(ref);
-  // Initialize the service when first accessed
-  // Note: This is async but we don't await - callers should use ensureInitialized() if needed
-  service.initialize().catchError((e) {
-    debugPrint('[StorageServiceProvider] Initialization error: $e');
-  });
-
-  return service;
-});
-
-/// Provider for RecordingRepository
-///
-/// This provides data access for recordings following the Repository Pattern.
-/// It separates data access logic from business logic.
-final recordingRepositoryProvider = Provider<RecordingRepository>((ref) {
-  final storageService = ref.watch(storageServiceProvider);
-  return RecordingRepository(storageService);
 });
 
 /// Provider for TranscriptionServiceAdapter
@@ -92,12 +76,6 @@ final recordingPostProcessingProvider =
         transcriptionService: transcriptionService,
       );
     });
-
-/// Provider for triggering recordings list refresh
-///
-/// Increment this counter to trigger a refresh of the recordings list.
-/// Used by Omi capture service to notify UI when new recordings are saved.
-final recordingsRefreshTriggerProvider = StateProvider<int>((ref) => 0);
 
 /// State notifier for managing active recording session
 ///
@@ -175,29 +153,4 @@ class ActiveRecordingNotifier extends StateNotifier<ActiveRecordingState> {
 final activeRecordingProvider =
     StateNotifierProvider<ActiveRecordingNotifier, ActiveRecordingState>((ref) {
       return ActiveRecordingNotifier();
-    });
-
-/// Provider for background transcription service
-///
-/// This keeps transcription running even when screens are disposed,
-/// automatically saving results when transcription completes.
-///
-/// IMPORTANT: Uses keepAlive to prevent disposal when screens navigate away.
-/// This ensures background transcription continues and completes even when
-/// the UI is not actively watching the provider.
-final backgroundTranscriptionProvider =
-    Provider<BackgroundTranscriptionService>((ref) {
-      final service = BackgroundTranscriptionService();
-
-      // Keep this provider alive even when no widgets are listening
-      // This is critical for background transcription to complete
-      ref.keepAlive();
-
-      // Set callback to trigger UI refresh when file is saved
-      // This updates the recordings list even when user navigates away
-      service.onFileSaved = () {
-        ref.read(recordingsRefreshTriggerProvider.notifier).state++;
-      };
-
-      return service;
     });

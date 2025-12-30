@@ -5,18 +5,15 @@ import 'package:record/record.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:parachute_daily/features/recorder/services/storage_service.dart';
 import 'package:parachute_daily/core/services/file_system_service.dart';
 
 enum RecordingState { stopped, recording, paused }
 
 class AudioService {
-  // ignore: unused_field
-  final StorageService _storageService;
   final AudioRecorder _recorder = AudioRecorder();
   final AudioPlayer _player = AudioPlayer();
 
-  AudioService(this._storageService);
+  AudioService();
 
   RecordingState _recordingState = RecordingState.stopped;
   String? _currentRecordingPath;

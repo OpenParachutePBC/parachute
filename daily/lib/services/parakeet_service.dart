@@ -14,10 +14,13 @@ class ParakeetService {
   static bool _isInitializing = false;
   static String _version = 'v3';
   static bool _isDiarizerInitialized = false;
+  // Track if native bridge is available (set false on MissingPluginException)
+  static bool _bridgeAvailable = true;
 
   bool get isInitialized => _isInitialized;
   bool get isDiarizerInitialized => _isDiarizerInitialized;
-  bool get isSupported => Platform.isIOS || Platform.isMacOS;
+  // Only supported if platform is iOS/macOS AND native bridge is available
+  bool get isSupported => _bridgeAvailable && (Platform.isIOS || Platform.isMacOS);
   String get version => _version;
 
   /// Initialize Parakeet models
@@ -65,6 +68,10 @@ class ParakeetService {
       } else {
         throw Exception('Initialization failed: $result');
       }
+    } on MissingPluginException {
+      debugPrint('[ParakeetService] Native bridge not available, disabling service');
+      _bridgeAvailable = false;
+      rethrow;
     } on PlatformException catch (e) {
       debugPrint('[ParakeetService] ❌ Initialization failed: ${e.message}');
       rethrow;
@@ -170,6 +177,11 @@ class ParakeetService {
     try {
       final result = await _channel.invokeMethod<Map>('areModelsDownloaded');
       return result?['downloaded'] as bool? ?? false;
+    } on MissingPluginException {
+      // Native bridge not implemented - disable service
+      debugPrint('[ParakeetService] Native bridge not available, disabling service');
+      _bridgeAvailable = false;
+      return false;
     } catch (e) {
       debugPrint('[ParakeetService] areModelsDownloaded failed: $e');
       return false;

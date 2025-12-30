@@ -37,6 +37,7 @@ dependencies:
   url_launcher: ^6.3.0
   archive: ^3.6.1
   http: ^1.2.0
+  device_info_plus: ^11.0.0
 
   # Android Storage Access Framework
   docman: ^1.2.0

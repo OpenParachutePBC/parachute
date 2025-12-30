@@ -347,8 +347,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
 
       // Auto-enhance: cleanup transcript and generate title (if enabled)
       if (transcript.isNotEmpty) {
-        final storageService = ref.read(storageServiceProvider);
-        final autoEnhance = await storageService.getAutoEnhance();
+        final autoEnhance = await ref.read(autoEnhanceProvider.future);
         if (autoEnhance) {
           debugPrint('[JournalScreen] Auto-enhancing transcription...');
           // Small delay to let UI update first
@@ -960,8 +959,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
         }
 
         // Auto-enhance: cleanup transcript and generate title (if enabled)
-        final storageService = ref.read(storageServiceProvider);
-        final autoEnhance = await storageService.getAutoEnhance();
+        final autoEnhance = await ref.read(autoEnhanceProvider.future);
         if (autoEnhance) {
           debugPrint('[JournalScreen] Auto-enhancing transcription...');
           await Future.delayed(const Duration(milliseconds: 100));
