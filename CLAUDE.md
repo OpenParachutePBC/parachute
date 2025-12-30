@@ -327,6 +327,26 @@ You are a helpful assistant with access to the user's vault...
 
 Always use `git --no-pager` to prevent pager blocking output.
 
+### Submodule Workflow
+
+**IMPORTANT: After pushing changes to any submodule, always update the parent repo!**
+
+When you commit and push to a submodule (daily, chat, or base):
+
+```bash
+# 1. Commit and push in the submodule
+cd base  # or chat, daily
+git add . && git commit -m "..." && git push
+
+# 2. Update parent repo to track new submodule commit
+cd /Users/unforced/Symbols/Codes/parachute
+git add base  # or chat, daily (whichever changed)
+git commit -m "Update base submodule"
+git push
+```
+
+This ensures the parent repo always points to the correct submodule commits, so `git clone --recurse-submodules` works correctly for others.
+
 ---
 
 ## Debugging Tips
@@ -395,4 +415,4 @@ flutter analyze               # Check for issues
 
 ---
 
-**Last Updated**: December 29, 2025
+**Last Updated**: December 30, 2025
