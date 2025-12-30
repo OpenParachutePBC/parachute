@@ -1405,9 +1405,9 @@ export class Orchestrator extends EventEmitter {
       // Load all MCP servers from .mcp.json by default
       mcpServers: 'all',
       // Load general context by default (user can configure additional contexts)
-      // Other context files in contexts/ are available for the agent to read on-demand
+      // Other context files in Chat/contexts/ are available for the agent to read on-demand
       context: {
-        include: ['contexts/general-context.md'],
+        include: ['Chat/contexts/general-context.md'],
         max_tokens: 10000
       },
       permissions: {
@@ -1448,7 +1448,7 @@ export class Orchestrator extends EventEmitter {
   /**
    * Build system prompt for vault agent
    * Uses AGENTS.md if present, otherwise falls back to default prompt
-   * Also loads context files from contexts/ folder
+   * Also loads context files from Chat/contexts/ folder
    */
   async buildVaultSystemPrompt(context = {}) {
     // Try to load AGENTS.md first - this is the preferred source
@@ -1465,11 +1465,11 @@ export class Orchestrator extends EventEmitter {
 
     // Determine which context files to load
     // If context.contexts is provided, use those
-    // Otherwise, fall back to default (general-context.md)
+    // Otherwise, fall back to default (Chat/contexts/general-context.md)
     let contextPaths = context.contexts;
     if (!contextPaths || contextPaths.length === 0) {
-      // Default: load general-context.md
-      contextPaths = ['contexts/general-context.md'];
+      // Default: load general-context.md from Chat module
+      contextPaths = ['Chat/contexts/general-context.md'];
     }
 
     // Load specified context files

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:parachute_chat/core/theme/design_tokens.dart';
-import 'package:parachute_chat/core/services/migration_service.dart';
-import 'package:parachute_chat/core/providers/file_system_provider.dart';
 import 'package:parachute_chat/features/onboarding/screens/onboarding_flow.dart';
 import './expandable_settings_section.dart';
 
@@ -18,7 +16,6 @@ class DeveloperSection extends ConsumerStatefulWidget {
 class _DeveloperSectionState extends ConsumerState<DeveloperSection> {
   bool _showOnboardingOnNextLaunch = false;
   bool _isLoading = true;
-  bool _isMigrating = false;
 
   static const String _showOnboardingKey = 'debug_show_onboarding_next_launch';
 
@@ -101,80 +98,6 @@ class _DeveloperSectionState extends ConsumerState<DeveloperSection> {
     }
   }
 
-  Future<void> _runMigrations() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Run Data Migrations?'),
-        content: const Text(
-          'This will migrate old journal entries from the "assets:" format '
-          'to the new "entries:" format. This is safe to run multiple times.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Run'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    setState(() => _isMigrating = true);
-
-    try {
-      final fileSystemService = ref.read(fileSystemServiceProvider);
-      final migrationService = MigrationService(fileSystemService);
-
-      // Run the assets-to-entries migration (force to re-run if needed)
-      final migration = AssetsToEntriesMigration(fileSystemService);
-      final result = await migrationService.forceRunMigration(migration);
-
-      if (mounted) {
-        String message;
-        Color bgColor;
-
-        if (result.success) {
-          if (result.itemsMigrated == 0) {
-            message = 'No files needed migration.';
-            bgColor = BrandColors.turquoise;
-          } else {
-            message = 'Migrated ${result.itemsMigrated} journal file(s).';
-            bgColor = BrandColors.success;
-          }
-        } else {
-          message = 'Migration failed: ${result.error}';
-          bgColor = BrandColors.error;
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: bgColor,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Migration error: $e'),
-            backgroundColor: BrandColors.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isMigrating = false);
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -207,34 +130,6 @@ class _DeveloperSectionState extends ConsumerState<DeveloperSection> {
             onPressed: _resetOnboardingNow,
             icon: const Icon(Icons.refresh),
             label: const Text('Reset Onboarding Now'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: isDark
-                  ? BrandColors.nightTextSecondary
-                  : BrandColors.driftwood,
-              side: BorderSide(
-                color: isDark
-                    ? BrandColors.nightTextSecondary.withValues(alpha: 0.3)
-                    : BrandColors.driftwood.withValues(alpha: 0.3),
-              ),
-            ),
-          ),
-        ),
-
-        SizedBox(height: Spacing.md),
-
-        // Run migrations button
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _isMigrating ? null : _runMigrations,
-            icon: _isMigrating
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.sync),
-            label: Text(_isMigrating ? 'Running...' : 'Run Data Migrations'),
             style: OutlinedButton.styleFrom(
               foregroundColor: isDark
                   ? BrandColors.nightTextSecondary

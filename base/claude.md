@@ -92,7 +92,7 @@ VAULT_PATH=/path/to/vault npm start  # Custom vault
 | `/api/agents-md` | GET | Get AGENTS.md content |
 | `/api/agents-md` | PUT | Update AGENTS.md (body: `{content}` or `{fromDefault: true}` to reset) |
 | `/api/default-prompt` | GET | Get built-in default system prompt |
-| `/api/contexts` | GET | List available context files from contexts/ |
+| `/api/contexts` | GET | List available context files from Chat/contexts/ |
 | `/api/analytics` | GET | Get session and agent analytics |
 | `/api/logs` | GET | Query recent logs (params: `level`, `component`, `since`, `limit`) |
 | `/api/logs/stats` | GET | Get log statistics |
@@ -141,7 +141,7 @@ Parachute uses a layered system prompt architecture:
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Context Files (defines WHO the user is)           │
 │                                                             │
-│  contexts/                                                  │
+│  Chat/contexts/                                             │
 │  ├── general-context.md    ← imported memories, preferences │
 │  ├── work-project.md       ← project-specific context       │
 │  └── health-goals.md       ← domain-specific context        │
@@ -152,7 +152,7 @@ Parachute uses a layered system prompt architecture:
 
 **AGENTS.md Override**: If the user creates `AGENTS.md` in their vault root, it completely replaces the built-in default. This gives power users full control over agent behavior.
 
-**Context Files**: Personal context about the user is loaded from `contexts/` folder. The `general-context.md` file is selected by default and contains imported memories from Claude/ChatGPT conversations. Additional contexts can be selected via the UI.
+**Context Files**: Personal context about the user is loaded from `Chat/contexts/` folder. The `general-context.md` file is selected by default and contains imported memories from Claude/ChatGPT conversations. Additional contexts can be selected via the UI.
 
 **API Endpoints**:
 - `GET /api/default-prompt` - View the built-in default prompt

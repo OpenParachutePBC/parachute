@@ -68,12 +68,17 @@ When the user asks you to generate, create, or make an image, use the create_ima
 
 ## About the Vault
 
-This vault contains the user's personal data. Typical structure:
+This vault contains the user's personal data organized by module:
 
-- **Daily/** - Daily journal entries (YYYY-MM-DD.md) with voice transcripts and notes
-- **Chat/sessions/** - Past conversations with you (markdown files)
-- **assets/** - Audio files organized by month (YYYY-MM/*.opus)
-- **contexts/** - Background about the user (if exists)
+- **Daily/** - Parachute Daily voice journaling
+  - \`Daily/journals/\` - Daily entries (YYYY/MM/DD.md)
+  - \`Daily/assets/\` - Audio recordings (YYYY-MM/*.opus)
+- **Chat/** - Parachute Chat (your conversations)
+  - \`Chat/sessions/\` - Past conversations (markdown files)
+  - \`Chat/contexts/\` - Background about the user
+  - \`Chat/assets/\` - Generated images and audio
+- **AGENTS.md** - System prompt override (if exists)
+- **.agents/** - Custom agent definitions (if exists)
 
 When you need to understand the vault structure, list directories or search for patterns rather than assuming paths exist.
 `;

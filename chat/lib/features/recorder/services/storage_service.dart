@@ -8,15 +8,14 @@ import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
-/// Local-first storage service for recording management
+/// Local-first storage service for recording management in Parachute Chat
 ///
-/// Current architecture (journal system):
-/// - Daily journals: ~/Parachute/Daily/YYYY-MM-DD.md
-/// - Audio files: ~/Parachute/assets/YYYY-MM/*.opus
+/// Current architecture:
+/// - Recordings stored in ~/Parachute/Chat/assets/YYYY-MM/
+/// - Audio files: *.opus, *.wav
+/// - Metadata: *.md (markdown with frontmatter)
 ///
-/// Legacy support (read-only):
-/// - Old captures in ~/Parachute/captures/ are still readable
-/// - New recordings should use the journal system via JournalService
+/// This is the Chat module's asset storage - separate from Daily.
 class StorageService {
   // ignore: unused_field
   final Ref? _ref;
@@ -146,10 +145,10 @@ class StorageService {
     }
   }
 
-  /// Get the current captures folder path (replaces getSyncFolderPath)
+  /// Get the current assets folder path (replaces getSyncFolderPath)
   Future<String> getSyncFolderPath() async {
     await initialize();
-    return await _fileSystem.getCapturesPath();
+    return await _fileSystem.getAssetsPath();
   }
 
   /// Set a new root folder path (for user configuration)
@@ -187,11 +186,11 @@ class StorageService {
       debugPrint(
         '[StorageService] Loading recordings from local filesystem...',
       );
-      final capturesPath = await _fileSystem.getCapturesPath();
-      final capturesDir = Directory(capturesPath);
+      final assetsPath = await _fileSystem.getAssetsPath();
+      final assetsDir = Directory(assetsPath);
 
-      if (!await capturesDir.exists()) {
-        debugPrint('[StorageService] Captures directory does not exist yet');
+      if (!await assetsDir.exists()) {
+        debugPrint('[StorageService] Assets directory does not exist yet');
         return [];
       }
 
@@ -200,8 +199,8 @@ class StorageService {
       final monthFolderPattern = RegExp(r'^\d{4}-\d{2}$');
       const batchSize = 20;
 
-      // === SCAN MONTH FOLDERS (new structure) ===
-      await for (final entity in capturesDir.list()) {
+      // === SCAN MONTH FOLDERS ===
+      await for (final entity in assetsDir.list()) {
         if (entity is Directory) {
           final folderName = p.basename(entity.path);
           if (monthFolderPattern.hasMatch(folderName)) {
@@ -309,12 +308,12 @@ class StorageService {
         }
       }
 
-      // === SCAN FLAT CAPTURES FOLDER (legacy) ===
+      // === SCAN FLAT ASSETS FOLDER (for files not in month folders) ===
       final legacyMdFiles = <File>[];
       final legacyAudioFileMap = <String, String>{};
       final legacyAudioOnlyFiles = <File>[];
 
-      await for (final entity in capturesDir.list()) {
+      await for (final entity in assetsDir.list()) {
         if (entity is File) {
           final path = entity.path;
           final baseName = p.basenameWithoutExtension(path);
@@ -808,12 +807,8 @@ class StorageService {
         recording.timestamp,
       );
 
-      // Ensure captures month folder exists
-      final capturesMonthPath = await _fileSystem.getCapturesMonthPath(recording.timestamp);
-      final capturesMonthDir = Directory(capturesMonthPath);
-      if (!await capturesMonthDir.exists()) {
-        await capturesMonthDir.create(recursive: true);
-      }
+      // Ensure assets month folder exists
+      final assetsMonthPath = await _fileSystem.ensureAssetsMonthFolderExists(recording.timestamp);
 
       // Copy audio file to assets/YYYY-MM/ folder
       final audioDestPath = await _fileSystem.getNewAssetPath(
@@ -829,9 +824,9 @@ class StorageService {
         debugPrint('[StorageService] Copied audio to: $audioDestPath');
       }
 
-      // Save markdown file to captures month folder
+      // Save markdown file to assets month folder alongside audio
       // Include relative path to audio in assets folder
-      final mdPath = p.join(capturesMonthPath, '$timestamp.md');
+      final mdPath = p.join(assetsMonthPath, '$timestamp.md');
       final mdFile = File(mdPath);
 
       if (!await mdFile.exists()) {
@@ -955,29 +950,29 @@ class StorageService {
       String mdPath;
 
       if (timestamp != null) {
-        // Try month folder first (new structure)
-        final monthPath = await _fileSystem.getCapturesMonthPath(timestamp);
+        // Try month folder first
+        final monthPath = await _fileSystem.getAssetsMonthPath(timestamp);
         final monthMdPath = p.join(monthPath, '${updatedRecording.id}.md');
 
         if (await File(monthMdPath).exists()) {
           mdPath = monthMdPath;
         } else {
-          // Fall back to flat captures folder (legacy)
-          final capturesPath = await _fileSystem.getCapturesPath();
-          final legacyMdPath = p.join(capturesPath, '${updatedRecording.id}.md');
+          // Fall back to flat assets folder
+          final assetsPath = await _fileSystem.getAssetsPath();
+          final legacyMdPath = p.join(assetsPath, '${updatedRecording.id}.md');
 
           if (await File(legacyMdPath).exists()) {
             mdPath = legacyMdPath;
           } else {
             // New recording - use month folder structure
-            await _fileSystem.ensureMonthFoldersExist(timestamp);
+            await _fileSystem.ensureAssetsMonthFolderExists(timestamp);
             mdPath = monthMdPath;
           }
         }
       } else {
-        // Can't parse timestamp, use flat captures folder
-        final capturesPath = await _fileSystem.getCapturesPath();
-        mdPath = p.join(capturesPath, '${updatedRecording.id}.md');
+        // Can't parse timestamp, use flat assets folder
+        final assetsPath = await _fileSystem.getAssetsPath();
+        mdPath = p.join(assetsPath, '${updatedRecording.id}.md');
       }
 
       // Generate updated markdown content
@@ -1094,21 +1089,16 @@ class StorageService {
       );
 
       if (timestamp != null) {
-        // Try month folder structure first (new)
-        final monthPath = await _fileSystem.getCapturesMonthPath(timestamp);
-        final audioFolderPath = await _fileSystem.getAudioFolderPath(timestamp);
+        // Try month folder structure first
+        final monthPath = await _fileSystem.getAssetsMonthPath(timestamp);
 
-        // Delete from month folder
+        // Delete from month folder (audio and markdown are in same folder)
         final monthMdPath = p.join(monthPath, '$recordingId.md');
         final monthJsonPath = p.join(monthPath, '$recordingId.json');
-        final audioWavPath = p.join(audioFolderPath, '$recordingId.wav');
-        final audioOpusPath = p.join(audioFolderPath, '$recordingId.opus');
-
-        // Also check for audio in same folder as markdown (legacy within month)
         final monthWavPath = p.join(monthPath, '$recordingId.wav');
         final monthOpusPath = p.join(monthPath, '$recordingId.opus');
 
-        for (final path in [monthMdPath, monthJsonPath, audioWavPath, audioOpusPath, monthWavPath, monthOpusPath]) {
+        for (final path in [monthMdPath, monthJsonPath, monthWavPath, monthOpusPath]) {
           final file = File(path);
           if (await file.exists()) {
             await file.delete();
@@ -1118,12 +1108,12 @@ class StorageService {
         }
       }
 
-      // Also check flat captures folder (legacy)
-      final capturesPath = await _fileSystem.getCapturesPath();
-      final legacyOpusPath = p.join(capturesPath, '$recordingId.opus');
-      final legacyWavPath = p.join(capturesPath, '$recordingId.wav');
-      final legacyMdPath = p.join(capturesPath, '$recordingId.md');
-      final legacyJsonPath = p.join(capturesPath, '$recordingId.json');
+      // Also check flat assets folder (for files not in month folders)
+      final assetsPath = await _fileSystem.getAssetsPath();
+      final legacyOpusPath = p.join(assetsPath, '$recordingId.opus');
+      final legacyWavPath = p.join(assetsPath, '$recordingId.wav');
+      final legacyMdPath = p.join(assetsPath, '$recordingId.md');
+      final legacyJsonPath = p.join(assetsPath, '$recordingId.json');
 
       for (final path in [legacyOpusPath, legacyWavPath, legacyMdPath, legacyJsonPath]) {
         final file = File(path);

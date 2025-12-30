@@ -3,18 +3,14 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'file_system_service.dart';
 
-/// Service for migrating audio files from legacy locations to the unified assets folder.
+/// Service for migrating audio files within the Chat module's assets folder.
 ///
-/// Legacy locations:
-/// - captures/YYYY-MM/_audio/*.wav - Old recording audio files
-/// - Daily/assets/*.wav - Old journal audio files
+/// This handles the case where audio files might be in the flat assets folder
+/// instead of being organized by month (assets/YYYY-MM/).
 ///
-/// New location:
-/// - assets/YYYY-MM/*.wav - Unified asset storage
-///
-/// This migration runs once on app startup and updates markdown references.
+/// This migration runs once on app startup.
 class AssetMigrationService {
-  static const String _migrationCompleteKey = 'asset_migration_v1_complete';
+  static const String _migrationCompleteKey = 'chat_asset_migration_v1_complete';
 
   final FileSystemService _fileSystem;
 
@@ -38,11 +34,8 @@ class AssetMigrationService {
     int totalMigrated = 0;
 
     try {
-      // Migrate from captures/_audio/ folders
-      totalMigrated += await _migrateCapturesAudio();
-
-      // Migrate from Daily/assets/ folder
-      totalMigrated += await _migrateJournalAssets();
+      // Migrate audio files from flat assets folder to month folders
+      totalMigrated += await _migrateAssetsToMonthFolders();
 
       // Mark migration as complete
       final prefs = await SharedPreferences.getInstance();
@@ -57,60 +50,21 @@ class AssetMigrationService {
     }
   }
 
-  /// Migrate audio files from captures/YYYY-MM/_audio/ to assets/YYYY-MM/
-  Future<int> _migrateCapturesAudio() async {
+  /// Migrate audio files from flat assets/ folder to assets/YYYY-MM/
+  Future<int> _migrateAssetsToMonthFolders() async {
     int migrated = 0;
 
     try {
-      final capturesPath = await _fileSystem.getCapturesPath();
-      final capturesDir = Directory(capturesPath);
+      final assetsPath = await _fileSystem.getAssetsPath();
+      final assetsDir = Directory(assetsPath);
 
-      if (!await capturesDir.exists()) {
-        debugPrint('[AssetMigration] No captures directory found');
+      if (!await assetsDir.exists()) {
+        debugPrint('[AssetMigration] No assets directory found');
         return 0;
       }
 
-      final monthPattern = RegExp(r'^\d{4}-\d{2}$');
-
-      await for (final entity in capturesDir.list()) {
-        if (entity is Directory) {
-          final folderName = entity.path.split('/').last;
-          if (monthPattern.hasMatch(folderName)) {
-            // This is a month folder - check for _audio subfolder
-            final audioDir = Directory('${entity.path}/_audio');
-            if (await audioDir.exists()) {
-              await for (final audioEntity in audioDir.list()) {
-                if (audioEntity is File && _isAudioFile(audioEntity.path)) {
-                  final success = await _migrateAudioFile(audioEntity, folderName);
-                  if (success) migrated++;
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('[AssetMigration] Error migrating captures audio: $e');
-    }
-
-    debugPrint('[AssetMigration] Migrated $migrated files from captures/_audio/');
-    return migrated;
-  }
-
-  /// Migrate audio files from Daily/assets/ to assets/YYYY-MM/
-  Future<int> _migrateJournalAssets() async {
-    int migrated = 0;
-
-    try {
-      final journalPath = await _fileSystem.getJournalPath();
-      final journalAssetsDir = Directory('$journalPath/assets');
-
-      if (!await journalAssetsDir.exists()) {
-        debugPrint('[AssetMigration] No journal assets directory found');
-        return 0;
-      }
-
-      await for (final entity in journalAssetsDir.list()) {
+      // Look for audio files directly in the assets folder (not in month subfolders)
+      await for (final entity in assetsDir.list()) {
         if (entity is File && _isAudioFile(entity.path)) {
           // Parse date from filename to determine target month folder
           final filename = entity.path.split('/').last;
@@ -130,14 +84,14 @@ class AssetMigrationService {
         }
       }
     } catch (e) {
-      debugPrint('[AssetMigration] Error migrating journal assets: $e');
+      debugPrint('[AssetMigration] Error migrating assets: $e');
     }
 
-    debugPrint('[AssetMigration] Migrated $migrated files from journal assets/');
+    debugPrint('[AssetMigration] Migrated $migrated audio files to month folders');
     return migrated;
   }
 
-  /// Migrate a single audio file to the unified assets folder
+  /// Migrate a single audio file to a month subfolder
   Future<bool> _migrateAudioFile(File sourceFile, String monthStr) async {
     try {
       final filename = sourceFile.path.split('/').last;
@@ -158,114 +112,14 @@ class AssetMigrationService {
         return false;
       }
 
-      // Copy the file (don't delete source yet in case of issues)
-      await sourceFile.copy(destPath);
+      // Move the file to the month folder
+      await sourceFile.rename(destPath);
       debugPrint('[AssetMigration] Migrated: $filename -> $monthStr/');
-
-      // Update markdown references
-      await _updateMarkdownReferences(sourceFile.path, destPath, monthStr, filename);
 
       return true;
     } catch (e) {
       debugPrint('[AssetMigration] Error migrating ${sourceFile.path}: $e');
       return false;
-    }
-  }
-
-  /// Update markdown files to point to the new asset location
-  Future<void> _updateMarkdownReferences(
-    String oldPath,
-    String newPath,
-    String monthStr,
-    String filename,
-  ) async {
-    try {
-      // Determine old relative path patterns to search for
-      final oldPatterns = <String>[];
-
-      // Pattern for captures/_audio/
-      if (oldPath.contains('/_audio/')) {
-        oldPatterns.add('captures/$monthStr/_audio/$filename');
-        oldPatterns.add('$monthStr/_audio/$filename');
-        oldPatterns.add('_audio/$filename');
-      }
-
-      // Pattern for Daily/assets/
-      final journalFolderName = _fileSystem.getJournalFolderName();
-      if (oldPath.contains('/assets/')) {
-        oldPatterns.add('$journalFolderName/assets/$filename');
-      }
-
-      // New relative path
-      final newRelativePath = 'assets/$monthStr/$filename';
-
-      // Search and update markdown files
-      await _updateCapturesMarkdown(oldPatterns, newRelativePath);
-      await _updateJournalMarkdown(oldPatterns, newRelativePath);
-    } catch (e) {
-      debugPrint('[AssetMigration] Error updating markdown references: $e');
-    }
-  }
-
-  /// Update captures markdown files
-  Future<void> _updateCapturesMarkdown(List<String> oldPatterns, String newRelativePath) async {
-    try {
-      final capturesPath = await _fileSystem.getCapturesPath();
-      final capturesDir = Directory(capturesPath);
-
-      if (!await capturesDir.exists()) return;
-
-      await for (final entity in capturesDir.list(recursive: true)) {
-        if (entity is File && entity.path.endsWith('.md')) {
-          await _updateFileReferences(entity, oldPatterns, newRelativePath);
-        }
-      }
-    } catch (e) {
-      debugPrint('[AssetMigration] Error updating captures markdown: $e');
-    }
-  }
-
-  /// Update journal markdown files
-  Future<void> _updateJournalMarkdown(List<String> oldPatterns, String newRelativePath) async {
-    try {
-      final journalPath = await _fileSystem.getJournalPath();
-      final journalDir = Directory(journalPath);
-
-      if (!await journalDir.exists()) return;
-
-      await for (final entity in journalDir.list()) {
-        if (entity is File && entity.path.endsWith('.md')) {
-          await _updateFileReferences(entity, oldPatterns, newRelativePath);
-        }
-      }
-    } catch (e) {
-      debugPrint('[AssetMigration] Error updating journal markdown: $e');
-    }
-  }
-
-  /// Update a single file's references
-  Future<void> _updateFileReferences(
-    File file,
-    List<String> oldPatterns,
-    String newRelativePath,
-  ) async {
-    try {
-      String content = await file.readAsString();
-      bool modified = false;
-
-      for (final oldPattern in oldPatterns) {
-        if (content.contains(oldPattern)) {
-          content = content.replaceAll(oldPattern, newRelativePath);
-          modified = true;
-          debugPrint('[AssetMigration] Updated reference in: ${file.path.split('/').last}');
-        }
-      }
-
-      if (modified) {
-        await file.writeAsString(content);
-      }
-    } catch (e) {
-      debugPrint('[AssetMigration] Error updating file ${file.path}: $e');
     }
   }
 
@@ -282,7 +136,7 @@ class AssetMigrationService {
   /// Parse timestamp from audio filename
   /// Supports formats:
   /// - 2025-12-20_14-30-22.wav
-  /// - 2025-12-20_14:30.wav (journal format)
+  /// - 2025-12-20_143022_audio.wav
   DateTime? _parseTimestampFromFilename(String filename) {
     // Try standard format: 2025-12-20_14-30-22
     final standardRegex = RegExp(r'(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})');
@@ -298,9 +152,9 @@ class AssetMigrationService {
       );
     }
 
-    // Try journal format: 2025-12-20_14:30
-    final journalRegex = RegExp(r'(\d{4})-(\d{2})-(\d{2})_(\d{2}):(\d{2})');
-    match = journalRegex.firstMatch(filename);
+    // Try compact format: 2025-12-20_143022
+    final compactRegex = RegExp(r'(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})');
+    match = compactRegex.firstMatch(filename);
     if (match != null) {
       return DateTime(
         int.parse(match.group(1)!),
@@ -308,6 +162,7 @@ class AssetMigrationService {
         int.parse(match.group(3)!),
         int.parse(match.group(4)!),
         int.parse(match.group(5)!),
+        int.parse(match.group(6)!),
       );
     }
 

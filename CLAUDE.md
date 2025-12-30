@@ -90,7 +90,8 @@ parachute/                     # This monorepo (you are here)
                     │  │   └── index.db         │  ← SQLite RAG index
                     │  ├── Chat/                │  ← Parachute Chat module
                     │  │   ├── sessions/        │  ← Chat history (markdown)
-                    │  │   └── contexts/        │  ← Personal context files
+                    │  │   ├── contexts/        │  ← Personal context files
+                    │  │   └── assets/          │  ← Generated images, audio
                     │  ├── .agents/             │  ← Agent definitions
                     │  └── AGENTS.md            │  ← System prompt override
                     │                           │
@@ -212,16 +213,19 @@ First message from user
 Response from assistant
 ```
 
-### Captures (Voice Recordings)
+### Assets (Audio, Images)
 
-Stored in `{vault}/captures/YYYY-MM/`:
+Stored in `{vault}/assets/YYYY-MM/`:
 
 ```
-2025-12/
-├── 2025-12-20_14-30-22.md     # Transcript
-├── 2025-12-20_14-30-22.opus   # Audio file
-└── 2025-12-20_14-30-22.json   # Metadata
+assets/
+└── 2025-12/
+    ├── 2025-12-20_14-30-22.opus   # Audio file
+    ├── gen_abc123.png             # Generated image
+    └── photo_xyz789.jpg           # Captured photo
 ```
+
+Audio transcripts are embedded in Daily journal entries or Chat sessions.
 
 ### Agents (AI Personas)
 
@@ -271,22 +275,22 @@ You are a helpful assistant with access to the user's vault...
 
 ### Adding a New API Endpoint
 
-1. **Agent**: Add route in `agent/server.js`
-2. **App**: Add method in `app/lib/features/chat/services/chat_service.dart`
-3. **App**: Add provider in `app/lib/features/chat/providers/chat_providers.dart`
+1. **Base**: Add route in `base/server.js`
+2. **Chat**: Add method in `chat/lib/features/chat/services/chat_service.dart`
+3. **Chat**: Add provider in `chat/lib/features/chat/providers/chat_providers.dart`
 4. Update CLAUDE.md files with new endpoint documentation
 
 ### Modifying Session Storage Format
 
-1. **Agent**: Update `agent/lib/session-manager.js`
-2. **App**: Update `app/lib/features/chat/models/chat_session.dart`
-3. Consider migration path for existing sessions
+1. **Base**: Update `base/lib/session-manager-v2.js`
+2. **Chat**: Update `chat/lib/features/chat/models/chat_session.dart`
+3. Consider migration path for existing sessions (see `base/scripts/migrate-vault.js`)
 
-### Adding App Feature Flags
+### Adding Feature Flags (Chat App)
 
-1. **Service**: `app/lib/core/services/feature_flags_service.dart`
-2. **Providers**: `app/lib/core/providers/feature_flags_provider.dart`
-3. **UI**: Settings screen in `app/lib/features/settings/`
+1. **Service**: `chat/lib/core/services/feature_flags_service.dart`
+2. **Providers**: `chat/lib/core/providers/feature_flags_provider.dart`
+3. **UI**: Settings screen in `chat/lib/features/settings/`
 
 ---
 
@@ -324,7 +328,7 @@ Always use `git --no-pager` to prevent pager blocking output.
 
 1. Check microphone permissions in system settings
 2. Verify transcription model is downloaded
-3. Check `captures/` directory for saved files
+3. Check `assets/` directory for saved audio files
 
 ### Performance Issues
 
@@ -337,16 +341,23 @@ Always use `git --no-pager` to prevent pager blocking output.
 
 ## Testing
 
-### Agent E2E Tests
+### Base Server E2E Tests
 ```bash
-cd agent
+cd base
 npm run test:e2e              # Run against current vault
 npm run test:e2e:isolated     # Run with temp test vault (recommended)
 ```
 
-### Flutter Tests
+### Chat App Tests
 ```bash
-cd app
+cd chat
+flutter test                  # Run all tests
+flutter analyze               # Check for issues
+```
+
+### Daily App Tests
+```bash
+cd daily
 flutter test                  # Run all tests
 flutter analyze               # Check for issues
 ```
@@ -357,10 +368,10 @@ flutter analyze               # Check for issues
 
 | Path | Description |
 |------|-------------|
-| `app/CLAUDE.md` | Flutter app patterns, providers, UI |
-| `app/lib/features/recorder/CLAUDE.md` | Voice recording feature details |
-| `agent/claude.md` | Agent API, sessions, Claude SDK |
-| `agent/DESIGN.md` | Architectural decisions and rationale |
+| `daily/CLAUDE.md` | Daily app - local-first voice journaling |
+| `chat/CLAUDE.md` | Chat app - AI assistant with Riverpod patterns |
+| `base/claude.md` | Base server - API, sessions, Claude SDK |
+| `base/DESIGN.md` | Architectural decisions and rationale |
 
 ---
 

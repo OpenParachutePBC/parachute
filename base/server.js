@@ -604,12 +604,12 @@ app.get('/api/agents', async (req, res) => {
 
 /**
  * GET /api/contexts
- * List available context files from contexts/ folder
+ * List available context files from Chat/contexts/ folder
  * Returns files that can be loaded into chat sessions
  */
 app.get('/api/contexts', async (req, res) => {
   try {
-    const contextsPath = path.join(CONFIG.vaultPath, 'contexts');
+    const contextsPath = path.join(CONFIG.vaultPath, 'Chat', 'contexts');
 
     // Check if contexts folder exists
     try {
@@ -619,7 +619,7 @@ app.get('/api/contexts', async (req, res) => {
       return res.json({ contexts: [] });
     }
 
-    // List all .md files in contexts/
+    // List all .md files in Chat/contexts/
     const files = await fs.readdir(contextsPath);
     const contexts = [];
 
@@ -638,7 +638,7 @@ app.get('/api/contexts', async (req, res) => {
         const description = lines[0]?.substring(0, 200) || '';
 
         contexts.push({
-          path: `contexts/${file}`,
+          path: `Chat/contexts/${file}`,
           filename: file,
           title,
           description,

@@ -30,23 +30,27 @@ Parachute is different:
 
 ```
 parachute/
-├── app/                      # Flutter mobile/desktop app
+├── daily/                    # Parachute Daily - local voice journaling
 │   ├── lib/                  # Dart source code
-│   ├── firmware/             # Omi device firmware
-│   └── README.md             # App documentation
+│   └── pubspec.yaml          # Flutter dependencies
 │
-├── agent/                    # Node.js AI backend
+├── chat/                     # Parachute Chat - AI assistant app
+│   ├── lib/                  # Dart source code
+│   └── pubspec.yaml          # Flutter dependencies
+│
+├── base/                     # Parachute Base - backend server
 │   ├── lib/                  # JavaScript source
 │   ├── server.js             # Express API server
-│   └── README.md             # Agent documentation
+│   └── claude.md             # Server documentation
 │
 └── README.md                 # You are here
 ```
 
 | Component | Description |
 |-----------|-------------|
-| **[app/](app/)** | Flutter app for voice capture, chat, and vault browsing (macOS, Android, iOS) |
-| **[agent/](agent/)** | AI agent backend using Claude SDK, sessions stored as markdown |
+| **[daily/](daily/)** | Local-first voice journaling - runs standalone, no server needed |
+| **[chat/](chat/)** | AI chat assistant - requires Base server for AI features |
+| **[base/](base/)** | Backend server using Claude SDK, sessions stored as markdown |
 
 ---
 
@@ -65,23 +69,31 @@ npm install -g @anthropic-ai/claude-code
 claude login
 ```
 
-### 2. Start the agent
+### 2. Run Parachute Daily (standalone)
 
 ```bash
-cd agent
+cd daily
+flutter pub get
+flutter run -d macos  # or android
+```
+
+Daily works offline with local transcription—no server needed.
+
+### 3. Run Parachute Chat (requires server)
+
+```bash
+# Terminal 1: Start the server
+cd base
 npm install
 VAULT_PATH=~/Parachute npm run dev
-```
 
-### 3. Run the app
-
-```bash
-cd app
+# Terminal 2: Run the Chat app
+cd chat
 flutter pub get
-flutter run -d macos  # or android, chrome
+flutter run -d macos  # or android
 ```
 
-The app connects to `http://localhost:3333` by default. Change this in Settings → AI Chat → Server URL.
+Chat connects to `http://localhost:3333` by default. Change this in Settings → AI Chat → Server URL.
 
 ---
 
@@ -121,43 +133,43 @@ Works with your existing tools:
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              USER DEVICES                                    │
+│                                                                              │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
-│  │  iPhone/Android │  │  macOS/Windows  │  │   Obsidian      │             │
-│  │  (Flutter App)  │  │  (Flutter App)  │  │   (Plugin)      │             │
+│  │ Parachute Daily │  │ Parachute Chat  │  │   Obsidian      │             │
+│  │ (standalone)    │  │ (needs server)  │  │   (Plugin)      │             │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘             │
-│           └────────────────────┼────────────────────┘                       │
-│                                ▼                                            │
-│                    ┌───────────────────────┐                                │
-│                    │    HTTP/SSE Client    │                                │
-└────────────────────┴───────────┬───────────┴────────────────────────────────┘
-                                 │
-                                 ▼ (port 3333)
-┌────────────────────────────────────────────────────────────────────────────┐
-│                         AGENT SERVER                                        │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                     Express Server (server.js)                        │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │  │
-│  │  │ /api/chat/*  │  │ /api/agents  │  │ /api/captures│               │  │
-│  │  └──────┬───────┘  └──────────────┘  └──────────────┘               │  │
-│  │         ▼                                                            │  │
-│  │  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      │  │
-│  │  │ Orchestrator │──────│ Claude SDK   │      │ Session Mgr  │      │  │
-│  │  └──────────────┘      └──────────────┘      │ (markdown)   │      │  │
-│  └──────────────────────────────────────────────┴──────────────┴───────┘  │
-└────────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-                    ┌───────────────────────────┐
-                    │   Knowledge Vault (local) │
-                    │                           │
-                    │  ~/Parachute/             │
-                    │  ├── agent-sessions/      │  ← Chat history
-                    │  ├── captures/            │  ← Voice recordings
-                    │  ├── .agents/             │  ← Agent definitions
-                    │  └── AGENTS.md            │  ← Personal context
-                    │                           │
-                    │  (synced via Git/Syncthing)│
-                    └───────────────────────────┘
+│           │                    │                    │                       │
+│           │   Local Only       └────────────────────┼───────────────────    │
+│           │                                         │                       │
+│           ▼                                         ▼ (port 3333)           │
+└───────────┼─────────────────────────────────────────┼───────────────────────┘
+            │                                         │
+            │                     ┌───────────────────┴───────────────────┐
+            │                     │         PARACHUTE BASE SERVER         │
+            │                     │  ┌─────────────────────────────────┐  │
+            │                     │  │  Orchestrator → Claude SDK      │  │
+            │                     │  │  Session Manager (markdown)     │  │
+            │                     │  │  MCP Servers (vault-search,     │  │
+            │                     │  │              para-generate)     │  │
+            │                     │  └─────────────────────────────────┘  │
+            │                     └───────────────────┬───────────────────┘
+            │                                         │
+            ▼                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         KNOWLEDGE VAULT (local)                              │
+│                                                                              │
+│  ~/Parachute/                                                                │
+│  ├── Daily/                    ← Parachute Daily module                      │
+│  │   └── journals/             ← Daily journal entries (markdown)            │
+│  ├── Chat/                     ← Parachute Chat module                       │
+│  │   ├── sessions/             ← Chat history (markdown)                     │
+│  │   └── contexts/             ← Personal context files                      │
+│  ├── assets/                   ← Audio, images (YYYY-MM/)                    │
+│  ├── .agents/                  ← Custom agent definitions                    │
+│  └── AGENTS.md                 ← System prompt override                      │
+│                                                                              │
+│  (synced via Git/Syncthing)                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -166,11 +178,11 @@ Works with your existing tools:
 
 | Document | Description |
 |----------|-------------|
-| [app/README.md](app/README.md) | Flutter app features, platforms, roadmap |
-| [agent/README.md](agent/README.md) | Agent API, configuration, authentication |
 | [CLAUDE.md](CLAUDE.md) | Developer guide for AI assistants |
-| [app/CLAUDE.md](app/CLAUDE.md) | Flutter development patterns |
-| [agent/claude.md](agent/claude.md) | Agent backend internals |
+| [daily/CLAUDE.md](daily/CLAUDE.md) | Daily app - local-first voice journaling |
+| [chat/CLAUDE.md](chat/CLAUDE.md) | Chat app - AI assistant with Riverpod |
+| [base/claude.md](base/claude.md) | Base server - API, sessions, Claude SDK |
+| [base/DESIGN.md](base/DESIGN.md) | Architectural decisions and rationale |
 
 ---
 
@@ -180,10 +192,12 @@ Works with your existing tools:
 
 ### Recent
 
+- **Modular Restructuring** — Split into Daily (standalone), Chat (with server), Base (server)
 - Chat import from Claude/ChatGPT exports
 - Session continuation with prior message loading
 - Vault initialization onboarding flow
 - Personal context via AGENTS.md
+- Image generation (mflux local, Gemini API)
 
 ### Primary Platforms
 
@@ -237,4 +251,4 @@ Whisper models for transcription under MIT License.
 
 ---
 
-**Last Updated:** December 22, 2025
+**Last Updated:** December 30, 2025

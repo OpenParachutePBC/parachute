@@ -8,7 +8,14 @@ import 'package:parachute_chat/core/providers/file_system_provider.dart';
 import 'package:parachute_chat/features/files/providers/file_browser_provider.dart';
 import './settings_section_header.dart';
 
-/// Storage settings section (Parachute folder and subfolder names)
+/// Storage settings section for Parachute Chat
+///
+/// Chat module folder structure:
+/// - ~/Parachute/Chat/ (root)
+///   - sessions/ - AI chat sessions
+///   - assets/ - Media files
+///   - contexts/ - Personal context files
+///   - imports/ - Imported chat history
 class StorageSection extends ConsumerStatefulWidget {
   const StorageSection({super.key});
 
@@ -17,12 +24,9 @@ class StorageSection extends ConsumerStatefulWidget {
 }
 
 class _StorageSectionState extends ConsumerState<StorageSection> {
-  String _syncFolderPath = '';
-  String _journalFolderName = 'Daily';
+  String _rootPath = '';
   String _assetsFolderName = 'assets';
-  String _sessionsFolderName = 'agent-sessions';
-  final TextEditingController _journalFolderNameController =
-      TextEditingController();
+  String _sessionsFolderName = 'sessions';
   final TextEditingController _assetsFolderNameController =
       TextEditingController();
   final TextEditingController _sessionsFolderNameController =
@@ -37,7 +41,6 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
   @override
   void dispose() {
-    _journalFolderNameController.dispose();
     _assetsFolderNameController.dispose();
     _sessionsFolderNameController.dispose();
     super.dispose();
@@ -46,11 +49,9 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
   Future<void> _loadSettings() async {
     final fileSystemService = ref.read(fileSystemServiceProvider);
     await fileSystemService.initialize();
-    _syncFolderPath = await fileSystemService.getRootPathDisplay();
-    _journalFolderName = fileSystemService.getJournalFolderName();
+    _rootPath = await fileSystemService.getRootPathDisplay();
     _assetsFolderName = fileSystemService.getAssetsFolderName();
     _sessionsFolderName = fileSystemService.getSessionsFolderName();
-    _journalFolderNameController.text = _journalFolderName;
     _assetsFolderNameController.text = _assetsFolderName;
     _sessionsFolderNameController.text = _sessionsFolderName;
 
@@ -59,7 +60,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     }
   }
 
-  Future<void> _openParachuteFolder() async {
+  Future<void> _openChatFolder() async {
     try {
       final fileSystemService = ref.read(fileSystemServiceProvider);
       final folderPath = await fileSystemService.getRootPath();
@@ -89,7 +90,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     }
   }
 
-  Future<void> _chooseSyncFolder() async {
+  Future<void> _chooseChatFolder() async {
     final fileSystemService = ref.read(fileSystemServiceProvider);
 
     // On Android, ensure we have storage permission first
@@ -102,7 +103,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
           builder: (context) => AlertDialog(
             title: const Text('Storage Permission Required'),
             content: const Text(
-              'Parachute needs access to all files to work with your vault folder.\n\n'
+              'Parachute Chat needs access to all files to work with your vault folder.\n\n'
               'This permission allows Parachute to read and write files in any location, '
               'similar to how Obsidian works.\n\n'
               'You\'ll be taken to settings to grant this permission.',
@@ -138,14 +139,13 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     }
 
     // Show dialog asking whether to migrate files
-    // Returns: 'migrate' to copy files, 'change_only' to just change path, null to cancel
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Change Parachute Folder'),
+        title: const Text('Change Chat Folder'),
         content: const Text(
           'Do you want to copy your existing files to the new location?\n\n'
-          '• Copy files - Brings all your recordings and transcripts to the new folder\n\n'
+          '• Copy files - Brings all your sessions and assets to the new folder\n\n'
           '• Don\'t copy - Use the new location as-is (good for switching to an existing vault)',
         ),
         actions: [
@@ -170,7 +170,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
     // Use standard file picker for all platforms
     final selectedDirectory = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Choose Your Vault Folder',
+      dialogTitle: 'Choose Your Chat Folder',
     );
 
     if (selectedDirectory != null) {
@@ -211,11 +211,11 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
       if (success) {
         final displayPath = await fileSystemService.getRootPathDisplay();
-        setState(() => _syncFolderPath = displayPath);
-        // Reset file browser to new vault root
+        setState(() => _rootPath = displayPath);
+        // Reset file browser to new root
         ref.read(currentBrowsePathProvider.notifier).state = '';
         ref.read(folderRefreshTriggerProvider.notifier).state++;
-        // Chat doesn't have journal service, only session providers need refresh
+
         if (mounted) {
           if (shouldMigrate) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -262,7 +262,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Failed to set up vault location'),
+              content: const Text('Failed to set up Chat folder location'),
               backgroundColor: BrandColors.error,
               duration: const Duration(seconds: 5),
             ),
@@ -273,12 +273,11 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
   }
 
   Future<void> _saveSubfolderNames() async {
-    final newJournalName = _journalFolderNameController.text.trim();
     final newAssetsName = _assetsFolderNameController.text.trim();
     final newSessionsName = _sessionsFolderNameController.text.trim();
 
     // Validate folder names
-    if (newJournalName.isEmpty || newAssetsName.isEmpty || newSessionsName.isEmpty) {
+    if (newAssetsName.isEmpty || newSessionsName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Folder names cannot be empty'),
@@ -288,7 +287,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
       return;
     }
 
-    if (newJournalName.contains('/') || newAssetsName.contains('/') || newSessionsName.contains('/')) {
+    if (newAssetsName.contains('/') || newSessionsName.contains('/')) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Folder names cannot contain slashes'),
@@ -301,14 +300,12 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
     try {
       final fileSystemService = ref.read(fileSystemServiceProvider);
       final success = await fileSystemService.setSubfolderNames(
-        journalFolderName: newJournalName,
         assetsFolderName: newAssetsName,
         sessionsFolderName: newSessionsName,
       );
 
       if (success && mounted) {
         setState(() {
-          _journalFolderName = newJournalName;
           _assetsFolderName = newAssetsName;
           _sessionsFolderName = newSessionsName;
         });
@@ -356,11 +353,11 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
         ),
         SizedBox(height: Spacing.lg),
 
-        // Parachute Folder Section
+        // Chat Folder Section
         const SettingsSubsectionHeader(
-          title: 'Parachute Folder',
+          title: 'Chat Folder',
           subtitle:
-              'All your recordings, transcripts, and spheres are stored here. '
+              'Your chat sessions, generated images, and personal contexts are stored here. '
               'Choose a location you can sync with iCloud, Syncthing, Dropbox, etc.',
         ),
         SizedBox(height: Spacing.lg),
@@ -390,7 +387,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
               ),
               SizedBox(height: Spacing.sm),
               Text(
-                _syncFolderPath,
+                _rootPath,
                 style: TextStyle(
                   fontSize: TypographyTokens.bodySmall,
                   fontFamily: 'monospace',
@@ -401,7 +398,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
               ),
 
               // Show helper notice if using app container
-              if (_syncFolderPath.contains('/Library/Containers/')) ...[
+              if (_rootPath.contains('/Library/Containers/')) ...[
                 SizedBox(height: Spacing.md),
                 Container(
                   padding: EdgeInsets.all(Spacing.md),
@@ -425,7 +422,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                           SizedBox(width: Spacing.sm),
                           Expanded(
                             child: Text(
-                              'Want to use ~/Parachute instead?',
+                              'Want to use ~/Parachute/Chat instead?',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: BrandColors.warning,
@@ -438,8 +435,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                       SizedBox(height: Spacing.sm),
                       Text(
                         'To sync with iCloud, Obsidian, or other apps, tap "Change Location" '
-                        'below and select your home folder. Create a "Parachute" folder there '
-                        'and select it. This grants the app permission to access it.',
+                        'below and navigate to ~/Parachute/Chat. Create the folder if needed.',
                         style: TextStyle(
                           color: isDark
                               ? BrandColors.nightTextSecondary
@@ -457,7 +453,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _chooseSyncFolder,
+                      onPressed: _chooseChatFolder,
                       icon: const Icon(Icons.folder, size: 18),
                       label: const Text('Change Location'),
                       style: FilledButton.styleFrom(
@@ -467,7 +463,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                   ),
                   SizedBox(width: Spacing.sm),
                   FilledButton.icon(
-                    onPressed: _openParachuteFolder,
+                    onPressed: _openChatFolder,
                     icon: const Icon(Icons.open_in_new, size: 18),
                     label: const Text('Open'),
                     style: FilledButton.styleFrom(
@@ -486,7 +482,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
         const SettingsSubsectionHeader(
           title: 'Subfolder Names',
           subtitle:
-              'Customize folder names to work with Obsidian, Logseq, or any markdown-based vault',
+              'Customize folder names within your Chat module',
         ),
         SizedBox(height: Spacing.lg),
 
@@ -507,18 +503,18 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Journal folder name
+              // Sessions folder name
               Row(
                 children: [
                   Icon(
-                    Icons.book,
+                    Icons.chat,
                     color: isDark
                         ? BrandColors.nightTextSecondary
                         : BrandColors.driftwood,
                   ),
                   SizedBox(width: Spacing.sm),
                   Text(
-                    'Daily journal folder',
+                    'Chat sessions folder',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: isDark ? BrandColors.nightText : BrandColors.charcoal,
@@ -528,15 +524,15 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
               ),
               SizedBox(height: Spacing.sm),
               TextField(
-                controller: _journalFolderNameController,
+                controller: _sessionsFolderNameController,
                 decoration: InputDecoration(
-                  hintText: 'e.g., Daily, Journal, daily-notes',
+                  hintText: 'e.g., sessions, chats, conversations',
                   border: const OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(
                     horizontal: Spacing.md,
                     vertical: Spacing.sm,
                   ),
-                  prefixIcon: const Icon(Icons.book, size: 18),
+                  prefixIcon: const Icon(Icons.chat, size: 18),
                 ),
               ),
 
@@ -575,41 +571,6 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                 ),
               ),
 
-              SizedBox(height: Spacing.xl),
-
-              // Sessions folder name
-              Row(
-                children: [
-                  Icon(
-                    Icons.chat,
-                    color: isDark
-                        ? BrandColors.nightTextSecondary
-                        : BrandColors.driftwood,
-                  ),
-                  SizedBox(width: Spacing.sm),
-                  Text(
-                    'AI chat sessions folder',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? BrandColors.nightText : BrandColors.charcoal,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: Spacing.sm),
-              TextField(
-                controller: _sessionsFolderNameController,
-                decoration: InputDecoration(
-                  hintText: 'e.g., Chat/sessions, chats, conversations',
-                  border: const OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: Spacing.md,
-                    vertical: Spacing.sm,
-                  ),
-                  prefixIcon: const Icon(Icons.chat, size: 18),
-                ),
-              ),
-
               SizedBox(height: Spacing.lg),
 
               Row(
@@ -617,9 +578,8 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        _journalFolderNameController.text = 'Daily';
                         _assetsFolderNameController.text = 'assets';
-                        _sessionsFolderNameController.text = 'Chat/sessions';
+                        _sessionsFolderNameController.text = 'sessions';
                       },
                       icon: const Icon(Icons.refresh, size: 18),
                       label: const Text('Reset to Default'),
@@ -643,8 +603,7 @@ class _StorageSectionState extends ConsumerState<StorageSection> {
 
               SettingsInfoBanner(
                 message:
-                    'These folders store your daily notes, audio/images, and AI chat history. '
-                    'Customize them to match your existing Obsidian/Logseq setup.',
+                    'Sessions store your AI chat history. Assets store generated images and audio.',
                 color: BrandColors.turquoise,
               ),
             ],
