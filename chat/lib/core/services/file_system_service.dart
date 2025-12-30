@@ -10,7 +10,8 @@ import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
 ///
 /// Manages the Chat folder structure (e.g., ~/Parachute/Chat/):
 /// - sessions/     - AI chat sessions (markdown) - configurable name
-/// - assets/       - Media files (images, audio) organized by YYYY-MM
+/// - assets/       - User-provided content (uploads, attachments)
+/// - artifacts/    - AI-generated content (images, code, documents)
 /// - contexts/     - User context files for AI
 /// - imports/      - Imported chat history (Claude, ChatGPT)
 ///
@@ -34,6 +35,7 @@ class FileSystemService {
   static const String _defaultAssetsFolderName = 'assets';
   static const String _contextsFolderName = 'contexts';
   static const String _importsFolderName = 'imports';
+  static const String _artifactsFolderName = 'artifacts';
   static const String _tempAudioFolderName = 'parachute_chat_audio_temp';
 
   // Temp subfolder names with different retention policies
@@ -237,6 +239,78 @@ class FileSystemService {
       await dir.create(recursive: true);
     }
     return path;
+  }
+
+  // ============================================================
+  // Artifacts Folder (AI-generated content)
+  // ============================================================
+
+  /// Get the artifacts folder name
+  String getArtifactsFolderName() {
+    return _artifactsFolderName;
+  }
+
+  /// Get the artifacts folder path
+  Future<String> getArtifactsPath() async {
+    final root = await getRootPath();
+    return '$root/$_artifactsFolderName';
+  }
+
+  /// Get the month folder path for artifacts
+  /// Returns path like: ~/Parachute/Chat/artifacts/2025-12
+  Future<String> getArtifactsMonthPath(DateTime timestamp) async {
+    final artifactsPath = await getArtifactsPath();
+    final month = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}';
+    return '$artifactsPath/$month';
+  }
+
+  /// Check if the artifacts folder exists
+  Future<bool> hasArtifactsFolder() async {
+    final path = await getArtifactsPath();
+    return Directory(path).exists();
+  }
+
+  /// Ensure artifacts folder exists
+  Future<String> ensureArtifactsFolderExists() async {
+    final path = await getArtifactsPath();
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+      debugPrint('[FileSystemService] Created artifacts folder: $path');
+    }
+    return path;
+  }
+
+  /// Ensure artifacts month folder exists
+  Future<String> ensureArtifactsMonthFolderExists(DateTime timestamp) async {
+    final monthPath = await getArtifactsMonthPath(timestamp);
+    final monthDir = Directory(monthPath);
+    if (!await monthDir.exists()) {
+      await monthDir.create(recursive: true);
+      debugPrint('[FileSystemService] Created artifacts folder: $monthPath');
+    }
+    return monthPath;
+  }
+
+  /// Generate a unique artifact filename with timestamp
+  /// Format: YYYY-MM-DD_HHMMSS_{type}.{ext}
+  String generateArtifactFilename(DateTime timestamp, String type, String extension) {
+    final date = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}-${timestamp.day.toString().padLeft(2, '0')}';
+    final time = '${timestamp.hour.toString().padLeft(2, '0')}${timestamp.minute.toString().padLeft(2, '0')}${timestamp.second.toString().padLeft(2, '0')}';
+    return '${date}_${time}_$type.$extension';
+  }
+
+  /// Get full path for a new artifact file
+  Future<String> getNewArtifactPath(DateTime timestamp, String type, String extension) async {
+    final monthPath = await ensureArtifactsMonthFolderExists(timestamp);
+    final filename = generateArtifactFilename(timestamp, type, extension);
+    return '$monthPath/$filename';
+  }
+
+  /// Get relative path from root to an artifact
+  String getArtifactRelativePath(DateTime timestamp, String filename) {
+    final month = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}';
+    return '$_artifactsFolderName/$month/$filename';
   }
 
   // ============================================================
@@ -647,11 +721,18 @@ class FileSystemService {
       }
     }
 
-    // Create assets folder
+    // Create assets folder (user uploads)
     final assetsDir = Directory('${root.path}/$_assetsFolderName');
     if (!await assetsDir.exists()) {
       await assetsDir.create(recursive: true);
       debugPrint('[FileSystemService] Created assets folder: ${assetsDir.path}');
+    }
+
+    // Create artifacts folder (AI-generated content)
+    final artifactsDir = Directory('${root.path}/$_artifactsFolderName');
+    if (!await artifactsDir.exists()) {
+      await artifactsDir.create(recursive: true);
+      debugPrint('[FileSystemService] Created artifacts folder: ${artifactsDir.path}');
     }
 
     debugPrint('[FileSystemService] Folder structure ready');
