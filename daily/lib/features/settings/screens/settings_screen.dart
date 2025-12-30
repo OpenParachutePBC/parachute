@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:parachute_daily/core/theme/design_tokens.dart';
 import '../widgets/storage_section.dart';
-import '../widgets/transcription_section.dart';
+import '../widgets/local_ai_models_section.dart';
+import '../widgets/omi_device_section.dart';
 
-/// Simplified settings screen for Parachute Daily
+/// Settings screen for Parachute Daily
 ///
 /// Contains:
 /// - Storage settings (vault path)
-/// - Transcription settings (model selection)
+/// - Local AI Models (transcription, embeddings)
+/// - Omi Device (pairing, firmware)
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -21,14 +23,17 @@ class SettingsScreen extends ConsumerWidget {
       backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.cream,
       appBar: AppBar(
         title: const Text('Settings'),
-        backgroundColor: isDark ? BrandColors.nightSurface : BrandColors.softWhite,
+        backgroundColor:
+            isDark ? BrandColors.nightSurface : BrandColors.softWhite,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: const [
           StorageSection(),
-          SizedBox(height: 16),
-          TranscriptionSection(),
+          SizedBox(height: 24),
+          LocalAiModelsSection(),
+          SizedBox(height: 24),
+          OmiDeviceSection(),
         ],
       ),
     );
