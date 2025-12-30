@@ -78,10 +78,6 @@ VAULT_PATH=/path/to/vault npm start  # Custom vault
 | `/api/permissions/stream` | GET | SSE stream for permission requests |
 | `/api/permissions/:id/grant` | POST | Grant a pending permission |
 | `/api/permissions/:id/deny` | POST | Deny a pending permission |
-| `/api/captures` | GET | List all captures |
-| `/api/captures` | POST | Upload a document (body: `{filename, content, title?, context?, timestamp?}`) |
-| `/api/captures/:filename` | GET | Get a capture file's content |
-| `/api/captures/:filename` | HEAD | Check if a capture file exists (200/404) |
 | `/api/mcp` | GET | List all MCP server configurations |
 | `/api/mcp/:name` | POST | Add or update an MCP server |
 | `/api/mcp/:name` | DELETE | Remove an MCP server |
