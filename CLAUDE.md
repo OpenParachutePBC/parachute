@@ -113,7 +113,7 @@ git add daily && git commit -m "Update daily submodule"
                     │  │   ├── contexts/        │  ← Personal context files
                     │  │   └── assets/          │  ← Generated images, audio
                     │  ├── .agents/             │  ← Agent definitions
-                    │  └── AGENTS.md            │  ← System prompt override
+                    │  └── CLAUDE.md            │  ← System prompt override
                     │                           │
                     │  (synced via Syncthing)   │
                     └───────────────────────────┘
@@ -275,7 +275,7 @@ You are a helpful assistant with access to the user's vault...
 - **Streaming Throttle** - Reduced UI updates during streaming (50ms throttle)
 - **Import Old Chats** - Claude/ChatGPT history import with onboarding flow
 - **Session Continuation** - Continued sessions load prior messages correctly
-- **AGENTS.md** - Personal context template system
+- **CLAUDE.md** - Personal context template system
 
 ### Priority Issues
 

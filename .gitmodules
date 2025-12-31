@@ -7,6 +7,3 @@
 [submodule "base"]
 	path = base
 	url = https://github.com/OpenParachutePBC/parachute-base.git
-[submodule "build"]
-	path = build
-	url = https://github.com/OpenParachutePBC/parachute-build.git
