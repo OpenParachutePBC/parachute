@@ -30,6 +30,8 @@ We build local-first, voice-first AI tooling that gives people agency over their
 parachute/                     # Coordinator repo (you are here)
 ├── CLAUDE.md                 # This file - cross-repo guidance
 ├── .gitmodules               # Submodule configuration
+├── scripts/                  # Utility scripts
+│   └── install-android.sh    # Android deployment with data preservation
 ├── daily/                    # Submodule → parachute-daily
 ├── chat/                     # Submodule → parachute-chat
 └── base/                     # Submodule → parachute-base
@@ -188,6 +190,20 @@ cd base && VAULT_PATH=~/Parachute npm run dev
 cd chat && flutter run -d macos
 ```
 
+### Android Deployment
+```bash
+# Install to Android device (preserves app data)
+./scripts/install-android.sh              # Install both apps
+./scripts/install-android.sh chat         # Install only chat
+./scripts/install-android.sh daily        # Install only daily
+./scripts/install-android.sh chat daylight:35859  # Specific device
+
+# The script handles:
+# - Multiple device selection (prompts if >1 connected)
+# - Network device auto-connect (e.g., daylight:35859)
+# - Data preservation on reinstall (-r flag)
+```
+
 ---
 
 ## Configuration
@@ -215,22 +231,35 @@ The app connects to the agent at `http://localhost:3333` by default. To change:
 
 ### Sessions (Chat History)
 
+Sessions use a **lightweight pointer architecture**:
+- Markdown files contain only frontmatter metadata (no message content)
+- SDK JSONL files at `~/.claude/projects/` are the source of truth for messages
+- This enables easy future migration to SQLite
+
 Stored in `{vault}/Chat/sessions/*.md`:
 
 ```markdown
 ---
-session_id: abc-123-def
-agent: .agents/vault-agent.md
+sdk_session_id: "abc-123-def"
 title: "Project Discussion"
-created_at: 2025-12-20T10:30:00Z
-sdk_session_id: claude-session-xyz
+created_at: "2025-12-20T10:30:00Z"
+last_accessed: "2025-12-20T11:00:00Z"
+archived: false
+message_count: 12
+source: "parachute"
 ---
+```
 
-### User | 10:30 AM
-First message from user
-
-### Assistant | 10:30 AM
-Response from assistant
+For imported Claude Code sessions:
+```markdown
+---
+sdk_session_id: "claude-code-session-xyz"
+title: "Parachute Development"
+working_directory: "/Users/name/project"
+model: "claude-opus-4-5-20250514"
+source: "claude-code"
+message_count: 45
+---
 ```
 
 ### Assets (Audio, Images)
@@ -267,6 +296,11 @@ You are a helpful assistant with access to the user's vault...
 
 ### Recently Completed
 
+- **Claude Code Session Import** - Import sessions from `~/.claude/projects/` with lightweight markdown pointers
+- **Model Display** - Shows which model (Opus 4.5, Sonnet 4, etc.) is being used in the chat app bar
+- **Graceful Abort Handling** - Stop button no longer crashes server; partial progress saved
+- **Account Default Model** - No hardcoded model; uses account's default, displays actual model used
+- **Flat Session Structure** - Simplified `Chat/sessions/` without subfolders
 - **Stability Fixes (Phase 4)** - SSE heartbeat, session cleanup, request timeouts, recursion protection
 - **Session Context Bug Fix** - Fixed `state.sessionId` not updating, causing context loss
 - **SSE Disconnect Fix** - Changed `req.on('close')` to `res.on('close')` for proper client detection
@@ -415,4 +449,4 @@ flutter analyze               # Check for issues
 
 ---
 
-**Last Updated**: December 30, 2025
+**Last Updated**: January 2, 2026

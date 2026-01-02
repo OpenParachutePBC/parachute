@@ -188,15 +188,18 @@ Works with your existing tools:
 
 ## Current Status
 
-**Active Development** — December 2025
+**Active Development** — January 2026
 
 ### Recent
 
+- **Claude Code Session Import** — Import sessions from `~/.claude/projects/`
+- **Model Display** — Shows which model (Opus 4.5, Sonnet 4, etc.) is being used
+- **Graceful Abort** — Stop button works smoothly without crashing server
 - **Modular Restructuring** — Split into Daily (standalone), Chat (with server), Base (server)
 - Chat import from Claude/ChatGPT exports
 - Session continuation with prior message loading
 - Vault initialization onboarding flow
-- Personal context via AGENTS.md
+- Personal context via CLAUDE.md
 - Image generation (mflux local, Gemini API)
 
 ### Primary Platforms
@@ -251,4 +254,4 @@ Whisper models for transcription under MIT License.
 
 ---
 
-**Last Updated:** December 30, 2025
+**Last Updated:** January 2, 2026
