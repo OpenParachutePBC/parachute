@@ -35,12 +35,16 @@ parachute/                     # Coordinator repo (you are here)
 ├── daily/                    # Submodule → parachute-daily
 ├── chat/                     # Submodule → parachute-chat
 └── base/                     # Submodule → parachute-base
+    ├── parachute/            # Python server (FastAPI) - primary
+    ├── tests/                # Python tests
+    ├── pyproject.toml        # Python config
+    └── node/                 # Node.js server (legacy)
 ```
 
 **Individual Repos (source of truth):**
 - `parachute-daily` - Standalone voice journaling (Flutter)
 - `parachute-chat` - AI chat assistant (Flutter, requires base)
-- `parachute-base` - Backend server (Node.js)
+- `parachute-base` - Backend server (Python primary, Node.js legacy in `node/`)
 
 **Cloning with submodules:**
 ```bash
@@ -86,7 +90,7 @@ git add daily && git commit -m "Update daily submodule"
 ┌────────────────────────────────────────────────────────────────────────────┐
 │                         AGENT SERVER (one instance)                         │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                     Express Server (server.js)                        │  │
+│  │                     FastAPI Server (Python)                           │  │
 │  │                                                                       │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │  │
 │  │  │ /api/chat/*  │  │ /api/agents  │  │ /api/captures│               │  │
@@ -131,7 +135,7 @@ git add daily && git commit -m "Update daily submodule"
 |-----------|------|----------|
 | **Daily (Flutter)** | Voice journaling, local-first, standalone | Runs on each device |
 | **Chat (Flutter)** | AI chat assistant, requires backend | Runs on each device |
-| **Base (Node.js)** | AI orchestration, session management, MCP | Single server instance |
+| **Base (Python)** | AI orchestration, session management, MCP | Single server instance |
 | **Vault** | Data storage (markdown files) | Local + Syncthing sync |
 
 ### Communication Flow
@@ -171,20 +175,29 @@ flutter run -d android             # Run on Android
 flutter analyze                    # Check for issues
 ```
 
-### Base (Node.js - Backend server)
+### Base (Python - Backend server)
 ```bash
 cd base
+python -m venv venv                # Create virtual environment
+source venv/bin/activate           # Activate venv (macOS/Linux)
+pip install -r requirements.txt    # Install dependencies
+VAULT_PATH=~/Parachute python -m parachute.server  # Start server (port 3333)
+pytest                             # Run tests
+```
+
+### Base/Node (Node.js - Legacy backend)
+```bash
+cd base/node
 npm install                        # Install dependencies
 npm start                          # Start server (port 3333)
 npm run dev                        # Start with auto-reload
 npm test                           # Run tests
-VAULT_PATH=~/Parachute npm start   # Point to your vault
 ```
 
 ### Full Stack Development (Chat + Base)
 ```bash
-# Terminal 1: Start base server
-cd base && VAULT_PATH=~/Parachute npm run dev
+# Terminal 1: Start Python base server
+cd base && source venv/bin/activate && VAULT_PATH=~/Parachute python -m parachute.server
 
 # Terminal 2: Run Chat app
 cd chat && flutter run -d macos
@@ -336,9 +349,9 @@ You are a helpful assistant with access to the user's vault...
 
 ### Modifying Session Storage Format
 
-1. **Base**: Update `base/lib/session-manager-v2.js`
+1. **Base**: Update `base/parachute/core/session_manager.py`
 2. **Chat**: Update `chat/lib/features/chat/models/chat_session.dart`
-3. Consider migration path for existing sessions (see `base/scripts/migrate-vault.js`)
+3. Consider migration path for existing sessions
 
 ### Adding Feature Flags (Chat App)
 
@@ -373,7 +386,7 @@ cd base  # or chat, daily
 git add . && git commit -m "..." && git push
 
 # 2. Update parent repo to track new submodule commit
-cd /Users/unforced/Symbols/Codes/parachute
+cd /Users/unforced/Parachute/Build/repos/parachute
 git add base  # or chat, daily (whichever changed)
 git commit -m "Update base submodule"
 git push
@@ -444,8 +457,9 @@ flutter analyze               # Check for issues
 |------|-------------|
 | `daily/CLAUDE.md` | Daily app - local-first voice journaling |
 | `chat/CLAUDE.md` | Chat app - AI assistant with Riverpod patterns |
-| `base/claude.md` | Base server - API, sessions, Claude SDK |
-| `base/DESIGN.md` | Architectural decisions and rationale |
+| `base/README.md` | Python base server - API, sessions, Claude SDK |
+| `base/node/claude.md` | Node.js base server (legacy) |
+| `base/node/DESIGN.md` | Architectural decisions and rationale |
 
 ---
 
