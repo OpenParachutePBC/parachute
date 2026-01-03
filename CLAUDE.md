@@ -176,13 +176,41 @@ flutter analyze                    # Check for issues
 ```
 
 ### Base (Python - Backend server)
+
+**Recommended: Use the CLI script**
+```bash
+cd base
+./parachute.sh setup   # One-time: create venv, install deps
+./parachute.sh start   # Start server in background
+./parachute.sh stop    # Stop server
+./parachute.sh restart # Restart server
+./parachute.sh status  # Check server status
+./parachute.sh logs    # Tail server logs
+./parachute.sh help    # Show all commands
+```
+
+**As a macOS service (recommended for development)**
+```bash
+cd base
+./parachute.sh service-install  # Install as launchd service (autostarts at login)
+./parachute.sh service-restart  # Restart after code changes
+./parachute.sh service-stop     # Stop the service
+```
+
+**Manual setup (first time only)**
 ```bash
 cd base
 python -m venv venv                # Create virtual environment
 source venv/bin/activate           # Activate venv (macOS/Linux)
 pip install -r requirements.txt    # Install dependencies
-VAULT_PATH=~/Parachute python -m parachute.server  # Start server (port 3333)
-pytest                             # Run tests
+```
+
+**Manual start (alternative to CLI)**
+```bash
+cd base && source venv/bin/activate
+VAULT_PATH=~/Parachute python -m parachute.server  # Direct start
+# or
+python -m supervisor.main          # With supervisor (recommended)
 ```
 
 ### Base/Node (Node.js - Legacy backend)
@@ -195,6 +223,20 @@ npm test                           # Run tests
 ```
 
 ### Full Stack Development (Chat + Base)
+
+**Option 1: Using the service (recommended)**
+```bash
+# One-time setup
+cd base && ./parachute.sh service-install
+
+# Then just run the chat app - server is always running
+cd chat && flutter run -d macos
+
+# After base code changes
+cd base && ./parachute.sh service-restart
+```
+
+**Option 2: Manual terminals**
 ```bash
 # Terminal 1: Start Python base server
 cd base && source venv/bin/activate && VAULT_PATH=~/Parachute python -m parachute.server
@@ -414,9 +456,18 @@ When code changes require a server restart:
 2. **Ask permission** before restarting
 3. **Wait for user confirmation** - they may be in the middle of an important conversation
 
-Future improvement: Add a restart button in the Flutter app that uses the supervisor service to gracefully restart the server.
+**Option 1: CLI Script (recommended)**
+```bash
+./server.sh restart    # Graceful restart
+./server.sh status     # Verify it's running
+```
 
-Manual restart (when user approves):
+**Option 2: In-App Control**
+- Go to Settings → Advanced → Server Management
+- Click "Restart" button
+- Requires supervisor to be running (`./server.sh supervisor`)
+
+**Option 3: Manual restart**
 ```bash
 lsof -ti:3333 | xargs kill -9 2>/dev/null
 cd base && source venv/bin/activate && VAULT_PATH=~/Parachute python -m parachute.server &
