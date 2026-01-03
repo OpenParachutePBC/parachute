@@ -405,6 +405,23 @@ This ensures the parent repo always points to the correct submodule commits, so 
 3. Check server logs for errors: `npm run dev` shows request logs
 4. Ensure firewall allows port 3333
 
+### Restarting the Server
+
+**IMPORTANT: Never restart the server in the middle of a user's chat session!**
+
+When code changes require a server restart:
+1. **Inform the user** that a restart is needed
+2. **Ask permission** before restarting
+3. **Wait for user confirmation** - they may be in the middle of an important conversation
+
+Future improvement: Add a restart button in the Flutter app that uses the supervisor service to gracefully restart the server.
+
+Manual restart (when user approves):
+```bash
+lsof -ti:3333 | xargs kill -9 2>/dev/null
+cd base && source venv/bin/activate && VAULT_PATH=~/Parachute python -m parachute.server &
+```
+
 ### Chat History Not Loading
 
 1. Check `Chat/sessions/` directory has markdown files
