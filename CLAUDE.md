@@ -99,7 +99,7 @@ git add daily && git commit -m "Update daily submodule"
 │  │         ▼                                                            │  │
 │  │  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      │  │
 │  │  │ Orchestrator │──────│ Claude SDK   │      │ Session Mgr  │      │  │
-│  │  │              │      │ (API calls)  │      │ (markdown)   │      │  │
+│  │  │              │      │ (API calls)  │      │  (SQLite)    │      │  │
 │  │  └──────────────┘      └──────────────┘      └──────────────┘      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                        │
@@ -115,7 +115,8 @@ git add daily && git commit -m "Update daily submodule"
                     │  │   ├── assets/          │  ← Audio, photos
                     │  │   └── index.db         │  ← SQLite RAG index
                     │  ├── Chat/                │  ← Parachute Chat module
-                    │  │   ├── sessions/        │  ← Chat history (markdown)
+                    │  │   ├── parachute.db     │  ← SQLite (sessions, tags, index)
+                    │  │   ├── artifacts/       │  ← Agent-created files
                     │  │   ├── contexts/        │  ← Personal context files
                     │  │   └── assets/          │  ← Generated images, audio
                     │  ├── .agents/             │  ← Agent definitions
@@ -136,21 +137,21 @@ git add daily && git commit -m "Update daily submodule"
 | **Daily (Flutter)** | Voice journaling, local-first, standalone | Runs on each device |
 | **Chat (Flutter)** | AI chat assistant, requires backend | Runs on each device |
 | **Base (Python)** | AI orchestration, session management, MCP | Single server instance |
-| **Vault** | Data storage (markdown files) | Local + Syncthing sync |
+| **Vault** | Data storage (SQLite + markdown) | Local + Syncthing sync |
 
 ### Communication Flow
 
 1. **User speaks/types** → App records/captures
 2. **App sends message** → `POST /api/chat/stream` to Agent
-3. **Agent orchestrates** → Claude SDK for AI, saves to vault markdown
+3. **Agent orchestrates** → Claude SDK for AI, updates SQLite
 4. **SSE stream back** → Real-time updates to App UI
 5. **Syncthing syncs** → Vault changes replicate to other devices
 
 ### Key Design Decisions
 
 - **One Agent server, many App clients** - Simplifies orchestration
-- **Vault as source of truth** - Markdown files are portable, human-readable
-- **Sessions stored as markdown** - Can be read/edited in any text editor
+- **SQLite for session metadata** - Fast queries, tags, permissions
+- **SDK JSONL for messages** - Claude SDK stores transcripts at `~/.claude/projects/`
 - **Agent can operate in any cwd** - Chat with external codebases
 
 ---
@@ -245,6 +246,33 @@ cd base && source venv/bin/activate && VAULT_PATH=~/Parachute python -m parachut
 cd chat && flutter run -d macos
 ```
 
+### Test Server (For Development Testing)
+
+When developing new features, use the **isolated test server** to avoid affecting your live Parachute instance:
+
+```bash
+cd base
+./parachute.sh test-start    # Start test server (port 3334, vault: /tmp/parachute-test)
+./parachute.sh test-status   # Check test server status
+./parachute.sh test-logs     # View test server logs
+./parachute.sh test-restart  # Restart test server after code changes
+./parachute.sh test-stop     # Stop test server
+./parachute.sh test-clean    # Remove all test data and stop server
+```
+
+**Test server configuration:**
+- **Port**: 3334 (vs 3333 for main server)
+- **Vault**: `/tmp/parachute-test` (isolated from your real vault)
+- **Logs**: `/tmp/parachute-test-server.log`
+
+**When to use the test server:**
+- Testing new API endpoints
+- Debugging session/database changes
+- Running automated tests
+- Any development work that creates/modifies session data
+
+**Note:** To test with the Chat app, temporarily change the server URL in Settings → AI Chat → Server URL to `http://localhost:3334`.
+
 ### Android Deployment
 ```bash
 # Install to Android device (preserves app data)
@@ -279,6 +307,8 @@ The app connects to the agent at `http://localhost:3333` by default. To change:
 | `VAULT_PATH` | `./sample-vault` | Path to your knowledge vault |
 | `PORT` | `3333` | Server port |
 | `HOST` | `0.0.0.0` | Bind address (0.0.0.0 for network access) |
+| `TEST_SERVER_PORT` | `3334` | Test server port (isolated testing) |
+| `TEST_VAULT_PATH` | `/tmp/parachute-test` | Test server vault path |
 
 ---
 
@@ -286,35 +316,32 @@ The app connects to the agent at `http://localhost:3333` by default. To change:
 
 ### Sessions (Chat History)
 
-Sessions use a **lightweight pointer architecture**:
-- Markdown files contain only frontmatter metadata (no message content)
-- SDK JSONL files at `~/.claude/projects/` are the source of truth for messages
-- This enables easy future migration to SQLite
+Sessions use a **SQLite + SDK architecture**:
+- **SQLite** (`parachute.db`) stores session metadata (title, timestamps, tags, permissions)
+- **SDK JSONL files** (`~/.claude/projects/{cwd}/{session_id}.jsonl`) are the source of truth for messages
+- This separation keeps queries fast while leveraging SDK's built-in transcript handling
 
-Stored in `{vault}/Chat/sessions/*.md`:
+**SQLite Schema** (simplified):
+```sql
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,           -- SDK session UUID
+    title TEXT,
+    module TEXT DEFAULT 'chat',
+    source TEXT DEFAULT 'parachute',
+    working_directory TEXT,
+    model TEXT,
+    message_count INTEGER,
+    archived INTEGER DEFAULT 0,
+    created_at TEXT,
+    last_accessed TEXT,
+    metadata TEXT                  -- JSON blob for permissions, etc.
+);
 
-```markdown
----
-sdk_session_id: "abc-123-def"
-title: "Project Discussion"
-created_at: "2025-12-20T10:30:00Z"
-last_accessed: "2025-12-20T11:00:00Z"
-archived: false
-message_count: 12
-source: "parachute"
----
-```
-
-For imported Claude Code sessions:
-```markdown
----
-sdk_session_id: "claude-code-session-xyz"
-title: "Parachute Development"
-working_directory: "/Users/name/project"
-model: "claude-opus-4-5-20250514"
-source: "claude-code"
-message_count: 45
----
+CREATE TABLE session_tags (
+    session_id TEXT REFERENCES sessions(id),
+    tag TEXT,
+    PRIMARY KEY (session_id, tag)
+);
 ```
 
 ### Assets (Audio, Images)
@@ -351,6 +378,9 @@ You are a helpful assistant with access to the user's vault...
 
 ### Recently Completed
 
+- **Background Curator System** - Background agents that auto-generate session titles and update context files after each message
+- **Test Server** - Isolated test server on port 3334 with separate vault for development testing
+- **Prompt Transparency** - Context settings UI showing which files are loaded, with ability to toggle mid-session
 - **Claude Code Session Import** - Import sessions from `~/.claude/projects/` with lightweight markdown pointers
 - **Model Display** - Shows which model (Opus 4.5, Sonnet 4, etc.) is being used in the chat app bar
 - **Graceful Abort Handling** - Stop button no longer crashes server; partial progress saved
@@ -475,9 +505,9 @@ cd base && source venv/bin/activate && VAULT_PATH=~/Parachute python -m parachut
 
 ### Chat History Not Loading
 
-1. Check `Chat/sessions/` directory has markdown files
-2. Verify session IDs match between app and server
-3. Server restart clears in-memory session cache (but markdown persists)
+1. Check `Chat/parachute.db` exists and has sessions: `sqlite3 ~/Parachute/Chat/parachute.db "SELECT id, title FROM sessions LIMIT 5;"`
+2. Verify SDK JSONL files exist: `ls ~/.claude/projects/`
+3. Check server logs for database connection errors
 
 ### Voice Recording Issues
 
@@ -531,4 +561,4 @@ flutter analyze               # Check for issues
 
 ---
 
-**Last Updated**: January 2, 2026
+**Last Updated**: January 4, 2026
