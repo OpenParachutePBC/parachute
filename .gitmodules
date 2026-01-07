@@ -1,9 +1,0 @@
-[submodule "daily"]
-	path = daily
-	url = https://github.com/OpenParachutePBC/parachute-daily.git
-[submodule "chat"]
-	path = chat
-	url = https://github.com/OpenParachutePBC/parachute-chat.git
-[submodule "base"]
-	path = base
-	url = https://github.com/OpenParachutePBC/parachute-base.git

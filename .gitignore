@@ -1,24 +1,13 @@
 # macOS
 .DS_Store
-.AppleDouble
-.LSOverride
 
 # IDE
 .idea/
 .vscode/
-*.iml
 
 # Environment
 .env
 .env.local
-.env.*.local
 
-# Claude Code context
+# Claude Code
 .claude/
-
-# Temporary files
-*.log
-*.tmp
-
-# Note: Each submodule (daily, chat, base) has its own .gitignore
-# This file only covers the parent coordinator repo
